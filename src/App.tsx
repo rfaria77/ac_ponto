@@ -723,34 +723,28 @@ export default function App() {
 
   const handleAddColaborador = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("[handleAddColaborador] Called. Form state:", { novoNome, novoCargo, novoDep, novaFotoUrl });
-    if (!novoNome) {
-      console.warn("[handleAddColaborador] Aborted: novoNome is empty");
+    if (!novoNome.trim()) {
+      addToast("warning", "Nome Obrigatório", "Por favor, preencha o nome completo do colaborador.");
       return;
     }
     try {
-      const novoId = `FUNC_00${colaboradores.length + 1}`;
+      const novoId = `FUNC_${Date.now()}`;
+      const emailGerado = novoEmail.trim() || `${novoNome.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '.')}@ac-saude.com.br`;
       const novoColab: Colaborador = {
         id: novoId,
-        nome: novoNome,
-        cargo: novoCargo || "Colaborador",
-        departamento: novoDep || "Geral",
-        email: novoEmail || `${novoNome.toLowerCase().replace(/\s+/g, '.')}@ac-saude.com.br`,
-        fotoCadastro: novaFotoUrl,
+        nome: novoNome.trim(),
+        cargo: novoCargo.trim() || "Colaborador",
+        departamento: novoDep.trim() || "Geral",
+        email: emailGerado,
+        fotoCadastro: novaFotoUrl.trim() || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80",
         senha: "AC2026@",
         mustChangePassword: true,
         localPermitido: { nome: "Matriz São Paulo", lat: sede.lat, lon: sede.lon, raio: sede.raioMaximoMetros },
       };
 
-      console.log("[handleAddColaborador] Attempting setDoc to Firestore at 'colaboradores/' with ID:", novoId, novoColab);
       await setDoc(doc(db, "colaboradores", novoId), novoColab);
-      console.log("[handleAddColaborador] Firestore setDoc completed successfully for ID:", novoId);
 
-      setColaboradores((prev) => {
-        const updated = [...prev, novoColab];
-        console.log("[handleAddColaborador] State updated for colaboradores. Previous count:", prev.length, "New count:", updated.length);
-        return updated;
-      });
+      setColaboradores((prev) => [...prev, novoColab]);
 
       setEscalasColaboradores((prev) => ({
         ...prev,
@@ -789,12 +783,11 @@ export default function App() {
       setNovoCargo("");
       setNovoDep("");
       setNovoEmail("");
+      setNovaFotoUrl("https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80");
       addToast("success", "Colaborador Cadastrado", `${novoColab.nome} adicionado com sucesso.`);
-      console.log("[handleAddColaborador] Successfully finished and reset form inputs.");
-    } catch (err) {
-      console.error("[handleAddColaborador] ERROR caught during save or state update:", err);
-      handleFirestoreError(err, OperationType.WRITE, "colaboradores");
-      addToast("error", "Erro", "Não foi possível cadastrar o colaborador.");
+    } catch (err: any) {
+      console.error("Erro ao cadastrar colaborador:", err);
+      addToast("error", "Erro ao Cadastrar", err?.message || "Não foi possível salvar o colaborador no Firestore.");
     }
   };
 
