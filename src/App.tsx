@@ -48,6 +48,8 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import jsPDF from "jspdf";
+import { db, handleFirestoreError, OperationType } from "./firebase";
+import { collection, doc, setDoc, addDoc, onSnapshot } from "firebase/firestore";
 
 interface Colaborador {
   id: string;
@@ -64,6 +66,7 @@ interface Colaborador {
 }
 
 interface SedeConfig {
+  id?: string;
   nome: string;
   lat: number;
   lon: number;
@@ -169,6 +172,7 @@ export default function App() {
   };
   
   const [sede, setSede] = useState<SedeConfig>({
+    id: "sede",
     nome: "Matriz São Paulo / Sede Principal",
     lat: -23.550520,
     lon: -46.633308,
@@ -321,9 +325,124 @@ export default function App() {
   const [novoDep, setNovoDep] = useState("");
   const [novaFotoUrl, setNovaFotoUrl] = useState("https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80");
 
+  // Firestore Real-Time Synchronization & Seeding
   useEffect(() => {
-    fetchData();
+    const unsubColab = onSnapshot(collection(db, "colaboradores"), (snapshot) => {
+      const items: Colaborador[] = [];
+      snapshot.forEach((docSnap) => {
+        items.push(docSnap.data() as Colaborador);
+      });
+      if (items.length > 0) {
+        setColaboradores(items);
+        if (!currentColabUser) setCurrentColabUser(items[0]);
+      } else {
+        seedInitialData();
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, "colaboradores");
+    });
+
+    const unsubReg = onSnapshot(collection(db, "registros"), (snapshot) => {
+      const items: RegistroPonto[] = [];
+      snapshot.forEach((docSnap) => {
+        items.push(docSnap.data() as RegistroPonto);
+      });
+      if (items.length > 0) {
+        setRegistros(items);
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, "registros");
+    });
+
+    const unsubSol = onSnapshot(collection(db, "solicitacoes"), (snapshot) => {
+      const items: AjustePendente[] = [];
+      snapshot.forEach((docSnap) => {
+        items.push(docSnap.data() as AjustePendente);
+      });
+      if (items.length > 0) {
+        setPendencias(items);
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, "solicitacoes");
+    });
+
+    const unsubConfig = onSnapshot(doc(db, "configuracoes", "sede"), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data() as SedeConfig;
+        setSede(data);
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, "configuracoes/sede");
+    });
+
+    return () => {
+      unsubColab();
+      unsubReg();
+      unsubSol();
+      unsubConfig();
+    };
   }, []);
+
+  const seedInitialData = async () => {
+    try {
+      const defaultColabs: Colaborador[] = [
+        {
+          id: "FUNC_001",
+          nome: "Ana Beatriz Souza",
+          cargo: "Desenvolvedora Sênior",
+          departamento: "Engenharia",
+          fotoCadastro: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400&auto=format&fit=crop&q=80",
+          localPermitido: { nome: "Matriz São Paulo", lat: -23.550520, lon: -46.633308, raio: 150 },
+        },
+        {
+          id: "FUNC_002",
+          nome: "Carlos Eduardo Lima",
+          cargo: "Analista de Suporte",
+          departamento: "Operações",
+          fotoCadastro: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80",
+          localPermitido: { nome: "Filial Paulista", lat: -23.561500, lon: -46.656000, raio: 150 },
+        },
+        {
+          id: "FUNC_003",
+          nome: "Mariana Costa Silva",
+          cargo: "Gerente de Recursos Humanos",
+          departamento: "RH",
+          fotoCadastro: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80",
+          localPermitido: { nome: "Matriz São Paulo", lat: -23.550520, lon: -46.633308, raio: 150 },
+        },
+      ];
+
+      for (const c of defaultColabs) {
+        await setDoc(doc(db, "colaboradores", c.id), c);
+      }
+
+      const defaultSede: SedeConfig = {
+        id: "sede",
+        nome: "Matriz São Paulo / Sede Principal",
+        lat: -23.550520,
+        lon: -46.633308,
+        raioMaximoMetros: 150.0,
+      };
+      await setDoc(doc(db, "configuracoes", "sede"), defaultSede);
+
+      const defaultReg: RegistroPonto = {
+        id: "REG_101",
+        colaboradorId: "FUNC_001",
+        colaboradorNome: "Ana Beatriz Souza",
+        timestamp: new Date(Date.now() - 3600000 * 4).toISOString(),
+        tipo: "ENTRADA",
+        status: "AProvado",
+        distanciaMetros: 12.4,
+        confiancaBiometrica: 0.96,
+        ehFotoAoVivo: true,
+        justificativa: "Alta correspondência facial com traços anatômicos e teste de vivacidade positivo.",
+        selfieUrl: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400&auto=format&fit=crop&q=80",
+      };
+      await setDoc(doc(db, "registros", defaultReg.id), defaultReg);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, "seed");
+    }
+  };
 
   useEffect(() => {
     const found = colaboradores.find((c) => c.id === selectedAdmColabId);
@@ -331,28 +450,6 @@ export default function App() {
       setLocalCustomColab(found.localPermitido);
     }
   }, [selectedAdmColabId, colaboradores]);
-
-  const fetchData = async () => {
-    try {
-      const [resSede, resColab, resReg] = await Promise.all([
-        fetch("/api/sede"),
-        fetch("/api/colaboradores"),
-        fetch("/api/registros"),
-      ]);
-      const sedeData = await resSede.json();
-      const colabData = await resColab.json();
-      const regData = await resReg.json();
-
-      setSede(sedeData);
-      setColaboradores(colabData);
-      setRegistros(regData);
-      if (colabData.length > 0 && !currentColabUser) {
-        setCurrentColabUser(colabData[0]);
-      }
-    } catch (err) {
-      console.error("Erro ao carregar dados:", err);
-    }
-  };
 
   const startCamera = async () => {
     setCameraError("");
@@ -437,20 +534,21 @@ export default function App() {
       setSelfieDataUrl(null);
 
       if (data.registro) {
+        await setDoc(doc(db, "registros", data.registro.id), data.registro);
         setRegistros((prev) => [data.registro, ...prev]);
+
         if (data.pendenteLocal) {
-          setPendencias((prev) => [
-            {
-              id: `PEND_${Date.now()}`,
-              colaboradorId: currentColabUser.id,
-              colaboradorNome: currentColabUser.nome,
-              tipo: "Local Alternativo (Fora da Base)",
-              dataSolicitacao: new Date().toLocaleString("pt-BR"),
-              motivo: `Ponto em local alternativo. Distância: ${data.distancia}m da base autorizada.`,
-              status: "PENDENTE",
-            },
-            ...prev,
-          ]);
+          const novaPendencia: AjustePendente = {
+            id: `PEND_${Date.now()}`,
+            colaboradorId: currentColabUser.id,
+            colaboradorNome: currentColabUser.nome,
+            tipo: "Local Alternativo (Fora da Base)",
+            dataSolicitacao: new Date().toLocaleString("pt-BR"),
+            motivo: `Ponto em local alternativo. Distância: ${data.distancia}m da base autorizada.`,
+            status: "PENDENTE",
+          };
+          await setDoc(doc(db, "solicitacoes", novaPendencia.id), novaPendencia);
+          setPendencias((prev) => [novaPendencia, ...prev]);
         }
       }
 
@@ -460,6 +558,7 @@ export default function App() {
         addToast("error", "Ponto Recusado", data.mensagem || "Verifique os critérios de biometria.");
       }
     } catch (err: any) {
+      handleFirestoreError(err, OperationType.WRITE, "registros");
       addToast("error", "Erro na Marcação", err.message || "Erro interno ao processar o ponto.");
     } finally {
       setLoading(false);
@@ -502,7 +601,7 @@ export default function App() {
     }
   };
 
-  const handleLancamentoManualSubmit = (e: React.FormEvent) => {
+  const handleLancamentoManualSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const colab = colaboradores.find(c => c.id === manualColabId);
     if (!colab) return;
@@ -521,65 +620,69 @@ export default function App() {
       selfieUrl: colab.fotoCadastro,
     };
 
-    setRegistros((prev) => [novoRegistro, ...prev]);
-    addToast("success", "Ponto Lançado Manualmente", `Registro de ${manualTipo} adicionado com sucesso para ${colab.nome}.`);
+    try {
+      await setDoc(doc(db, "registros", novoRegistro.id), novoRegistro);
+      setRegistros((prev) => [novoRegistro, ...prev]);
+      addToast("success", "Ponto Lançado Manualmente", `Registro de ${manualTipo} adicionado com sucesso para ${colab.nome}.`);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, "registros");
+    }
   };
 
   const handleAddColaborador = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!novoNome) return;
     try {
-      const res = await fetch("/api/colaboradores", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          nome: novoNome,
-          cargo: novoCargo || "Colaborador",
-          departamento: novoDep || "Geral",
-          fotoCadastro: novaFotoUrl,
-          localPermitido: { nome: "Matriz São Paulo", lat: sede.lat, lon: sede.lon, raio: sede.raioMaximoMetros },
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setColaboradores((prev) => [...prev, data.colaborador]);
-        setEscalasColaboradores((prev) => ({
-          ...prev,
-          [data.colaborador.id]: {
-            colaboradorId: data.colaborador.id,
-            dias: {
-              segunda: defaultDiaEscala(),
-              terca: defaultDiaEscala(),
-              quarta: defaultDiaEscala(),
-              quinta: defaultDiaEscala(),
-              sexta: defaultDiaEscala(),
-              sabado: { ...defaultDiaEscala(), ativo: false },
-              domingo: { ...defaultDiaEscala(), ativo: false },
-            },
-            toleranciaMinutos: 10,
+      const novoId = `FUNC_00${colaboradores.length + 1}`;
+      const novoColab: Colaborador = {
+        id: novoId,
+        nome: novoNome,
+        cargo: novoCargo || "Colaborador",
+        departamento: novoDep || "Geral",
+        fotoCadastro: novaFotoUrl,
+        localPermitido: { nome: "Matriz São Paulo", lat: sede.lat, lon: sede.lon, raio: sede.raioMaximoMetros },
+      };
+
+      await setDoc(doc(db, "colaboradores", novoId), novoColab);
+
+      setColaboradores((prev) => [...prev, novoColab]);
+      setEscalasColaboradores((prev) => ({
+        ...prev,
+        [novoId]: {
+          colaboradorId: novoId,
+          dias: {
+            segunda: defaultDiaEscala(),
+            terca: defaultDiaEscala(),
+            quarta: defaultDiaEscala(),
+            quinta: defaultDiaEscala(),
+            sexta: defaultDiaEscala(),
+            sabado: { ...defaultDiaEscala(), ativo: false },
+            domingo: { ...defaultDiaEscala(), ativo: false },
           },
-        }));
-        setBancoHorasData((prev) => [
-          ...prev,
-          {
-            colaboradorId: data.colaborador.id,
-            nome: data.colaborador.nome,
-            departamento: data.colaborador.departamento,
-            dataInicioSaldo: "01/09/2026",
-            saldoInicial: "00h 00m",
-            horasTrabalhadasMes: "00h 00m",
-            bancoHorasSaldo: "00h 00m",
-            horasExtras: "00h 00m",
-            descontosBanco: "00h 00m",
-            statusBanco: "ZERADO",
-          }
-        ]);
-        setNovoNome("");
-        setNovoCargo("");
-        setNovoDep("");
-        addToast("success", "Colaborador Cadastrado", `${data.colaborador.nome} adicionado com sucesso.`);
-      }
+          toleranciaMinutos: 10,
+        },
+      }));
+      setBancoHorasData((prev) => [
+        ...prev,
+        {
+          colaboradorId: novoId,
+          nome: novoColab.nome,
+          departamento: novoColab.departamento,
+          dataInicioSaldo: "01/09/2026",
+          saldoInicial: "00h 00m",
+          horasTrabalhadasMes: "00h 00m",
+          bancoHorasSaldo: "00h 00m",
+          horasExtras: "00h 00m",
+          descontosBanco: "00h 00m",
+          statusBanco: "ZERADO",
+        }
+      ]);
+      setNovoNome("");
+      setNovoCargo("");
+      setNovoDep("");
+      addToast("success", "Colaborador Cadastrado", `${novoColab.nome} adicionado com sucesso.`);
     } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, "colaboradores");
       addToast("error", "Erro", "Não foi possível cadastrar o colaborador.");
     }
   };
@@ -587,21 +690,16 @@ export default function App() {
   const handleSaveLocalPermitido = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch("/api/colaboradores/local", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          colaboradorId: selectedAdmColabId,
-          localPermitido: localCustomColab,
-        }),
-      });
-      if (res.ok) {
-        const targetColab = colaboradores.find(c => c.id === selectedAdmColabId);
-        if (targetColab) targetColab.localPermitido = localCustomColab;
-        addToast("success", "Localização Salva", `Local permitido atualizado para ${targetColab?.nome || "colaborador"}.`);
-        fetchData();
-      }
+      const targetColab = colaboradores.find(c => c.id === selectedAdmColabId);
+      if (!targetColab) return;
+
+      const updatedColab = { ...targetColab, localPermitido: localCustomColab };
+      await setDoc(doc(db, "colaboradores", selectedAdmColabId), updatedColab);
+
+      setColaboradores((prev) => prev.map(c => c.id === selectedAdmColabId ? updatedColab : c));
+      addToast("success", "Localização Salva", `Local permitido atualizado para ${targetColab.nome}.`);
     } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, "colaboradores");
       addToast("error", "Erro", "Não foi possível salvar a localização permitida.");
     }
   };
@@ -609,121 +707,132 @@ export default function App() {
   const handleSaveSede = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch("/api/sede", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(sede),
-      });
-      if (res.ok) {
-        addToast("success", "Sede Atualizada", "Coordenadas e raio de geofencing salvos com sucesso.");
-        fetchData();
-      }
+      const sedePayload = { ...sede, id: "sede" };
+      await setDoc(doc(db, "configuracoes", "sede"), sedePayload);
+      addToast("success", "Sede Atualizada", "Coordenadas e raio de geofencing salvos com sucesso.");
     } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, "configuracoes");
       addToast("error", "Erro", "Não foi possível salvar as configurações da sede.");
     }
   };
 
-  const handleAprovarPendencia = (id: string) => {
+  const handleAprovarPendencia = async (id: string) => {
     setPendencias((prev) =>
       prev.map((p) => (p.id === id ? { ...p, status: "APROVADO" as const } : p))
     );
+    try {
+      const pend = pendencias.find(p => p.id === id);
+      if (pend) {
+        await setDoc(doc(db, "solicitacoes", id), { ...pend, status: "APROVADO" }, { merge: true });
+      }
+    } catch (e) {
+      // ignore offline sync if needed
+    }
     addToast("success", "Solicitação Aprovada", "O ajuste ou ponto em local alternativo foi aprovado pelo gestor.");
   };
 
-  const handleRecusarPendencia = (id: string) => {
+  const handleRecusarPendencia = async (id: string) => {
     setPendencias((prev) =>
       prev.map((p) => (p.id === id ? { ...p, status: "RECUSADO" as const } : p))
     );
+    try {
+      const pend = pendencias.find(p => p.id === id);
+      if (pend) {
+        await setDoc(doc(db, "solicitacoes", id), { ...pend, status: "RECUSADO" }, { merge: true });
+      }
+    } catch (e) {
+      // ignore
+    }
     addToast("warning", "Solicitação Recusada", "A solicitação foi recusada.");
   };
 
   const exportarEspelhoPontoPDF = (colabItem: BancoHorasColab) => {
     try {
-      const doc = new jsPDF();
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(16);
-      doc.setTextColor(2, 132, 199);
-      doc.text("PONTO A&C - SAÚDE E SEGURANÇA DO TRABALHO", 14, 20);
+      const docPdf = new jsPDF();
+      docPdf.setFont("helvetica", "bold");
+      docPdf.setFontSize(16);
+      docPdf.setTextColor(2, 132, 199);
+      docPdf.text("PONTO A&C - SAÚDE E SEGURANÇA DO TRABALHO", 14, 20);
 
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(100, 116, 139);
-      doc.text(`Emitido em: ${new Date().toLocaleString("pt-BR")}`, 14, 26);
-      doc.text(`Início do Histórico (Banco de Horas): ${colabItem.dataInicioSaldo} | Saldo Inicial: ${colabItem.saldoInicial}`, 14, 32);
+      docPdf.setFontSize(10);
+      docPdf.setFont("helvetica", "normal");
+      docPdf.setTextColor(100, 116, 139);
+      docPdf.text(`Emitido em: ${new Date().toLocaleString("pt-BR")}`, 14, 26);
+      docPdf.text(`Início do Histórico (Banco de Horas): ${colabItem.dataInicioSaldo} | Saldo Inicial: ${colabItem.saldoInicial}`, 14, 32);
 
-      doc.setDrawColor(203, 213, 225);
-      doc.line(14, 36, 196, 36);
+      docPdf.setDrawColor(203, 213, 225);
+      docPdf.line(14, 36, 196, 36);
 
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(12);
-      doc.setTextColor(15, 23, 42);
-      doc.text("Dados do Colaborador:", 14, 44);
+      docPdf.setFont("helvetica", "bold");
+      docPdf.setFontSize(12);
+      docPdf.setTextColor(15, 23, 42);
+      docPdf.text("Dados do Colaborador:", 14, 44);
 
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
-      doc.text(`Nome: ${colabItem.nome}`, 14, 52);
-      doc.text(`ID: ${colabItem.colaboradorId}`, 14, 58);
-      doc.text(`Departamento: ${colabItem.departamento}`, 14, 64);
+      docPdf.setFont("helvetica", "normal");
+      docPdf.setFontSize(10);
+      docPdf.text(`Nome: ${colabItem.nome}`, 14, 52);
+      docPdf.text(`ID: ${colabItem.colaboradorId}`, 14, 58);
+      docPdf.text(`Departamento: ${colabItem.departamento}`, 14, 64);
 
-      doc.setFillColor(240, 249, 255);
-      doc.roundedRect(14, 72, 182, 32, 3, 3, "F");
+      docPdf.setFillColor(240, 249, 255);
+      docPdf.roundedRect(14, 72, 182, 32, 3, 3, "F");
 
-      doc.setFont("helvetica", "bold");
-      doc.text("Resumo do Período (Banco de Horas):", 18, 80);
-      doc.setFont("helvetica", "normal");
-      doc.text(`Saldo Inicial (${colabItem.dataInicioSaldo}): ${colabItem.saldoInicial}`, 18, 88);
-      doc.text(`Horas Extras: ${colabItem.horasExtras}`, 110, 88);
-      doc.text(`Descontos: ${colabItem.descontosBanco}`, 18, 96);
-      doc.text(`Saldo Atual: ${colabItem.bancoHorasSaldo} (${colabItem.statusBanco})`, 110, 96);
+      docPdf.setFont("helvetica", "bold");
+      docPdf.text("Resumo do Período (Banco de Horas):", 18, 80);
+      docPdf.setFont("helvetica", "normal");
+      docPdf.text(`Saldo Inicial (${colabItem.dataInicioSaldo}): ${colabItem.saldoInicial}`, 18, 88);
+      docPdf.text(`Horas Extras: ${colabItem.horasExtras}`, 110, 88);
+      docPdf.text(`Descontos: ${colabItem.descontosBanco}`, 18, 96);
+      docPdf.text(`Saldo Atual: ${colabItem.bancoHorasSaldo} (${colabItem.statusBanco})`, 110, 96);
 
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(12);
-      doc.text("Registros de Ponto:", 14, 114);
+      docPdf.setFont("helvetica", "bold");
+      docPdf.setFontSize(12);
+      docPdf.text("Registros de Ponto:", 14, 114);
 
       let y = 122;
-      doc.setFillColor(224, 242, 254);
-      doc.rect(14, y, 182, 8, "F");
-      doc.setFontSize(9);
-      doc.text("Data/Hora", 18, y + 5.5);
-      doc.text("Tipo", 75, y + 5.5);
-      doc.text("Distância GPS", 110, y + 5.5);
-      doc.text("Status", 155, y + 5.5);
+      docPdf.setFillColor(224, 242, 254);
+      docPdf.rect(14, y, 182, 8, "F");
+      docPdf.setFontSize(9);
+      docPdf.text("Data/Hora", 18, y + 5.5);
+      docPdf.text("Tipo", 75, y + 5.5);
+      docPdf.text("Distância GPS", 110, y + 5.5);
+      docPdf.text("Status", 155, y + 5.5);
 
       y += 8;
-      doc.setFont("helvetica", "normal");
+      docPdf.setFont("helvetica", "normal");
 
       const employeePunches = registros.filter(r => r.colaboradorId === colabItem.colaboradorId);
       
       if (employeePunches.length === 0) {
         y += 8;
-        doc.text("Nenhum registro de ponto recente encontrado.", 18, y);
+        docPdf.text("Nenhum registro de ponto recente encontrado.", 18, y);
       } else {
         employeePunches.slice(0, 12).forEach((reg) => {
           if (y > 270) {
-            doc.addPage();
+            docPdf.addPage();
             y = 20;
           }
-          doc.text(new Date(reg.timestamp).toLocaleString("pt-BR"), 18, y + 6);
-          doc.text(reg.tipo, 75, y + 6);
-          doc.text(`${reg.distanciaMetros}m`, 110, y + 6);
-          doc.text(reg.status, 155, y + 6);
+          docPdf.text(new Date(reg.timestamp).toLocaleString("pt-BR"), 18, y + 6);
+          docPdf.text(reg.tipo, 75, y + 6);
+          docPdf.text(`${reg.distanciaMetros}m`, 110, y + 6);
+          docPdf.text(reg.status, 155, y + 6);
 
           y += 8;
-          doc.setDrawColor(241, 245, 249);
-          doc.line(14, y, 196, y);
+          docPdf.setDrawColor(241, 245, 249);
+          docPdf.line(14, y, 196, y);
         });
       }
 
       y = Math.max(y + 30, 240);
-      doc.setDrawColor(148, 163, 184);
-      doc.line(40, y, 100, y);
-      doc.line(116, y, 176, y);
+      docPdf.setDrawColor(148, 163, 184);
+      docPdf.line(40, y, 100, y);
+      docPdf.line(116, y, 176, y);
 
-      doc.setFontSize(8);
-      doc.text("Assinatura do Colaborador", 55, y + 5);
-      doc.text("Assinatura do Gestor / RH", 130, y + 5);
+      docPdf.setFontSize(8);
+      docPdf.text("Assinatura do Colaborador", 55, y + 5);
+      docPdf.text("Assinatura do Gestor / RH", 130, y + 5);
 
-      doc.save(`espelho_ponto_${colabItem.colaboradorId}.pdf`);
+      docPdf.save(`espelho_ponto_${colabItem.colaboradorId}.pdf`);
       addToast("success", "PDF Exportado", `O espelho de ponto de ${colabItem.nome} foi gerado com sucesso.`);
     } catch (pdfErr) {
       addToast("error", "Erro no PDF", "Não foi possível gerar o arquivo PDF.");
@@ -736,15 +845,16 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-sky-500 selection:text-white relative">
-      {/* Toast Notification Container */}
+      {/* Toast Notification Container with Smooth Slide-in / Fade-out */}
       <div className="fixed top-20 right-4 z-50 flex flex-col space-y-3 max-w-sm w-full pointer-events-none px-4 sm:px-0">
         <AnimatePresence>
-          {toasts.map((toast) => (
+          {toasts.map((toast, index) => (
             <motion.div
               key={toast.id}
-              initial={{ opacity: 0, y: -20, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -10, scale: 0.95 }}
+              initial={{ opacity: 0, x: 50, y: -10, scale: 0.95 }}
+              animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 50, scale: 0.9 }}
+              transition={{ duration: 0.25, delay: index * 0.05 }}
               className={`pointer-events-auto p-4 rounded-2xl shadow-2xl border backdrop-blur-md flex items-start gap-3 ${
                 toast.type === "success"
                   ? "bg-sky-950/90 border-sky-500/40 text-sky-100 shadow-sky-950/50"
@@ -1094,19 +1204,17 @@ export default function App() {
                       Base autorizada: <span className="text-sky-300 font-semibold">{currentColabUser.localPermitido?.nome || "Matriz SP"}</span>
                     </p>
 
-                    <form onSubmit={handleRegistrarPontoSubmit} className="space-y-4">
+                    <form onSubmit={handleRegistrarPontoSubmit} className="space-y-4 text-xs">
                       <div>
-                        <label className="block text-xs font-medium text-slate-300 mb-1.5">Tipo de Marcação</label>
+                        <label className="block text-slate-300 font-semibold mb-1.5">Tipo de Marcação</label>
                         <div className="grid grid-cols-3 gap-2">
                           {(["ENTRADA", "INTERVALO", "SAIDA"] as const).map((t) => (
                             <button
                               key={t}
                               type="button"
                               onClick={() => setTipoPonto(t)}
-                              className={`py-2 px-3 rounded-xl text-xs font-semibold transition-all border ${
-                                tipoPonto === t
-                                  ? "bg-sky-600 border-sky-500 text-white shadow-lg shadow-sky-600/30"
-                                  : "bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700"
+                              className={`py-2 px-3 rounded-xl font-bold border transition-all ${
+                                tipoPonto === t ? "bg-sky-600 border-sky-500 text-white shadow-md shadow-sky-600/30" : "bg-slate-950 border-slate-800 text-slate-400"
                               }`}
                             >
                               {t}
@@ -1115,298 +1223,198 @@ export default function App() {
                         </div>
                       </div>
 
-                      <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                        <label className="block text-xs font-semibold text-slate-300 mb-2 flex items-center justify-between">
-                          <span className="flex items-center gap-1.5">
-                            <MapPin className="w-3.5 h-3.5 text-sky-400" /> Simulação de Localização (Haversine)
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => abrirGoogleMapsPin(getCoordinates().lat, getCoordinates().lon)}
-                            className="text-[11px] text-sky-400 hover:underline flex items-center gap-1"
-                          >
-                            <ExternalLink className="w-3 h-3" /> Ver no Google Maps
-                          </button>
-                        </label>
-                        <div className="grid grid-cols-3 gap-2 text-xs">
-                          <button
-                            type="button"
-                            onClick={() => setGpsMode("sede")}
-                            className={`py-2 px-2 rounded-lg border ${gpsMode === "sede" ? "bg-emerald-600/20 border-emerald-500 text-emerald-300" : "bg-slate-900 border-slate-800 text-slate-400"}`}
-                          >
-                            📍 Na Base
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setGpsMode("proximo")}
-                            className={`py-2 px-2 rounded-lg border ${gpsMode === "proximo" ? "bg-emerald-600/20 border-emerald-500 text-emerald-300" : "bg-slate-900 border-slate-800 text-slate-400"}`}
-                          >
-                            🚶 Próximo
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setGpsMode("longe")}
-                            className={`py-2 px-2 rounded-lg border ${gpsMode === "longe" ? "bg-amber-600/20 border-amber-500 text-amber-300" : "bg-slate-900 border-slate-800 text-slate-400"}`}
-                          >
-                            🚗 Fora da Base
-                          </button>
-                        </div>
+                      <div>
+                        <label className="block text-slate-300 font-semibold mb-1.5">Simulação de Localização GPS</label>
+                        <select
+                          value={gpsMode}
+                          onChange={(e) => setGpsMode(e.target.value as any)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white"
+                        >
+                          <option value="sede">Dentro da Base Autorizada (Matriz / Filial)</option>
+                          <option value="proximo">Próximo ao Limite (Dentro do Raio)</option>
+                          <option value="longe">Fora da Base (Exige Aprovação do Gestor)</option>
+                          <option value="custom">Coordenadas Customizadas</option>
+                        </select>
                       </div>
 
-                      <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                        <div className="flex items-center justify-between mb-2">
-                          <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                            <Camera className="w-3.5 h-3.5 text-sky-400" /> Selfie Biométrica Ao Vivo
-                          </label>
-                          {selfieDataUrl && (
-                            <button type="button" onClick={() => setSelfieDataUrl(null)} className="text-[11px] text-rose-400 underline">
-                              Tirar nova
-                            </button>
-                          )}
+                      {gpsMode === "custom" && (
+                        <div className="grid grid-cols-2 gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800">
+                          <div>
+                            <label className="block text-[10px] text-slate-400 mb-1">Latitude</label>
+                            <input
+                              type="number"
+                              step="0.000001"
+                              value={customLat}
+                              onChange={(e) => setCustomLat(parseFloat(e.target.value))}
+                              className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-white font-mono"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] text-slate-400 mb-1">Longitude</label>
+                            <input
+                              type="number"
+                              step="0.000001"
+                              value={customLon}
+                              onChange={(e) => setCustomLon(parseFloat(e.target.value))}
+                              className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-white font-mono"
+                            />
+                          </div>
                         </div>
+                      )}
 
-                        {!cameraActive && !selfieDataUrl && (
-                          <div className="text-center py-4 border border-dashed border-slate-800 rounded-lg">
-                            <button
-                              type="button"
-                              onClick={startCamera}
-                              className="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-medium"
-                            >
-                              Ligar Câmera
-                            </button>
-                          </div>
-                        )}
-
-                        {cameraActive && (
-                          <div className="space-y-2">
-                            <div className="relative rounded-lg overflow-hidden bg-black aspect-video flex items-center justify-center">
-                              <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline muted />
-                            </div>
-                            <button
-                              type="button"
-                              onClick={captureSelfie}
-                              className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold"
-                            >
-                              Capturar Selfie
-                            </button>
-                          </div>
-                        )}
-
-                        {selfieDataUrl && (
-                          <div className="flex items-center gap-3">
-                            <img src={selfieDataUrl} alt="" className="w-12 h-12 rounded-lg object-cover border border-slate-700" />
-                            <p className="text-xs text-emerald-400 font-medium">Selfie capturada com sucesso!</p>
-                          </div>
-                        )}
+                      <div className="pt-2">
+                        <button
+                          type="submit"
+                          disabled={loading}
+                          className="w-full py-3.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white rounded-xl font-bold shadow-lg shadow-sky-600/30 flex items-center justify-center gap-2"
+                        >
+                          {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Clock className="w-4 h-4" />}
+                          Bater Ponto com Biometria Facial & GPS
+                        </button>
                       </div>
-
-                      <button
-                        type="submit"
-                        disabled={loading}
-                        className="w-full py-3.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white rounded-xl font-semibold text-xs transition-all shadow-lg shadow-sky-600/30 flex items-center justify-center gap-2"
-                      >
-                        {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
-                        Registrar e Confirmar Ponto
-                      </button>
                     </form>
                   </div>
                 </div>
 
                 <div className="md:col-span-6 space-y-6">
-                  <AnimatePresence mode="wait">
-                    {lastResult ? (
-                      <motion.div
-                        key="result-card"
-                        initial={{ opacity: 0, x: 50, scale: 0.95 }}
-                        animate={{ opacity: 1, x: 0, scale: 1 }}
-                        exit={{ opacity: 0, x: -50, scale: 0.95 }}
-                        transition={{ duration: 0.4, type: "spring", stiffness: 260, damping: 20 }}
-                        className={`border rounded-2xl p-6 shadow-xl ${
-                          lastResult.success && !lastResult.pendenteLocal
-                            ? "bg-emerald-950/20 border-emerald-500/40"
-                            : lastResult.pendenteLocal
-                            ? "bg-amber-950/20 border-amber-500/40"
-                            : "bg-rose-950/20 border-rose-500/40"
-                        }`}
-                      >
-                        <div className="flex items-center gap-3 mb-4">
-                          {lastResult.success && !lastResult.pendenteLocal ? (
-                            <motion.div
-                              animate={{ scale: [1, 1.2, 1] }}
-                              transition={{ repeat: Infinity, duration: 1.8, ease: "easeInOut" }}
-                              className="w-12 h-12 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0"
-                            >
-                              <CheckCircle2 className="w-7 h-7" />
-                            </motion.div>
-                          ) : lastResult.pendenteLocal ? (
-                            <motion.div
-                              animate={{ scale: [1, 1.2, 1] }}
-                              transition={{ repeat: Infinity, duration: 1.8, ease: "easeInOut" }}
-                              className="w-12 h-12 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0"
-                            >
-                              <AlertTriangle className="w-7 h-7" />
-                            </motion.div>
-                          ) : (
-                            <motion.div
-                              animate={{ scale: [1, 1.2, 1] }}
-                              transition={{ repeat: Infinity, duration: 1.8, ease: "easeInOut" }}
-                              className="w-12 h-12 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0"
-                            >
-                              <XCircle className="w-7 h-7" />
-                            </motion.div>
-                          )}
-                          <div>
-                            <h3 className={`text-base font-bold ${
-                              lastResult.success && !lastResult.pendenteLocal ? "text-emerald-400" : lastResult.pendenteLocal ? "text-amber-400" : "text-rose-400"
-                            }`}>
-                              {lastResult.pendenteLocal ? "Ponto em Local Alternativo (Pendente)" : lastResult.success ? "Ponto Confirmado com Sucesso!" : "Ponto Recusado"}
-                            </h3>
-                            <p className="text-xs text-slate-300">{lastResult.mensagem}</p>
-                          </div>
-                        </div>
+                  <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+                    <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+                      <Camera className="w-4 h-4 text-sky-400" /> Auditoria Biométrica por IA (Selfie)
+                    </h3>
 
-                        <div className="space-y-2 pt-4 border-t border-slate-800 text-xs text-slate-300">
-                          <div className="flex justify-between">
-                            <span className="text-slate-400">Distância da Base:</span>
-                            <span className="font-mono text-white">{lastResult.distancia} metros</span>
-                          </div>
-                          {lastResult.biometria && (
-                            <>
-                              <div className="flex justify-between">
-                                <span className="text-slate-400">Confiança Biométrica:</span>
-                                <span className="font-mono text-white">{(lastResult.biometria.confianca_estimada * 100).toFixed(1)}%</span>
-                              </div>
-                              <div className="mt-2 bg-slate-900 p-3 rounded-xl border border-slate-800 text-[11px] text-slate-300">
-                                <strong className="text-sky-400 block mb-1">Auditoria Gemini AI:</strong>
-                                {lastResult.biometria.justificativa}
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      </motion.div>
-                    ) : (
-                      <motion.div
-                        key="placeholder-card"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        className="bg-slate-900/60 border border-slate-800 rounded-2xl p-8 text-center text-slate-400"
-                      >
-                        <Clock className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-                        <h4 className="text-sm font-semibold text-slate-300 mb-1">Aguardando Marcação</h4>
-                        <p className="text-xs">Preencha o tipo de ponto, posicione sua localização e tire a selfie para registrar e confirmar.</p>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              </div>
-            ) : colabTab === "historico" ? (
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-                <h3 className="text-base font-bold text-white">Meu Histórico de Ponto ({currentColabUser.nome})</h3>
-                <div className="space-y-2">
-                  {registros
-                    .filter((r) => r.colaboradorId === currentColabUser.id)
-                    .map((reg) => (
-                      <div key={reg.id} className="bg-slate-950 p-4 rounded-xl border border-slate-800 flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-3">
-                          <img src={reg.selfieUrl} alt="" className="w-10 h-10 rounded-lg object-cover border border-slate-700" />
-                          <div>
-                            <span className="font-bold text-white block">{reg.tipo}</span>
-                            <span className="text-slate-400">{new Date(reg.timestamp).toLocaleString("pt-BR")}</span>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <span className={`px-2.5 py-1 rounded-full font-medium ${
-                            reg.status === "AProvado" ? "bg-emerald-500/10 text-emerald-400" : reg.status === "PENDENTE_APROVACAO_LOCAL" ? "bg-amber-500/10 text-amber-400" : reg.status === "MANUAL_ADM" ? "bg-sky-500/10 text-sky-400" : "bg-rose-500/10 text-rose-400"
-                          }`}>
-                            {reg.status}
-                          </span>
-                          <span className="block text-[11px] text-slate-400 mt-1">{reg.distanciaMetros}m da base</span>
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            ) : (
-              /* MEU PERFIL & FOTO DE REFERÊNCIA */
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl max-w-xl mx-auto space-y-6">
-                <div className="text-center">
-                  <h3 className="text-base font-bold text-white">Meu Perfil & Foto de Referência</h3>
-                  <p className="text-xs text-slate-400 mt-1">Cadastre ou atualize sua foto de perfil para a auditoria biométrica facial.</p>
-                </div>
-
-                <div className="flex flex-col items-center space-y-4">
-                  <img src={currentColabUser.fotoCadastro} alt="" className="w-28 h-28 rounded-2xl object-cover border-2 border-sky-500 shadow-xl" />
-                  <div className="text-center">
-                    <h4 className="text-sm font-bold text-white">{currentColabUser.nome}</h4>
-                    <p className="text-xs text-sky-400">{currentColabUser.cargo} • {currentColabUser.departamento}</p>
-                  </div>
-                </div>
-
-                <div className="space-y-4 pt-4 border-t border-slate-800 text-xs">
-                  <div>
-                    <label className="block text-slate-300 font-semibold mb-1">URL da Nova Foto de Referência</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={currentColabUser.fotoCadastro}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setCurrentColabUser({ ...currentColabUser, fotoCadastro: val });
-                          setColaboradores((prev) => prev.map((c) => c.id === currentColabUser.id ? { ...c, fotoCadastro: val } : c));
-                        }}
-                        className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white font-mono text-xs"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 text-center space-y-3">
-                    <p className="text-slate-300 font-medium">Ou tire uma foto usando a webcam agora:</p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        startCamera();
-                        addToast("success", "Câmera Ativada", "Posicione seu rosto para atualizar sua foto de referência.");
-                      }}
-                      className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-xl font-semibold"
-                    >
-                      Capturar Foto com Câmera
-                    </button>
-                    {cameraActive && (
-                      <div className="space-y-2 mt-3">
-                        <div className="relative rounded-lg overflow-hidden bg-black aspect-video flex items-center justify-center">
+                    {cameraActive ? (
+                      <div className="space-y-3">
+                        <div className="relative rounded-xl overflow-hidden bg-black border border-slate-800 aspect-video flex items-center justify-center">
                           <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline muted />
+                          <div className="absolute inset-0 border-2 border-dashed border-sky-500/50 rounded-xl pointer-events-none m-4 flex items-center justify-center">
+                            <div className="w-32 h-40 rounded-full border-2 border-sky-400/80 animate-pulse"></div>
+                          </div>
                         </div>
                         <button
                           type="button"
-                          onClick={() => {
-                            if (videoRef.current) {
-                              const canvas = document.createElement("canvas");
-                              canvas.width = 640;
-                              canvas.height = 480;
-                              const ctx = canvas.getContext("2d");
-                              if (ctx) {
-                                ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-                                const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
-                                setCurrentColabUser({ ...currentColabUser, fotoCadastro: dataUrl });
-                                setColaboradores((prev) => prev.map((c) => c.id === currentColabUser.id ? { ...c, fotoCadastro: dataUrl } : c));
-                                stopCamera();
-                                addToast("success", "Foto Atualizada", "Sua foto de referência foi atualizada com sucesso!");
-                              }
-                            }
-                          }}
-                          className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-semibold"
+                          onClick={captureSelfie}
+                          className="w-full py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl font-semibold flex items-center justify-center gap-2"
                         >
-                          Salvar Esta Foto como Referência
+                          <Camera className="w-4 h-4" /> Capturar Foto para Ponto
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="relative rounded-xl overflow-hidden bg-slate-950 border border-slate-800 aspect-video flex items-center justify-center">
+                          {selfieDataUrl ? (
+                            <img src={selfieDataUrl} alt="Selfie" className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="text-center p-4">
+                              <img src={currentColabUser.fotoCadastro} alt="" className="w-20 h-20 rounded-full object-cover mx-auto mb-2 border-2 border-sky-500/50 shadow-lg" />
+                              <p className="text-xs text-slate-400">Usando foto de perfil cadastrada para validação facial por IA.</p>
+                            </div>
+                          )}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={startCamera}
+                          className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-sky-300 rounded-xl font-semibold border border-slate-700 flex items-center justify-center gap-2"
+                        >
+                          <Camera className="w-4 h-4" /> Ativar Câmera para Nova Selfie
                         </button>
                       </div>
                     )}
                   </div>
 
+                  {lastResult && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className={`p-5 rounded-2xl border text-xs space-y-2 ${
+                        lastResult.success ? "bg-sky-950/60 border-sky-500/40 text-sky-100" : "bg-rose-950/60 border-rose-500/40 text-rose-100"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between font-bold">
+                        <span className="flex items-center gap-1.5">
+                          {lastResult.success ? <CheckCircle2 className="w-4 h-4 text-sky-400" /> : <XCircle className="w-4 h-4 text-rose-400" />}
+                          {lastResult.mensagem}
+                        </span>
+                        <span className="font-mono">{lastResult.distancia}m da base</span>
+                      </div>
+                      <p className="text-slate-300 leading-relaxed bg-slate-950/50 p-3 rounded-xl border border-slate-900">
+                        {lastResult.justificativaBiometrica}
+                      </p>
+                    </motion.div>
+                  )}
+                </div>
+              </div>
+            ) : colabTab === "historico" ? (
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+                <h3 className="text-base font-bold text-white mb-4">Meus Registros de Ponto Recentes</h3>
+                <div className="space-y-3">
+                  {registros.filter(r => r.colaboradorId === currentColabUser.id).length === 0 ? (
+                    <p className="text-xs text-slate-400 py-6 text-center">Nenhum registro encontrado.</p>
+                  ) : (
+                    registros.filter(r => r.colaboradorId === currentColabUser.id).map((reg) => (
+                      <div key={reg.id} className="bg-slate-950 border border-slate-800 p-4 rounded-xl flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold ${
+                            reg.tipo === "ENTRADA" ? "bg-emerald-500/20 text-emerald-400" : reg.tipo === "SAIDA" ? "bg-sky-500/20 text-sky-400" : "bg-amber-500/20 text-amber-400"
+                          }`}>
+                            {reg.tipo[0]}
+                          </div>
+                          <div>
+                            <span className="font-bold text-white text-sm block">{reg.tipo}</span>
+                            <span className="text-slate-400">{new Date(reg.timestamp).toLocaleString("pt-BR")}</span>
+                            <span className="block text-[11px] text-sky-400 mt-0.5">Distância GPS: {reg.distanciaMetros}m</span>
+                          </div>
+                        </div>
+                        <span className={`px-3 py-1 rounded-full font-bold ${
+                          reg.status === "AProvado" ? "bg-emerald-500/20 text-emerald-300" : "bg-amber-500/20 text-amber-300"
+                        }`}>
+                          {reg.status}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl max-w-xl mx-auto space-y-6">
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <User className="w-5 h-5 text-sky-400" /> Meu Perfil & Foto Biométrica
+                </h3>
+
+                <div className="flex items-center space-x-4 bg-slate-950 p-4 rounded-xl border border-slate-800">
+                  <img src={currentColabUser.fotoCadastro} alt="" className="w-16 h-16 rounded-2xl object-cover border-2 border-sky-500/50" />
+                  <div>
+                    <h4 className="text-sm font-bold text-white">{currentColabUser.nome}</h4>
+                    <p className="text-xs text-sky-400">{currentColabUser.cargo} • {currentColabUser.departamento}</p>
+                  </div>
+                </div>
+
+                <div className="space-y-4 text-xs">
+                  <div>
+                    <label className="block text-slate-300 font-semibold mb-1">URL da Nova Foto de Referência (Selfie / Perfil)</label>
+                    <input
+                      type="url"
+                      value={currentColabUser.fotoCadastro}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setCurrentColabUser({ ...currentColabUser, fotoCadastro: val });
+                      }}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white"
+                    />
+                  </div>
+
                   <button
-                    onClick={() => addToast("success", "Perfil Salvo", "Suas informações de perfil e foto foram salvas com sucesso.")}
+                    onClick={async () => {
+                      try {
+                        await setDoc(doc(db, "colaboradores", currentColabUser.id), currentColabUser);
+                        addToast("success", "Perfil Atualizado", "Sua foto de referência biométrica foi salva com sucesso.");
+                      } catch (err) {
+                        handleFirestoreError(err, OperationType.WRITE, "colaboradores");
+                      }
+                    }}
                     className="w-full py-3 bg-sky-600 hover:bg-sky-500 text-white rounded-xl font-semibold shadow-md shadow-sky-600/30"
                   >
-                    Salvar Alterações de Perfil
+                    Salvar Perfil & Foto
                   </button>
                 </div>
               </div>
@@ -1415,75 +1423,75 @@ export default function App() {
         </div>
       )}
 
-      {/* CHRONOLOGY STATE 5: ADMINISTRADOR COM PAINEL LATERAL (SIDEBAR) */}
+      {/* CHRONOLOGY STATE 5, 6, 7, 8: PAINEL ADMINISTRATIVO (RH) */}
       {authRole === "adm" && (
         <div className="flex-1 flex flex-col md:flex-row">
-          {/* SIDEBAR LATERAL */}
-          <aside className="w-full md:w-72 bg-slate-900/90 border-r border-slate-800 p-6 flex flex-col justify-between shrink-0">
+          {/* SIDEBAR ADM */}
+          <aside className="w-full md:w-64 bg-slate-900 border-r border-slate-800 p-6 flex flex-col justify-between">
             <div className="space-y-6">
               <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-sky-600 to-blue-600 flex items-center justify-center text-white font-black shadow-lg shadow-sky-600/30">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-sky-600 to-blue-500 flex items-center justify-center text-white font-black">
                   A&C
                 </div>
                 <div>
-                  <h1 className="text-sm font-bold text-white">Ponto A&C</h1>
-                  <p className="text-[11px] text-sky-400">Painel do Administrador</p>
+                  <h2 className="text-sm font-bold text-white">Painel Gestor RH</h2>
+                  <p className="text-[10px] text-sky-400">Ponto A&C — Admin</p>
                 </div>
               </div>
 
-              <nav className="space-y-1.5 text-xs">
+              <nav className="space-y-1.5 text-xs font-medium">
                 <button
                   onClick={() => setAdmTab("colaboradores")}
-                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium transition-all ${
-                    admTab === "colaboradores" ? "bg-sky-600 text-white shadow-lg shadow-sky-600/30" : "text-slate-300 hover:bg-slate-800"
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all ${
+                    admTab === "colaboradores" ? "bg-sky-600 text-white shadow-lg shadow-sky-600/20" : "text-slate-300 hover:bg-slate-800"
                   }`}
                 >
                   <Users className="w-4 h-4" /> Cadastro de Usuários
                 </button>
                 <button
                   onClick={() => setAdmTab("criterios")}
-                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium transition-all ${
-                    admTab === "criterios" ? "bg-sky-600 text-white shadow-lg shadow-sky-600/30" : "text-slate-300 hover:bg-slate-800"
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all ${
+                    admTab === "criterios" ? "bg-sky-600 text-white shadow-lg shadow-sky-600/20" : "text-slate-300 hover:bg-slate-800"
                   }`}
                 >
                   <Calendar className="w-4 h-4" /> Escalas por Dia
                 </button>
                 <button
                   onClick={() => setAdmTab("lancamento-manual")}
-                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium transition-all ${
-                    admTab === "lancamento-manual" ? "bg-sky-600 text-white shadow-lg shadow-sky-600/30" : "text-slate-300 hover:bg-slate-800"
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all ${
+                    admTab === "lancamento-manual" ? "bg-sky-600 text-white shadow-lg shadow-sky-600/20" : "text-slate-300 hover:bg-slate-800"
                   }`}
                 >
                   <PlusCircle className="w-4 h-4" /> Lançamento Manual
                 </button>
                 <button
                   onClick={() => setAdmTab("banco-horas")}
-                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium transition-all ${
-                    admTab === "banco-horas" ? "bg-sky-600 text-white shadow-lg shadow-sky-600/30" : "text-slate-300 hover:bg-slate-800"
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all ${
+                    admTab === "banco-horas" ? "bg-sky-600 text-white shadow-lg shadow-sky-600/20" : "text-slate-300 hover:bg-slate-800"
                   }`}
                 >
-                  <Award className="w-4 h-4" /> Saldo Inicial & Banco
+                  <DollarSign className="w-4 h-4" /> Banco de Horas (Set.)
                 </button>
                 <button
                   onClick={() => setAdmTab("localizacao")}
-                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium transition-all ${
-                    admTab === "localizacao" ? "bg-sky-600 text-white shadow-lg shadow-sky-600/30" : "text-slate-300 hover:bg-slate-800"
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all ${
+                    admTab === "localizacao" ? "bg-sky-600 text-white shadow-lg shadow-sky-600/20" : "text-slate-300 hover:bg-slate-800"
                   }`}
                 >
                   <MapPin className="w-4 h-4" /> Geolocalização & Alfinete
                 </button>
                 <button
                   onClick={() => setAdmTab("aprovacoes")}
-                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium transition-all ${
-                    admTab === "aprovacoes" ? "bg-sky-600 text-white shadow-lg shadow-sky-600/30" : "text-slate-300 hover:bg-slate-800"
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all ${
+                    admTab === "aprovacoes" ? "bg-sky-600 text-white shadow-lg shadow-sky-600/20" : "text-slate-300 hover:bg-slate-800"
                   }`}
                 >
-                  <Bell className="w-4 h-4" /> Aprovações Pendentes
+                  <ShieldAlert className="w-4 h-4" /> Aprovações
                 </button>
                 <button
                   onClick={() => setAdmTab("sede")}
-                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium transition-all ${
-                    admTab === "sede" ? "bg-sky-600 text-white shadow-lg shadow-sky-600/30" : "text-slate-300 hover:bg-slate-800"
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all ${
+                    admTab === "sede" ? "bg-sky-600 text-white shadow-lg shadow-sky-600/20" : "text-slate-300 hover:bg-slate-800"
                   }`}
                 >
                   <Building2 className="w-4 h-4" /> Sede Geral
@@ -1494,110 +1502,111 @@ export default function App() {
             <div className="pt-6 border-t border-slate-800">
               <button
                 onClick={() => setAuthRole("login")}
-                className="w-full py-2.5 bg-slate-950 hover:bg-slate-800 text-rose-400 rounded-xl font-semibold text-xs border border-slate-800 flex items-center justify-center gap-2 transition-colors"
+                className="w-full py-2.5 bg-slate-950 hover:bg-rose-950/40 text-slate-300 hover:text-rose-400 rounded-xl font-medium text-xs border border-slate-800 flex items-center justify-center gap-2 transition-colors"
               >
-                <LogOut className="w-4 h-4" /> Sair do Painel ADM
+                <LogOut className="w-3.5 h-3.5" /> Sair do Painel ADM
               </button>
             </div>
           </aside>
 
-          {/* CONTEÚDO PRINCIPAL DO PAINEL ADM */}
-          <main className="flex-1 p-6 md:p-10 overflow-y-auto space-y-6">
-            {/* CADASTRO E LISTAGEM DE USUÁRIOS (COLABORADORES) */}
+          {/* MAIN ADM CONTENT */}
+          <main className="flex-1 p-6 md:p-10 max-w-6xl w-full">
             {admTab === "colaboradores" && (
-              <div className="space-y-6 max-w-4xl">
-                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+              <div className="space-y-8">
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl max-w-2xl">
                   <h3 className="text-base font-bold text-white mb-2 flex items-center gap-2">
-                    <UserPlus className="w-5 h-5 text-sky-400" /> Cadastrar Novo Usuário / Colaborador
+                    <UserPlus className="w-5 h-5 text-sky-400" /> Cadastrar Novo Colaborador
                   </h3>
                   <p className="text-xs text-slate-400 mb-6">
-                    Insira os dados do colaborador para habilitá-lo no sistema. Cada colaborador poderá cadastrar/atualizar sua própria foto de perfil ao fazer o primeiro login.
+                    Adicione um novo colaborador ao sistema Ponto A&C com foto de referência biométrica para IA.
                   </p>
 
                   <form onSubmit={handleAddColaborador} className="space-y-4 text-xs">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-slate-300 font-semibold mb-1.5">Nome Completo</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ex: João da Silva"
+                        value={novoNome}
+                        onChange={(e) => setNovoNome(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-slate-300 font-semibold mb-1">Nome Completo</label>
+                        <label className="block text-slate-400 mb-1 font-semibold">Cargo</label>
                         <input
                           type="text"
-                          required
-                          placeholder="Ex: Ana Beatriz Souza"
-                          value={novoNome}
-                          onChange={(e) => setNovoNome(e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white"
+                          placeholder="Ex: Técnico em Segurança"
+                          value={novoCargo}
+                          onChange={(e) => setNovoCargo(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white"
                         />
                       </div>
                       <div>
-                        <label className="block text-slate-300 font-semibold mb-1">Cargo / Função</label>
+                        <label className="block text-slate-400 mb-1 font-semibold">Departamento</label>
                         <input
                           type="text"
-                          placeholder="Ex: Desenvolvedora Sênior"
-                          value={novoCargo}
-                          onChange={(e) => setNovoCargo(e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white"
+                          placeholder="Ex: Operações"
+                          value={novoDep}
+                          onChange={(e) => setNovoDep(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white"
                         />
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-slate-300 font-semibold mb-1">Departamento</label>
-                        <input
-                          type="text"
-                          placeholder="Ex: Engenharia"
-                          value={novoDep}
-                          onChange={(e) => setNovoDep(e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-slate-300 font-semibold mb-1">Foto Inicial (Opcional)</label>
-                        <input
-                          type="text"
-                          value={novaFotoUrl}
-                          onChange={(e) => setNovaFotoUrl(e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white font-mono"
-                        />
-                      </div>
+                    <div>
+                      <label className="block text-slate-400 mb-1 font-semibold">URL da Foto de Perfil / Biometria</label>
+                      <input
+                        type="url"
+                        value={novaFotoUrl}
+                        onChange={(e) => setNovaFotoUrl(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white"
+                      />
                     </div>
 
                     <button
                       type="submit"
-                      className="w-full py-3 bg-sky-600 hover:bg-sky-500 text-white rounded-xl font-semibold shadow-md shadow-sky-600/30 flex items-center justify-center gap-2"
+                      className="w-full py-3 bg-sky-600 hover:bg-sky-500 text-white rounded-xl font-semibold shadow-md shadow-sky-600/30"
                     >
-                      <UserPlus className="w-4 h-4" /> Cadastrar Colaborador no Sistema
+                      Cadastrar Colaborador
                     </button>
                   </form>
                 </div>
 
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
-                  <h3 className="text-base font-bold text-white mb-4 flex items-center gap-2">
-                    <Users className="w-5 h-5 text-sky-400" /> Colaboradores Cadastrados Ativos ({colaboradores.length})
-                  </h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {colaboradores.map((c) => (
-                      <div key={c.id} className="bg-slate-950 p-4 rounded-xl border border-slate-800 flex items-center gap-3">
-                        <img src={c.fotoCadastro} alt="" className="w-12 h-12 rounded-xl object-cover border border-sky-500/40" />
-                        <div className="flex-1 min-w-0">
-                          <h4 className="text-sm font-bold text-white truncate">{c.nome}</h4>
-                          <p className="text-xs text-sky-400">{c.cargo}</p>
-                          <p className="text-[11px] text-slate-400">{c.departamento} • ID: {c.id}</p>
+                  <h3 className="text-base font-bold text-white mb-4">Colaboradores Ativos ({colaboradores.length})</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                    {colaboradores.map((colab, index) => (
+                      <motion.div
+                        key={colab.id}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.3, delay: index * 0.08 }}
+                        className="bg-slate-950 border border-slate-800 p-4 rounded-xl flex items-center space-x-3 shadow-lg"
+                      >
+                        <img src={colab.fotoCadastro} alt="" className="w-12 h-12 rounded-xl object-cover border border-sky-500/40" />
+                        <div>
+                          <h4 className="font-bold text-white text-sm">{colab.nome}</h4>
+                          <p className="text-sky-400">{colab.cargo}</p>
+                          <span className="text-[10px] text-slate-400">{colab.departamento}</span>
                         </div>
-                      </div>
+                      </motion.div>
                     ))}
                   </div>
                 </div>
               </div>
             )}
 
-            {/* 1. ESCALAS POR DIA DA SEMANA */}
             {admTab === "criterios" && (
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl max-w-4xl">
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl max-w-3xl">
                 <h3 className="text-base font-bold text-white mb-2 flex items-center gap-2">
-                  <Sliders className="w-5 h-5 text-sky-400" /> Horários Diferenciados por Dia da Semana (Escala Personalizada)
+                  <Calendar className="w-5 h-5 text-sky-400" /> Escalas por Dia da Semana (Horários Diferenciados)
                 </h3>
                 <p className="text-xs text-slate-400 mb-6">
-                  Configure horários de entrada, intervalo e saída específicos para cada dia (ex: Segunda das 06:00 às 17:00, Terça das 08:30 às 19:00).
+                  Configure jornadas de trabalho específicas para cada dia da semana (ex: Segunda das 06h às 17h, Terça das 08h30 às 19h).
                 </p>
 
                 <div className="space-y-6 text-xs">
@@ -2093,18 +2102,24 @@ export default function App() {
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl max-w-xl">
                 <h3 className="text-base font-bold text-white mb-4">Configuração Geral da Sede & Geofencing</h3>
                 <form onSubmit={handleSaveSede} className="space-y-3 text-xs">
-                  <input
-                    type="text"
-                    value={sede.nome}
-                    onChange={(e) => setSede({ ...sede, nome: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white"
-                  />
-                  <input
-                    type="number"
-                    value={sede.raioMaximoMetros}
-                    onChange={(e) => setSede({ ...sede, raioMaximoMetros: parseFloat(e.target.value) })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white"
-                  />
+                  <div>
+                    <label className="block text-slate-400 mb-1 font-semibold">Nome da Sede</label>
+                    <input
+                      type="text"
+                      value={sede.nome}
+                      onChange={(e) => setSede({ ...sede, nome: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-400 mb-1 font-semibold">Raio Máximo (Metros)</label>
+                    <input
+                      type="number"
+                      value={sede.raioMaximoMetros}
+                      onChange={(e) => setSede({ ...sede, raioMaximoMetros: parseFloat(e.target.value) })}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono"
+                    />
+                  </div>
                   <button type="submit" className="w-full py-2.5 bg-sky-600 text-white rounded-xl font-semibold">Salvar Sede Geral</button>
                 </form>
               </div>

@@ -1,0 +1,99 @@
+{
+  "entities": {
+    "Colaborador": {
+      "title": "Colaborador",
+      "description": "Colaborador cadastrado no sistema Ponto A&C",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "nome": { "type": "string", "maxLength": 100 },
+        "cargo": { "type": "string", "maxLength": 100 },
+        "departamento": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "maxLength": 100 },
+        "senha": { "type": "string", "maxLength": 100 },
+        "foto": { "type": "string" }
+      },
+      "required": ["id", "nome", "cargo", "departamento", "email"]
+    },
+    "RegistroPonto": {
+      "title": "RegistroPonto",
+      "description": "Registro de ponto batido pelo colaborador",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "colaboradorId": { "type": "string" },
+        "colaboradorNome": { "type": "string" },
+        "tipo": { "type": "string" },
+        "dataHora": { "type": "string" },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" },
+        "localizacaoNome": { "type": "string" },
+        "status": { "type": "string" },
+        "distanciaSede": { "type": "number" },
+        "justificativa": { "type": "string" },
+        "foto": { "type": "string" }
+      },
+      "required": ["id", "colaboradorId", "tipo", "dataHora", "status"]
+    },
+    "Solicitacao": {
+      "title": "Solicitacao",
+      "description": "Solicitação de aprovação de ponto ou geolocalização fora do raio",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "colaboradorId": { "type": "string" },
+        "colaboradorNome": { "type": "string" },
+        "tipo": { "type": "string" },
+        "motivo": { "type": "string" },
+        "dataHora": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "colaboradorId", "tipo", "status"]
+    },
+    "Configuracao": {
+      "title": "Configuracao",
+      "description": "Configurações gerais do sistema e sede",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "nomeSede": { "type": "string" },
+        "latSede": { "type": "number" },
+        "lonSede": { "type": "number" },
+        "raioMaximo": { "type": "number" }
+      },
+      "required": ["id"]
+    },
+    "Escala": {
+      "title": "Escala",
+      "description": "Escala de horários por colaborador",
+      "type": "object",
+      "properties": {
+        "colaboradorId": { "type": "string" },
+        "toleranciaMinutos": { "type": "number" }
+      },
+      "required": ["colaboradorId"]
+    }
+  },
+  "firestore": {
+    "/colaboradores/{colaboradorId}": {
+      "schema": { "$ref": "#/entities/Colaborador" },
+      "description": "Coleção de colaboradores"
+    },
+    "/registros/{registroId}": {
+      "schema": { "$ref": "#/entities/RegistroPonto" },
+      "description": "Coleção de registros de ponto"
+    },
+    "/solicitacoes/{solicitacaoId}": {
+      "schema": { "$ref": "#/entities/Solicitacao" },
+      "description": "Coleção de solicitações de aprovação"
+    },
+    "/configuracoes/{configId}": {
+      "schema": { "$ref": "#/entities/Configuracao" },
+      "description": "Coleção de configurações"
+    },
+    "/escalas/{escalaId}": {
+      "schema": { "$ref": "#/entities/Escala" },
+      "description": "Coleção de escalas"
+    }
+  }
+}
