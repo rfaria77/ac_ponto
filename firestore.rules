@@ -1,84 +1,8 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
-    }
-
-    function isValidColaborador(data) {
-      return data.keys().hasAll(['id', 'nome', 'cargo', 'departamento']) &&
-             data.keys().hasOnly(['id', 'nome', 'cargo', 'departamento', 'email', 'senha', 'mustChangePassword', 'foto', 'fotoCadastro', 'localPermitido']) &&
-             data.id is string && data.id.size() <= 128 &&
-             data.nome is string && data.nome.size() <= 100 &&
-             data.cargo is string && data.cargo.size() <= 100 &&
-             data.departamento is string && data.departamento.size() <= 100;
-    }
-
-    function isValidRegistro(data) {
-      return data.keys().hasAll(['id', 'colaboradorId', 'tipo', 'status']) &&
-             data.keys().hasOnly(['id', 'colaboradorId', 'colaboradorNome', 'timestamp', 'dataHora', 'tipo', 'status', 'distanciaMetros', 'confiancaBiometrica', 'ehFotoAoVivo', 'justificativa', 'selfieUrl', 'foto', 'latitude', 'longitude', 'localizacaoNome', 'distanciaSede']) &&
-             data.id is string && data.id.size() <= 128 &&
-             data.colaboradorId is string && data.colaboradorId.size() <= 128 &&
-             data.tipo is string && data.tipo.size() <= 50 &&
-             data.status is string && data.status.size() <= 50;
-    }
-
-    function isValidSolicitacao(data) {
-      return data.keys().hasAll(['id', 'colaboradorId', 'tipo', 'status']) &&
-             data.keys().hasOnly(['id', 'colaboradorId', 'colaboradorNome', 'tipo', 'motivo', 'dataHora', 'dataSolicitacao', 'status']) &&
-             data.id is string && data.id.size() <= 128 &&
-             data.colaboradorId is string && data.colaboradorId.size() <= 128 &&
-             data.tipo is string && data.tipo.size() <= 50 &&
-             data.status is string && data.status.size() <= 50;
-    }
-
-    function isValidConfig(data) {
-      return data.keys().hasAll(['id']) &&
-             data.keys().hasOnly(['id', 'nome', 'lat', 'lon', 'raioMaximoMetros', 'nomeSede', 'latSede', 'lonSede', 'raioMaximo']);
-    }
-
-    function isValidEscala(data) {
-      return data.keys().hasAll(['colaboradorId']) &&
-             data.keys().hasOnly(['colaboradorId', 'dias', 'toleranciaMinutos']);
-    }
-
     match /{document=**} {
-      allow read, write: if false;
-    }
-
-    match /colaboradores/{colaboradorId} {
-      allow read: if isSignedIn();
-      allow create, update: if isSignedIn() && isValidColaborador(request.resource.data);
-      allow delete: if isSignedIn();
-    }
-
-    match /registros/{registroId} {
-      allow read: if isSignedIn();
-      allow create, update: if isSignedIn() && isValidRegistro(request.resource.data);
-      allow delete: if isSignedIn();
-    }
-
-    match /solicitacoes/{solicitacaoId} {
-      allow read: if isSignedIn();
-      allow create, update: if isSignedIn() && isValidSolicitacao(request.resource.data);
-      allow delete: if isSignedIn();
-    }
-
-    match /configuracoes/{configId} {
-      allow read: if isSignedIn();
-      allow create, update: if isSignedIn() && isValidConfig(request.resource.data);
-      allow delete: if isSignedIn();
-    }
-
-    match /escalas/{escalaId} {
-      allow read: if isSignedIn();
-      allow create, update: if isSignedIn() && isValidEscala(request.resource.data);
-      allow delete: if isSignedIn();
+      allow read, write: if true;
     }
   }
 }

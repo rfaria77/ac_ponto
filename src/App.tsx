@@ -158,6 +158,8 @@ export default function App() {
   const [showAdminLoginModal, setShowAdminLoginModal] = useState(false);
   const [adminEmailInput, setAdminEmailInput] = useState("");
   const [adminSenhaInput, setAdminSenhaInput] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [adminLoginError, setAdminLoginError] = useState("");
 
   const [installModal, setInstallModal] = useState<"android" | "ios" | null>(null);
 
@@ -623,8 +625,10 @@ export default function App() {
       setShowAdminLoginModal(false);
       setAdminSenhaInput("");
       setAdminEmailInput("");
+      setAdminLoginError("");
       addToast("success", "Painel ADM Acessado", "Bem-vindo ao painel administrativo A&C.");
     } else {
+      setAdminLoginError("Usuário ou senha de administrador incorretos.");
       addToast("error", "Credenciais Inválidas", "Usuário ou senha de administrador incorretos.");
     }
   };
@@ -668,9 +672,11 @@ export default function App() {
     if (!currentColabUser) return;
     const correctPassword = currentColabUser.senha || "AC2026@";
     if (loginSenha !== correctPassword && loginSenha !== "AC2026@") {
+      setLoginError("Senha incorreta! A senha padrão inicial é AC2026@.");
       addToast("error", "Senha Incorreta", "A senha digitada está incorreta. A senha padrão inicial é AC2026@.");
       return;
     }
+    setLoginError("");
     if (currentColabUser.mustChangePassword || loginSenha === "AC2026@") {
       setShowChangePasswordModal(true);
     } else {
@@ -1013,6 +1019,12 @@ export default function App() {
             </div>
 
             <form onSubmit={handleAdminLoginSubmit} className="space-y-4 text-xs">
+              {adminLoginError && (
+                <div className="bg-rose-500/10 border border-rose-500/30 text-rose-300 p-3 rounded-xl flex items-center gap-2 text-xs">
+                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                  <span>{adminLoginError}</span>
+                </div>
+              )}
               <div>
                 <label className="block text-slate-300 font-semibold mb-1">Usuário Administrador</label>
                 <input
@@ -1173,6 +1185,12 @@ export default function App() {
             </div>
 
             <div className="space-y-4 text-xs">
+              {loginError && (
+                <div className="bg-rose-500/10 border border-rose-500/30 text-rose-300 p-3 rounded-xl flex items-center gap-2 text-xs mb-4">
+                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                  <span>{loginError}</span>
+                </div>
+              )}
               <div>
                 <label className="block text-slate-300 font-semibold mb-1">E-mail ou Usuário</label>
                 <input
