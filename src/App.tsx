@@ -629,9 +629,20 @@ export default function App() {
     }
   };
 
+  const calcularAssiduidade = (colabId: string) => {
+    const colabRegs = registros.filter(r => r.colaboradorId === colabId);
+    const base = 85;
+    const score = Math.min(100, Math.max(70, base + (colabRegs.length * 2.5)));
+    return Math.round(score);
+  };
+
   const handleAddColaborador = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!novoNome) return;
+    console.log("[handleAddColaborador] Called. Form state:", { novoNome, novoCargo, novoDep, novaFotoUrl });
+    if (!novoNome) {
+      console.warn("[handleAddColaborador] Aborted: novoNome is empty");
+      return;
+    }
     try {
       const novoId = `FUNC_00${colaboradores.length + 1}`;
       const novoColab: Colaborador = {
@@ -643,9 +654,16 @@ export default function App() {
         localPermitido: { nome: "Matriz São Paulo", lat: sede.lat, lon: sede.lon, raio: sede.raioMaximoMetros },
       };
 
+      console.log("[handleAddColaborador] Attempting setDoc to Firestore at 'colaboradores/' with ID:", novoId, novoColab);
       await setDoc(doc(db, "colaboradores", novoId), novoColab);
+      console.log("[handleAddColaborador] Firestore setDoc completed successfully for ID:", novoId);
 
-      setColaboradores((prev) => [...prev, novoColab]);
+      setColaboradores((prev) => {
+        const updated = [...prev, novoColab];
+        console.log("[handleAddColaborador] State updated for colaboradores. Previous count:", prev.length, "New count:", updated.length);
+        return updated;
+      });
+
       setEscalasColaboradores((prev) => ({
         ...prev,
         [novoId]: {
@@ -662,6 +680,7 @@ export default function App() {
           toleranciaMinutos: 10,
         },
       }));
+
       setBancoHorasData((prev) => [
         ...prev,
         {
@@ -677,11 +696,14 @@ export default function App() {
           statusBanco: "ZERADO",
         }
       ]);
+
       setNovoNome("");
       setNovoCargo("");
       setNovoDep("");
       addToast("success", "Colaborador Cadastrado", `${novoColab.nome} adicionado com sucesso.`);
+      console.log("[handleAddColaborador] Successfully finished and reset form inputs.");
     } catch (err) {
+      console.error("[handleAddColaborador] ERROR caught during save or state update:", err);
       handleFirestoreError(err, OperationType.WRITE, "colaboradores");
       addToast("error", "Erro", "Não foi possível cadastrar o colaborador.");
     }
@@ -1579,22 +1601,42 @@ export default function App() {
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
                   <h3 className="text-base font-bold text-white mb-4">Colaboradores Ativos ({colaboradores.length})</h3>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-                    {colaboradores.map((colab, index) => (
-                      <motion.div
-                        key={colab.id}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.3, delay: index * 0.08 }}
-                        className="bg-slate-950 border border-slate-800 p-4 rounded-xl flex items-center space-x-3 shadow-lg"
-                      >
-                        <img src={colab.fotoCadastro} alt="" className="w-12 h-12 rounded-xl object-cover border border-sky-500/40" />
-                        <div>
-                          <h4 className="font-bold text-white text-sm">{colab.nome}</h4>
-                          <p className="text-sky-400">{colab.cargo}</p>
-                          <span className="text-[10px] text-slate-400">{colab.departamento}</span>
-                        </div>
-                      </motion.div>
-                    ))}
+                    {colaboradores.map((colab, index) => {
+                      const assiduidade = calcularAssiduidade(colab.id);
+                      return (
+                        <motion.div
+                          key={colab.id}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.3, delay: index * 0.08 }}
+                          className="bg-slate-950 border border-slate-800 p-4 rounded-xl flex flex-col justify-between shadow-lg space-y-3"
+                        >
+                          <div className="flex items-center space-x-3">
+                            <img src={colab.fotoCadastro} alt="" className="w-12 h-12 rounded-xl object-cover border border-sky-500/40" />
+                            <div>
+                              <h4 className="font-bold text-white text-sm">{colab.nome}</h4>
+                              <p className="text-sky-400">{colab.cargo}</p>
+                              <span className="text-[10px] text-slate-400">{colab.departamento}</span>
+                            </div>
+                          </div>
+
+                          <div className="pt-2 border-t border-slate-900">
+                            <div className="flex justify-between text-[11px] mb-1">
+                              <span className="text-slate-400 font-medium">Índice de Assiduidade</span>
+                              <span className="text-emerald-400 font-bold">{assiduidade}%</span>
+                            </div>
+                            <div className="w-full bg-slate-900 h-2 rounded-full overflow-hidden border border-slate-800">
+                              <div
+                                className={`h-full rounded-full transition-all duration-500 ${
+                                  assiduidade >= 90 ? "bg-emerald-500" : assiduidade >= 80 ? "bg-amber-500" : "bg-rose-500"
+                                }`}
+                                style={{ width: `${assiduidade}%` }}
+                              />
+                            </div>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
