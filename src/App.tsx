@@ -56,6 +56,7 @@ interface Colaborador {
   nome: string;
   cargo: string;
   departamento: string;
+  email?: string;
   fotoCadastro: string;
   senha?: string;
   mustChangePassword?: boolean;
@@ -329,6 +330,7 @@ export default function App() {
   const [novoNome, setNovoNome] = useState("");
   const [novoCargo, setNovoCargo] = useState("");
   const [novoDep, setNovoDep] = useState("");
+  const [novoEmail, setNovoEmail] = useState("");
   const [novaFotoUrl, setNovaFotoUrl] = useState("https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80");
 
   // Firestore Real-Time Synchronization & Seeding
@@ -397,6 +399,7 @@ export default function App() {
           nome: "Thais Moreira de Souza",
           cargo: "Assistente de coletas",
           departamento: "Operações / Coletas",
+          email: "thais.souza@ac-saude.com.br",
           fotoCadastro: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400&auto=format&fit=crop&q=80",
           senha: "AC2026@",
           mustChangePassword: true,
@@ -407,6 +410,7 @@ export default function App() {
           nome: "Marcos Vinicius Ferreira Mendes",
           cargo: "Assistente de segurança do Trabalho",
           departamento: "Segurança do Trabalho",
+          email: "marcos.mendes@ac-saude.com.br",
           fotoCadastro: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80",
           senha: "AC2026@",
           mustChangePassword: true,
@@ -417,6 +421,7 @@ export default function App() {
           nome: "Amanda Inácio Medeiros Silva",
           cargo: "Assistente Administrativo",
           departamento: "Administrativo",
+          email: "amanda.silva@ac-saude.com.br",
           fotoCadastro: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80",
           senha: "AC2026@",
           mustChangePassword: true,
@@ -427,6 +432,7 @@ export default function App() {
           nome: "Denise Cristina Fernandes Costa Felip",
           cargo: "Técnico em segurança do Trabalho JR",
           departamento: "Segurança do Trabalho",
+          email: "denise.felip@ac-saude.com.br",
           fotoCadastro: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=400&auto=format&fit=crop&q=80",
           senha: "AC2026@",
           mustChangePassword: true,
@@ -729,6 +735,7 @@ export default function App() {
         nome: novoNome,
         cargo: novoCargo || "Colaborador",
         departamento: novoDep || "Geral",
+        email: novoEmail || `${novoNome.toLowerCase().replace(/\s+/g, '.')}@ac-saude.com.br`,
         fotoCadastro: novaFotoUrl,
         senha: "AC2026@",
         mustChangePassword: true,
@@ -781,6 +788,7 @@ export default function App() {
       setNovoNome("");
       setNovoCargo("");
       setNovoDep("");
+      setNovoEmail("");
       addToast("success", "Colaborador Cadastrado", `${novoColab.nome} adicionado com sucesso.`);
       console.log("[handleAddColaborador] Successfully finished and reset form inputs.");
     } catch (err) {
@@ -1693,6 +1701,18 @@ export default function App() {
                       />
                     </div>
 
+                    <div>
+                      <label className="block text-slate-300 font-semibold mb-1.5">E-mail Profissional</label>
+                      <input
+                        type="email"
+                        required
+                        placeholder="Ex: colaborador@ac-saude.com.br"
+                        value={novoEmail}
+                        onChange={(e) => setNovoEmail(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white"
+                      />
+                    </div>
+
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-slate-400 mb-1 font-semibold">Cargo</label>
@@ -1753,7 +1773,8 @@ export default function App() {
                             <div>
                               <h4 className="font-bold text-white text-sm">{colab.nome}</h4>
                               <p className="text-sky-400">{colab.cargo}</p>
-                              <span className="text-[10px] text-slate-400">{colab.departamento}</span>
+                              <span className="text-[10px] text-slate-400 block">{colab.departamento}</span>
+                              {colab.email && <span className="text-[10px] text-slate-400 font-mono block">{colab.email}</span>}
                             </div>
                           </div>
 

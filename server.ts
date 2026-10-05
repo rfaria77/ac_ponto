@@ -332,15 +332,21 @@ app.post("/api/registrar-ponto", async (req, res) => {
   }
 });
 
-// Vite middleware setup for development
-const vite = await createViteServer({
-  server: { middlewareMode: true },
-  appType: "spa",
-});
+// Vite middleware setup for development vs production static serving
+if (process.env.NODE_ENV === "production") {
+  app.use(express.static(path.join(__dirname, "dist")));
+  app.get("*", (req, res) => {
+    res.sendFile(path.join(__dirname, "dist", "index.html"));
+  });
+} else {
+  const vite = await createViteServer({
+    server: { middlewareMode: true },
+    appType: "spa",
+  });
+  app.use(vite.middlewares);
+}
 
-app.use(vite.middlewares);
-
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 PontoFácil AI rodando na porta ${PORT}`);
 });
