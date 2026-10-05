@@ -12,7 +12,7 @@ service cloud.firestore {
 
     function isValidColaborador(data) {
       return data.keys().hasAll(['id', 'nome', 'cargo', 'departamento']) &&
-             data.keys().hasOnly(['id', 'nome', 'cargo', 'departamento', 'email', 'senha', 'foto', 'fotoCadastro', 'localPermitido']) &&
+             data.keys().hasOnly(['id', 'nome', 'cargo', 'departamento', 'email', 'senha', 'mustChangePassword', 'foto', 'fotoCadastro', 'localPermitido']) &&
              data.id is string && data.id.size() <= 128 &&
              data.nome is string && data.nome.size() <= 100 &&
              data.cargo is string && data.cargo.size() <= 100 &&

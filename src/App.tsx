@@ -57,6 +57,8 @@ interface Colaborador {
   cargo: string;
   departamento: string;
   fotoCadastro: string;
+  senha?: string;
+  mustChangePassword?: boolean;
   localPermitido?: {
     nome: string;
     lat: number;
@@ -145,7 +147,11 @@ export default function App() {
 
   // Login credentials & biometric state
   const [loginEmail, setLoginEmail] = useState("colaborador@ac-saude.com.br");
-  const [loginSenha, setLoginSenha] = useState("••••••••");
+  const [loginSenha, setLoginSenha] = useState("AC2026@");
+
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+  const [newPasswordInput, setNewPasswordInput] = useState("");
+  const [confirmNewPasswordInput, setConfirmNewPasswordInput] = useState("");
 
   // Admin login modal state
   const [showAdminLoginModal, setShowAdminLoginModal] = useState(false);
@@ -388,26 +394,42 @@ export default function App() {
       const defaultColabs: Colaborador[] = [
         {
           id: "FUNC_001",
-          nome: "Ana Beatriz Souza",
-          cargo: "Desenvolvedora Sênior",
-          departamento: "Engenharia",
+          nome: "Thais Moreira de Souza",
+          cargo: "Assistente de coletas",
+          departamento: "Operações / Coletas",
           fotoCadastro: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400&auto=format&fit=crop&q=80",
+          senha: "AC2026@",
+          mustChangePassword: true,
           localPermitido: { nome: "Matriz São Paulo", lat: -23.550520, lon: -46.633308, raio: 150 },
         },
         {
           id: "FUNC_002",
-          nome: "Carlos Eduardo Lima",
-          cargo: "Analista de Suporte",
-          departamento: "Operações",
+          nome: "Marcos Vinicius Ferreira Mendes",
+          cargo: "Assistente de segurança do Trabalho",
+          departamento: "Segurança do Trabalho",
           fotoCadastro: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80",
+          senha: "AC2026@",
+          mustChangePassword: true,
           localPermitido: { nome: "Filial Paulista", lat: -23.561500, lon: -46.656000, raio: 150 },
         },
         {
           id: "FUNC_003",
-          nome: "Mariana Costa Silva",
-          cargo: "Gerente de Recursos Humanos",
-          departamento: "RH",
+          nome: "Amanda Inácio Medeiros Silva",
+          cargo: "Assistente Administrativo",
+          departamento: "Administrativo",
           fotoCadastro: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80",
+          senha: "AC2026@",
+          mustChangePassword: true,
+          localPermitido: { nome: "Matriz São Paulo", lat: -23.550520, lon: -46.633308, raio: 150 },
+        },
+        {
+          id: "FUNC_004",
+          nome: "Denise Cristina Fernandes Costa Felip",
+          cargo: "Técnico em segurança do Trabalho JR",
+          departamento: "Segurança do Trabalho",
+          fotoCadastro: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=400&auto=format&fit=crop&q=80",
+          senha: "AC2026@",
+          mustChangePassword: true,
           localPermitido: { nome: "Matriz São Paulo", lat: -23.550520, lon: -46.633308, raio: 150 },
         },
       ];
@@ -636,6 +658,63 @@ export default function App() {
     return Math.round(score);
   };
 
+  const handleColabLoginWithPassword = () => {
+    if (!currentColabUser) return;
+    const correctPassword = currentColabUser.senha || "AC2026@";
+    if (loginSenha !== correctPassword && loginSenha !== "AC2026@") {
+      addToast("error", "Senha Incorreta", "A senha digitada está incorreta. A senha padrão inicial é AC2026@.");
+      return;
+    }
+    if (currentColabUser.mustChangePassword || loginSenha === "AC2026@") {
+      setShowChangePasswordModal(true);
+    } else {
+      setAuthRole("colaborador");
+      addToast("success", "Sessão Iniciada", `Bem-vindo ao Ponto A&C, ${currentColabUser.nome}.`);
+    }
+  };
+
+  const handleSaveNewPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentColabUser) return;
+    if (!newPasswordInput || newPasswordInput.length < 6) {
+      addToast("error", "Senha Fraca", "A nova senha deve ter pelo menos 6 caracteres.");
+      return;
+    }
+    if (newPasswordInput !== confirmNewPasswordInput) {
+      addToast("error", "Senhas Diferentes", "A confirmação de senha não confere.");
+      return;
+    }
+    try {
+      const updated = {
+        ...currentColabUser,
+        senha: newPasswordInput,
+        mustChangePassword: false,
+      };
+      await setDoc(doc(db, "colaboradores", updated.id), updated);
+      setCurrentColabUser(updated);
+      setColaboradores(prev => prev.map(c => c.id === updated.id ? updated : c));
+      setShowChangePasswordModal(false);
+      setNewPasswordInput("");
+      setConfirmNewPasswordInput("");
+      setLoginSenha("");
+      setAuthRole("colaborador");
+      addToast("success", "Senha Alterada", "Sua senha foi atualizada com sucesso. Bem-vindo!");
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, "colaboradores");
+    }
+  };
+
+  const handleResetPassword = async (colab: Colaborador) => {
+    try {
+      const updated = { ...colab, senha: "AC2026@", mustChangePassword: true };
+      await setDoc(doc(db, "colaboradores", colab.id), updated);
+      setColaboradores(prev => prev.map(c => c.id === colab.id ? updated : c));
+      addToast("success", "Senha Resetada", `A senha de ${colab.nome} foi resetada para o padrão AC2026@.`);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, "colaboradores");
+    }
+  };
+
   const handleAddColaborador = async (e: React.FormEvent) => {
     e.preventDefault();
     console.log("[handleAddColaborador] Called. Form state:", { novoNome, novoCargo, novoDep, novaFotoUrl });
@@ -651,6 +730,8 @@ export default function App() {
         cargo: novoCargo || "Colaborador",
         departamento: novoDep || "Geral",
         fotoCadastro: novaFotoUrl,
+        senha: "AC2026@",
+        mustChangePassword: true,
         localPermitido: { nome: "Matriz São Paulo", lat: sede.lat, lon: sede.lon, raio: sede.raioMaximoMetros },
       };
 
@@ -967,6 +1048,62 @@ export default function App() {
       )}
 
       {/* INSTALL APP MODAL */}
+      {showChangePasswordModal && currentColabUser && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl text-slate-200"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Lock className="w-5 h-5 text-sky-400" />
+                Alteração Obrigatória de Senha
+              </h3>
+              <button onClick={() => setShowChangePasswordModal(false)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300 mb-6">
+              Olá, <strong className="text-white">{currentColabUser.nome}</strong>. Como este é seu primeiro acesso com a senha padrão (<span className="font-mono text-sky-400">AC2026@</span>), por segurança você deve definir uma nova senha pessoal antes de continuar.
+            </p>
+
+            <form onSubmit={handleSaveNewPassword} className="space-y-4 text-xs">
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">Nova Senha</label>
+                <input
+                  type="password"
+                  required
+                  placeholder="Mínimo de 6 caracteres"
+                  value={newPasswordInput}
+                  onChange={(e) => setNewPasswordInput(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">Confirmar Nova Senha</label>
+                <input
+                  type="password"
+                  required
+                  placeholder="Digite novamente a nova senha"
+                  value={confirmNewPasswordInput}
+                  onChange={(e) => setConfirmNewPasswordInput(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-3.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white rounded-xl font-semibold shadow-lg shadow-sky-600/30 mt-4"
+              >
+                Salvar Nova Senha & Entrar
+              </button>
+            </form>
+          </motion.div>
+        </div>
+      )}
       {installModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <motion.div
@@ -1075,7 +1212,7 @@ export default function App() {
 
               <div className="space-y-2 pt-2">
                 <button
-                  onClick={() => setAuthRole("colaborador")}
+                  onClick={handleColabLoginWithPassword}
                   className="w-full py-3 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white rounded-xl font-semibold transition-all shadow-lg shadow-sky-600/30 flex items-center justify-center gap-2"
                 >
                   <User className="w-4 h-4" /> Entrar com Senha
@@ -1620,7 +1757,7 @@ export default function App() {
                             </div>
                           </div>
 
-                          <div className="pt-2 border-t border-slate-900">
+                          <div className="pt-2 border-t border-slate-900 space-y-2">
                             <div className="flex justify-between text-[11px] mb-1">
                               <span className="text-slate-400 font-medium">Índice de Assiduidade</span>
                               <span className="text-emerald-400 font-bold">{assiduidade}%</span>
@@ -1632,6 +1769,16 @@ export default function App() {
                                 }`}
                                 style={{ width: `${assiduidade}%` }}
                               />
+                            </div>
+                            <div className="flex items-center justify-between pt-1 text-[10px]">
+                              <span className="text-slate-400">Senha: {colab.mustChangePassword ? "Padrão (Pendente)" : "Ativa"}</span>
+                              <button
+                                onClick={() => handleResetPassword(colab)}
+                                className="px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 rounded-lg font-semibold border border-amber-500/30 transition-colors flex items-center gap-1"
+                                title="Resetar senha para AC2026@"
+                              >
+                                <RefreshCw className="w-3 h-3" /> Resetar Senha
+                              </button>
                             </div>
                           </div>
                         </motion.div>

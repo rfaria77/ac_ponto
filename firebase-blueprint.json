@@ -11,9 +11,11 @@
         "departamento": { "type": "string", "maxLength": 100 },
         "email": { "type": "string", "maxLength": 100 },
         "senha": { "type": "string", "maxLength": 100 },
-        "foto": { "type": "string" }
+        "mustChangePassword": { "type": "boolean" },
+        "foto": { "type": "string" },
+        "fotoCadastro": { "type": "string" }
       },
-      "required": ["id", "nome", "cargo", "departamento", "email"]
+      "required": ["id", "nome", "cargo", "departamento"]
     },
     "RegistroPonto": {
       "title": "RegistroPonto",
@@ -25,15 +27,20 @@
         "colaboradorNome": { "type": "string" },
         "tipo": { "type": "string" },
         "dataHora": { "type": "string" },
+        "timestamp": { "type": "string" },
         "latitude": { "type": "number" },
         "longitude": { "type": "number" },
         "localizacaoNome": { "type": "string" },
         "status": { "type": "string" },
+        "distanciaMetros": { "type": "number" },
         "distanciaSede": { "type": "number" },
         "justificativa": { "type": "string" },
-        "foto": { "type": "string" }
+        "foto": { "type": "string" },
+        "selfieUrl": { "type": "string" },
+        "confiancaBiometrica": { "type": "number" },
+        "ehFotoAoVivo": { "type": "boolean" }
       },
-      "required": ["id", "colaboradorId", "tipo", "dataHora", "status"]
+      "required": ["id", "colaboradorId", "tipo", "status"]
     },
     "Solicitacao": {
       "title": "Solicitacao",
@@ -46,6 +53,7 @@
         "tipo": { "type": "string" },
         "motivo": { "type": "string" },
         "dataHora": { "type": "string" },
+        "dataSolicitacao": { "type": "string" },
         "status": { "type": "string" }
       },
       "required": ["id", "colaboradorId", "tipo", "status"]
@@ -59,7 +67,11 @@
         "nomeSede": { "type": "string" },
         "latSede": { "type": "number" },
         "lonSede": { "type": "number" },
-        "raioMaximo": { "type": "number" }
+        "raioMaximo": { "type": "number" },
+        "nome": { "type": "string" },
+        "lat": { "type": "number" },
+        "lon": { "type": "number" },
+        "raioMaximoMetros": { "type": "number" }
       },
       "required": ["id"]
     },
