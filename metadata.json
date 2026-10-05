@@ -1,0 +1,12 @@
+{
+  "name": "Ponto A&C - Saúde e Segurança do Trabalho",
+  "description": "Sistema de ponto eletrônico avançado com validação por geolocalização Haversine e auditoria biométrica por Inteligência Artificial (Gemini).",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
+
