@@ -289,6 +289,32 @@ export default function App() {
     },
   ]);
 
+  useEffect(() => {
+    if (colaboradores.length === 0) return;
+    setBancoHorasData((prev) => {
+      const map = new Map(prev.map(b => [b.colaboradorId, b]));
+      return colaboradores.map(c => {
+        if (map.has(c.id)) {
+          const existing = map.get(c.id)!;
+          return { ...existing, nome: c.nome, departamento: c.departamento };
+        } else {
+          return {
+            colaboradorId: c.id,
+            nome: c.nome,
+            departamento: c.departamento,
+            dataInicioSaldo: "01/09/2026",
+            saldoInicial: "+00h 00m",
+            horasTrabalhadasMes: "160h 00m",
+            bancoHorasSaldo: "+04h 30m",
+            horasExtras: "+04h 30m",
+            descontosBanco: "00h 00m",
+            statusBanco: "POSITIVO" as const,
+          };
+        }
+      });
+    });
+  }, [colaboradores]);
+
   // Lançamento Manual state
   const [manualColabId, setManualColabId] = useState("FUNC_001");
   const [manualData, setManualData] = useState(new Date().toISOString().slice(0, 10));
