@@ -922,7 +922,22 @@ export default function App() {
   const handleRegistrarPontoSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentColabUser) return;
-    const selfieToSend = selfieDataUrl || currentColabUser.fotoCadastro;
+
+    let selfieToSend = selfieDataUrl;
+    if (!selfieToSend && videoRef.current && cameraActive) {
+      const canvas = document.createElement("canvas");
+      canvas.width = 640;
+      canvas.height = 480;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+        selfieToSend = canvas.toDataURL("image/jpeg", 0.9);
+        setSelfieDataUrl(selfieToSend);
+      }
+    }
+    if (!selfieToSend) {
+      selfieToSend = currentColabUser.fotoCadastro;
+    }
 
     setLoading(true);
     setLastResult(null);
@@ -1990,22 +2005,25 @@ export default function App() {
 
                             <div className="relative pl-6 space-y-4 before:content-[''] before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-800">
                               {dayPunches.map((reg) => (
-                                <div key={reg.id} className="relative flex items-start justify-between text-xs bg-slate-900/80 p-3.5 rounded-xl border border-slate-800">
+                                <div key={reg.id} className="relative flex items-center justify-between text-xs bg-slate-900/80 p-3.5 rounded-xl border border-slate-800 gap-3">
                                   <div className="absolute -left-6 top-4 w-3.5 h-3.5 rounded-full border-2 border-slate-950 bg-sky-500 shadow-md"></div>
-                                  <div className="space-y-1">
-                                    <div className="flex items-center gap-2">
-                                      <span className={`px-2.5 py-0.5 rounded font-bold text-[10px] ${
-                                        reg.tipo === "ENTRADA" ? "bg-emerald-500/20 text-emerald-300" : reg.tipo === "SAIDA" ? "bg-sky-500/20 text-sky-300" : "bg-amber-500/20 text-amber-300"
-                                      }`}>
-                                        {reg.tipo}
-                                      </span>
-                                      <span className="font-mono font-bold text-white text-sm">
-                                        {new Date(reg.timestamp).toLocaleTimeString("pt-BR", { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                                      </span>
+                                  <div className="flex items-center gap-3">
+                                    <img src={reg.selfieUrl} alt="Selfie" className="w-12 h-12 rounded-xl object-cover border border-sky-500/40 shadow-md shrink-0" />
+                                    <div className="space-y-1">
+                                      <div className="flex items-center gap-2">
+                                        <span className={`px-2.5 py-0.5 rounded font-bold text-[10px] ${
+                                          reg.tipo === "ENTRADA" ? "bg-emerald-500/20 text-emerald-300" : reg.tipo === "SAIDA" ? "bg-sky-500/20 text-sky-300" : "bg-amber-500/20 text-amber-300"
+                                        }`}>
+                                          {reg.tipo}
+                                        </span>
+                                        <span className="font-mono font-bold text-white text-sm">
+                                          {new Date(reg.timestamp).toLocaleTimeString("pt-BR", { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                        </span>
+                                      </div>
+                                      <p className="text-slate-400 text-[11px]">
+                                        Distância da Base: <strong className="text-emerald-400 font-mono">{reg.distanciaMetros}m</strong> • IA Biometria: <strong className="text-sky-300 font-mono">{Math.round((reg.confiancaBiometrica || 0.95) * 100)}%</strong>
+                                      </p>
                                     </div>
-                                    <p className="text-slate-400 text-[11px]">
-                                      Distância da Base: <strong className="text-emerald-400 font-mono">{reg.distanciaMetros}m</strong> • IA Biometria: <strong className="text-sky-300 font-mono">{Math.round((reg.confiancaBiometrica || 0.95) * 100)}%</strong>
-                                    </p>
                                   </div>
                                   <div className="flex flex-col items-end gap-1">
                                     <span className={`px-2.5 py-1 rounded-full font-bold text-[10px] ${
