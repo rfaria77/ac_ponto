@@ -167,9 +167,56 @@ interface EscalaColaborador {
   toleranciaMinutos: number;
 }
 
+const initialColabs: Colaborador[] = [
+  {
+    id: "FUNC_001",
+    nome: "Thais Moreira de Souza",
+    cargo: "Assistente de coletas",
+    departamento: "Operações / Coletas",
+    email: "thais.souza@ac-saude.com.br",
+    fotoCadastro: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400&auto=format&fit=crop&q=80",
+    senha: "AC2026@",
+    mustChangePassword: true,
+    localPermitido: { nome: "Matriz São Paulo", lat: -23.550520, lon: -46.633308, raio: 150 },
+  },
+  {
+    id: "FUNC_002",
+    nome: "Marcos Vinicius Ferreira Mendes",
+    cargo: "Assistente de segurança do Trabalho",
+    departamento: "Segurança do Trabalho",
+    email: "marcos.mendes@ac-saude.com.br",
+    fotoCadastro: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80",
+    senha: "AC2026@",
+    mustChangePassword: true,
+    localPermitido: { nome: "Filial Paulista", lat: -23.561500, lon: -46.656000, raio: 150 },
+  },
+  {
+    id: "FUNC_003",
+    nome: "Amanda Inácio Medeiros Silva",
+    cargo: "Assistente Administrativo",
+    departamento: "Administrativo",
+    email: "amanda.silva@ac-saude.com.br",
+    fotoCadastro: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80",
+    senha: "AC2026@",
+    mustChangePassword: true,
+    localPermitido: { nome: "Matriz São Paulo", lat: -23.550520, lon: -46.633308, raio: 150 },
+  },
+  {
+    id: "FUNC_004",
+    nome: "Denise Cristina Fernandes Costa Felip",
+    cargo: "Técnico em segurança do Trabalho JR",
+    departamento: "Segurança do Trabalho",
+    email: "denise.felip@ac-saude.com.br",
+    fotoCadastro: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=400&auto=format&fit=crop&q=80",
+    senha: "AC2026@",
+    mustChangePassword: true,
+    localPermitido: { nome: "Matriz São Paulo", lat: -23.550520, lon: -46.633308, raio: 150 },
+  },
+];
+
 export default function App() {
   const [authRole, setAuthRole] = useState<"login" | "colaborador" | "adm">("login");
-  const [currentColabUser, setCurrentColabUser] = useState<Colaborador | null>(null);
+  const [currentColabUser, setCurrentColabUser] = useState<Colaborador | null>(initialColabs[0]);
 
   // Login credentials & biometric state
   const [loginEmail, setLoginEmail] = useState("colaborador@ac-saude.com.br");
@@ -212,7 +259,52 @@ export default function App() {
     lon: -46.633308,
     raioMaximoMetros: 150.0,
   });
-  const [colaboradores, setColaboradores] = useState<Colaborador[]>([]);
+  const [colaboradores, setColaboradores] = useState<Colaborador[]>([
+    {
+      id: "FUNC_001",
+      nome: "Thais Moreira de Souza",
+      cargo: "Assistente de coletas",
+      departamento: "Operações / Coletas",
+      email: "thais.souza@ac-saude.com.br",
+      fotoCadastro: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400&auto=format&fit=crop&q=80",
+      senha: "AC2026@",
+      mustChangePassword: true,
+      localPermitido: { nome: "Matriz São Paulo", lat: -23.550520, lon: -46.633308, raio: 150 },
+    },
+    {
+      id: "FUNC_002",
+      nome: "Marcos Vinicius Ferreira Mendes",
+      cargo: "Assistente de segurança do Trabalho",
+      departamento: "Segurança do Trabalho",
+      email: "marcos.mendes@ac-saude.com.br",
+      fotoCadastro: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80",
+      senha: "AC2026@",
+      mustChangePassword: true,
+      localPermitido: { nome: "Filial Paulista", lat: -23.561500, lon: -46.656000, raio: 150 },
+    },
+    {
+      id: "FUNC_003",
+      nome: "Amanda Inácio Medeiros Silva",
+      cargo: "Assistente Administrativo",
+      departamento: "Administrativo",
+      email: "amanda.silva@ac-saude.com.br",
+      fotoCadastro: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80",
+      senha: "AC2026@",
+      mustChangePassword: true,
+      localPermitido: { nome: "Matriz São Paulo", lat: -23.550520, lon: -46.633308, raio: 150 },
+    },
+    {
+      id: "FUNC_004",
+      nome: "Denise Cristina Fernandes Costa Felip",
+      cargo: "Técnico em segurança do Trabalho JR",
+      departamento: "Segurança do Trabalho",
+      email: "denise.felip@ac-saude.com.br",
+      fotoCadastro: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=400&auto=format&fit=crop&q=80",
+      senha: "AC2026@",
+      mustChangePassword: true,
+      localPermitido: { nome: "Matriz São Paulo", lat: -23.550520, lon: -46.633308, raio: 150 },
+    },
+  ]);
   const [registros, setRegistros] = useState<RegistroPonto[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -520,12 +612,13 @@ export default function App() {
   const [tipoPonto, setTipoPonto] = useState<"ENTRADA" | "SAIDA" | "INTERVALO">("ENTRADA");
   
   const videoRef = useRef<HTMLVideoElement>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
   const [cameraActive, setCameraActive] = useState(false);
   const [selfieDataUrl, setSelfieDataUrl] = useState<string | null>(null);
   const [cameraError, setCameraError] = useState("");
-  
-  const [lastResult, setLastResult] = useState<any | null>(null);
 
+  const [lastResult, setLastResult] = useState<any | null>(null);
+  const [punchResultModal, setPunchResultModal] = useState<any | null>(null);
   const [novoNome, setNovoNome] = useState("");
   const [novoCargo, setNovoCargo] = useState("");
   const [novoDep, setNovoDep] = useState("");
@@ -537,283 +630,13 @@ export default function App() {
   const [novoRaio, setNovoRaio] = useState<number>(150);
   const [novoHorarioNotif, setNovoHorarioNotif] = useState("08:00");
   const [cameraPermissionStatus, setCameraPermissionStatus] = useState<"prompt" | "granted" | "denied" | "checking" | "unsupported">("checking");
-  const [punchResultModal, setPunchResultModal] = useState<any | null>(null);
 
   useEffect(() => {
-    if (authRole === "colaborador" && colabTab === "bater-ponto") {
-      startCamera();
-    } else {
-      stopCamera();
+    if (cameraActive && mediaStreamRef.current && videoRef.current) {
+      videoRef.current.srcObject = mediaStreamRef.current;
+      videoRef.current.play().catch(e => console.log("Play error:", e));
     }
-  }, [authRole, colabTab]);
-
-  useEffect(() => {
-    if (authRole === "colaborador") {
-      if (navigator.permissions && typeof navigator.permissions.query === "function") {
-        navigator.permissions.query({ name: 'camera' as PermissionName }).then((result) => {
-          setCameraPermissionStatus(result.state);
-          result.onchange = () => {
-            setCameraPermissionStatus(result.state);
-          };
-        }).catch(() => {
-          setCameraPermissionStatus("prompt");
-        });
-      } else if (navigator.mediaDevices) {
-        setCameraPermissionStatus("prompt");
-      } else {
-        setCameraPermissionStatus("unsupported");
-      }
-    }
-  }, [authRole]);
-
-  useEffect(() => {
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").then((reg) => {
-        console.log("Service Worker registrado com sucesso:", reg.scope);
-      }).catch((err) => {
-        console.warn("Falha ao registrar Service Worker:", err);
-      });
-    }
-
-    if ("Notification" in window && Notification.permission !== "granted") {
-      Notification.requestPermission();
-    }
-  }, []);
-
-  useEffect(() => {
-    if (authRole !== "colaborador" || !currentColabUser || !currentColabUser.horarioNotificacao) return;
-
-    const interval = setInterval(() => {
-      const now = new Date();
-      const horaAtual = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-      if (horaAtual === currentColabUser.horarioNotificacao) {
-        const lastNotif = sessionStorage.getItem(`notified_${currentColabUser.id}_${now.toDateString()}`);
-        if (!lastNotif) {
-          sessionStorage.setItem(`notified_${currentColabUser.id}_${now.toDateString()}`, "true");
-          addToast("warning", "Lembrete de Ponto", `Olá, ${currentColabUser.nome}! Este é seu horário programado (${currentColabUser.horarioNotificacao}) para registrar o ponto.`);
-          if ("Notification" in window && Notification.permission === "granted") {
-            new Notification("Ponto A&C — Hora de Bater o Ponto!", {
-              body: `Olá ${currentColabUser.nome}, horário programado (${currentColabUser.horarioNotificacao}) para registrar sua jornada.`,
-              icon: currentColabUser.fotoCadastro,
-            });
-          }
-        }
-      }
-    }, 30000);
-
-    return () => clearInterval(interval);
-  }, [authRole, currentColabUser]);
-
-  // Firestore Real-Time Synchronization & Seeding
-  useEffect(() => {
-    const unsubColab = onSnapshot(collection(db, "colaboradores"), (snapshot) => {
-      const items: Colaborador[] = [];
-      snapshot.forEach((docSnap) => {
-        items.push(docSnap.data() as Colaborador);
-      });
-      if (items.length > 0) {
-        setColaboradores(items);
-        if (!currentColabUser) {
-          setCurrentColabUser(items[0]);
-        } else {
-          const updatedCurrent = items.find(c => c.id === currentColabUser.id);
-          if (updatedCurrent) {
-            setCurrentColabUser(updatedCurrent);
-          }
-        }
-      } else {
-        seedInitialData();
-      }
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, "colaboradores");
-    });
-
-    const unsubReg = onSnapshot(collection(db, "registros"), (snapshot) => {
-      const items: RegistroPonto[] = [];
-      snapshot.forEach((docSnap) => {
-        items.push(docSnap.data() as RegistroPonto);
-      });
-      if (items.length > 0) {
-        setRegistros(items);
-      }
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, "registros");
-    });
-
-    const unsubSol = onSnapshot(collection(db, "solicitacoes"), (snapshot) => {
-      const items: AjustePendente[] = [];
-      snapshot.forEach((docSnap) => {
-        items.push(docSnap.data() as AjustePendente);
-      });
-      if (items.length > 0) {
-        setPendencias(items);
-      }
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, "solicitacoes");
-    });
-
-    const unsubConfig = onSnapshot(doc(db, "configuracoes", "sede"), (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data() as SedeConfig;
-        setSede(data);
-      }
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, "configuracoes/sede");
-    });
-
-    const unsubAtestados = onSnapshot(collection(db, "atestados"), (snapshot) => {
-      const items: AtestadoMedico[] = [];
-      snapshot.forEach((docSnap) => {
-        items.push(docSnap.data() as AtestadoMedico);
-      });
-      if (items.length > 0) {
-        setAtestados(items);
-      }
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, "atestados");
-    });
-
-    const unsubLogo = onSnapshot(doc(db, "configuracoes", "logo"), (docSnap) => {
-      if (docSnap.exists() && docSnap.data().url) {
-        setCustomLogoUrl(docSnap.data().url);
-      }
-    }, (error) => {
-      // ignore
-    });
-
-    const unsubBanco = onSnapshot(doc(db, "configuracoes", "banco_horas"), (docSnap) => {
-      if (docSnap.exists() && docSnap.data().items) {
-        setBancoHorasData(docSnap.data().items);
-      }
-    }, (error) => {
-      // ignore
-    });
-
-    const unsubFeriados = onSnapshot(collection(db, "feriados"), (snapshot) => {
-      const items: Feriado[] = [];
-      snapshot.forEach((docSnap) => {
-        items.push(docSnap.data() as Feriado);
-      });
-      if (items.length > 0) {
-        setFeriados(items);
-      }
-    }, (error) => {
-      // ignore
-    });
-
-    const unsubEscalas = onSnapshot(collection(db, "escalas"), (snapshot) => {
-      const map: Record<string, EscalaColaborador> = {};
-      snapshot.forEach((docSnap) => {
-        const item = docSnap.data() as EscalaColaborador;
-        map[item.colaboradorId] = item;
-      });
-      if (Object.keys(map).length > 0) {
-        setEscalasColaboradores(prev => ({ ...prev, ...map }));
-      }
-    }, (error) => {
-      // ignore
-    });
-
-    return () => {
-      unsubColab();
-      unsubReg();
-      unsubSol();
-      unsubConfig();
-      unsubAtestados();
-      unsubLogo();
-      unsubBanco();
-      unsubFeriados();
-      unsubEscalas();
-    };
-  }, []);
-
-  const seedInitialData = async () => {
-    try {
-      const defaultColabs: Colaborador[] = [
-        {
-          id: "FUNC_001",
-          nome: "Thais Moreira de Souza",
-          cargo: "Assistente de coletas",
-          departamento: "Operações / Coletas",
-          email: "thais.souza@ac-saude.com.br",
-          fotoCadastro: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400&auto=format&fit=crop&q=80",
-          senha: "AC2026@",
-          mustChangePassword: true,
-          localPermitido: { nome: "Matriz São Paulo", lat: -23.550520, lon: -46.633308, raio: 150 },
-        },
-        {
-          id: "FUNC_002",
-          nome: "Marcos Vinicius Ferreira Mendes",
-          cargo: "Assistente de segurança do Trabalho",
-          departamento: "Segurança do Trabalho",
-          email: "marcos.mendes@ac-saude.com.br",
-          fotoCadastro: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80",
-          senha: "AC2026@",
-          mustChangePassword: true,
-          localPermitido: { nome: "Filial Paulista", lat: -23.561500, lon: -46.656000, raio: 150 },
-        },
-        {
-          id: "FUNC_003",
-          nome: "Amanda Inácio Medeiros Silva",
-          cargo: "Assistente Administrativo",
-          departamento: "Administrativo",
-          email: "amanda.silva@ac-saude.com.br",
-          fotoCadastro: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80",
-          senha: "AC2026@",
-          mustChangePassword: true,
-          localPermitido: { nome: "Matriz São Paulo", lat: -23.550520, lon: -46.633308, raio: 150 },
-        },
-        {
-          id: "FUNC_004",
-          nome: "Denise Cristina Fernandes Costa Felip",
-          cargo: "Técnico em segurança do Trabalho JR",
-          departamento: "Segurança do Trabalho",
-          email: "denise.felip@ac-saude.com.br",
-          fotoCadastro: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=400&auto=format&fit=crop&q=80",
-          senha: "AC2026@",
-          mustChangePassword: true,
-          localPermitido: { nome: "Matriz São Paulo", lat: -23.550520, lon: -46.633308, raio: 150 },
-        },
-      ];
-
-      for (const c of defaultColabs) {
-        await setDoc(doc(db, "colaboradores", c.id), c);
-      }
-
-      const defaultSede: SedeConfig = {
-        id: "sede",
-        nome: "Sede Tupaciguara MG — Rua Modesto Alves Prudente, 266, Primavera",
-        lat: -18.59969,
-        lon: -48.016335,
-        raioMaximoMetros: 150.0,
-      };
-      await setDoc(doc(db, "configuracoes", "sede"), defaultSede);
-
-      const defaultReg: RegistroPonto = {
-        id: "REG_101",
-        colaboradorId: "FUNC_001",
-        colaboradorNome: "Ana Beatriz Souza",
-        timestamp: new Date(Date.now() - 3600000 * 4).toISOString(),
-        tipo: "ENTRADA",
-        status: "AProvado",
-        distanciaMetros: 12.4,
-        confiancaBiometrica: 0.96,
-        ehFotoAoVivo: true,
-        justificativa: "Alta correspondência facial com traços anatômicos e teste de vivacidade positivo.",
-        selfieUrl: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400&auto=format&fit=crop&q=80",
-      };
-      await setDoc(doc(db, "registros", defaultReg.id), defaultReg);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, "seed");
-    }
-  };
-
-  useEffect(() => {
-    const found = colaboradores.find((c) => c.id === selectedAdmColabId);
-    if (found && found.localPermitido) {
-      setLocalCustomColab(found.localPermitido);
-    }
-  }, [selectedAdmColabId, colaboradores]);
+  }, [cameraActive]);
 
   const startCamera = async () => {
     setCameraError("");
@@ -822,13 +645,12 @@ export default function App() {
         throw new Error("API de câmera não suportada.");
       }
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: 640, height: 480 } });
+      mediaStreamRef.current = stream;
       setCameraActive(true);
-      setTimeout(() => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play().catch(e => console.log("Play error:", e));
-        }
-      }, 150);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play().catch(e => console.log("Play error:", e));
+      }
     } catch (err: any) {
       console.warn("Câmera indisponível ou bloqueada, aplicando foto cadastrada:", err);
       setCameraError("Câmera indisponível ou bloqueada. A foto cadastrada foi aplicada automaticamente.");
@@ -841,6 +663,10 @@ export default function App() {
   };
 
   const stopCamera = () => {
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+    }
     if (videoRef.current && videoRef.current.srcObject) {
       const stream = videoRef.current.srcObject as MediaStream;
       stream.getTracks().forEach((track) => track.stop());
@@ -934,21 +760,7 @@ export default function App() {
     e.preventDefault();
     if (!currentColabUser) return;
 
-    let selfieToSend = selfieDataUrl;
-    if (!selfieToSend && videoRef.current && cameraActive) {
-      const canvas = document.createElement("canvas");
-      canvas.width = 640;
-      canvas.height = 480;
-      const ctx = canvas.getContext("2d");
-      if (ctx) {
-        ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-        selfieToSend = canvas.toDataURL("image/jpeg", 0.9);
-        setSelfieDataUrl(selfieToSend);
-      }
-    }
-    if (!selfieToSend) {
-      selfieToSend = currentColabUser.fotoCadastro;
-    }
+    const selfieToSend = currentColabUser.fotoCadastro;
 
     setLoading(true);
     setLastResult(null);
@@ -981,7 +793,6 @@ export default function App() {
       }
 
       setLastResult(data);
-      setSelfieDataUrl(null);
 
       if (data.registro) {
         await setDoc(doc(db, "registros", data.registro.id), data.registro, { merge: true });
@@ -992,7 +803,6 @@ export default function App() {
           }
           return [data.registro, ...prev];
         });
-        setColabTab("historico");
 
         if (data.pendenteLocal) {
           const novaPendencia: AjustePendente = {
@@ -1829,7 +1639,7 @@ export default function App() {
                     );
                   })()}
 
-                  <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+                  <div className="bg-slate-900/80 backdrop-blur-md border border-slate-800/80 rounded-2xl p-6 shadow-xl bg-gradient-to-br from-slate-900/90 via-slate-900/80 to-sky-950/20 transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl hover:shadow-sky-500/15">
                     <h2 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
                       <Clock className="w-5 h-5 text-sky-400" /> Registrar Ponto Eletrônico
                     </h2>
@@ -1861,8 +1671,8 @@ export default function App() {
                               key={t}
                               type="button"
                               onClick={() => setTipoPonto(t)}
-                              className={`py-2 px-3 rounded-xl font-bold border transition-all ${
-                                tipoPonto === t ? "bg-sky-600 border-sky-500 text-white shadow-md shadow-sky-600/30" : "bg-slate-950 border-slate-800 text-slate-400"
+                              className={`py-3.5 px-4 rounded-xl font-extrabold text-sm tracking-wide border transition-all ${
+                                tipoPonto === t ? "bg-sky-600 border-sky-500 text-white shadow-lg shadow-sky-600/30 scale-[1.02]" : "bg-slate-950/80 border-slate-800 text-slate-300 hover:bg-slate-900"
                               }`}
                             >
                               {t}
@@ -1904,50 +1714,77 @@ export default function App() {
                 </div>
 
                 <div className="md:col-span-6 space-y-6">
-                  <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
-                    <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
-                      <Camera className="w-4 h-4 text-sky-400" /> Auditoria Biométrica por IA (Selfie)
-                    </h3>
-
-                    {cameraActive ? (
-                      <div className="space-y-3">
-                        <div className="relative rounded-xl overflow-hidden bg-black border border-slate-800 aspect-video flex items-center justify-center">
-                          <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline muted />
-                          <div className="absolute inset-0 border-2 border-dashed border-sky-500/50 rounded-xl pointer-events-none m-4 flex items-center justify-center">
-                            <div className="w-32 h-40 rounded-full border-2 border-sky-400/80 animate-pulse"></div>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={captureSelfie}
-                          className="w-full py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl font-semibold flex items-center justify-center gap-2"
-                        >
-                          <Camera className="w-4 h-4" /> Capturar Foto para Ponto
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        <div className="relative rounded-xl overflow-hidden bg-slate-950 border border-slate-800 aspect-video flex items-center justify-center">
-                          {selfieDataUrl ? (
-                            <img src={selfieDataUrl} alt="Selfie" className="w-full h-full object-cover" />
-                          ) : (
-                            <div className="text-center p-4">
-                              <img src={currentColabUser.fotoCadastro} alt="" className="w-20 h-20 rounded-full object-cover mx-auto mb-2 border-2 border-sky-500/50 shadow-lg" />
-                              <p className="text-xs text-slate-400">Usando foto de perfil cadastrada para validação facial por IA.</p>
-                            </div>
-                          )}
+                  {(() => {
+                    const hojeStr = new Date().toISOString().slice(0, 10);
+                    const myTodayPunches = registros.filter(r => r.colaboradorId === currentColabUser.id && r.timestamp.slice(0, 10) === hojeStr);
+                    return (
+                      <motion.div
+                        key={myTodayPunches.length}
+                        initial={{ scale: 0.96, opacity: 0.8 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        transition={{ type: "spring", stiffness: 400, damping: 25 }}
+                        className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4 relative overflow-hidden"
+                      >
+                        <div className="absolute inset-0 bg-sky-500/5 pointer-events-none animate-pulse" />
+                        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                            <Clock className="w-4 h-4 text-sky-400" /> Horários & Registros de Hoje
+                          </h3>
+                          <span className="text-xs font-mono text-sky-300 bg-sky-600/20 px-2.5 py-0.5 rounded-full font-bold">
+                            {new Date().toLocaleDateString("pt-BR")}
+                          </span>
                         </div>
 
-                        <button
-                          type="button"
-                          onClick={startCamera}
-                          className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-sky-300 rounded-xl font-semibold border border-slate-700 flex items-center justify-center gap-2"
-                        >
-                          <Camera className="w-4 h-4" /> Ativar Câmera para Nova Selfie
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                        <div className="space-y-3">
+                          {(() => {
+                            if (myTodayPunches.length === 0) {
+                              return (
+                                <div className="text-center py-10 space-y-2 bg-slate-950/60 rounded-xl border border-slate-800 p-4">
+                                  <Clock className="w-8 h-8 text-slate-600 mx-auto animate-pulse" />
+                                  <p className="text-xs text-slate-400 font-medium">Nenhum ponto registrado hoje ainda.</p>
+                                  <p className="text-[11px] text-slate-500">Faça sua marcação ao lado.</p>
+                                </div>
+                              );
+                            }
+
+                            return myTodayPunches.sort((a, b) => a.timestamp.localeCompare(b.timestamp)).map((reg) => (
+                              <motion.div
+                                key={reg.id}
+                                initial={{ opacity: 0, x: -10 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                transition={{ duration: 0.3 }}
+                                className="bg-slate-950 border border-slate-800 p-3.5 rounded-xl flex items-center justify-between text-xs gap-3"
+                              >
+                                <div className="flex items-center gap-3">
+                                  <img src={reg.selfieUrl} alt="" className="w-10 h-10 rounded-xl object-cover border border-sky-500/40 shrink-0" />
+                                  <div className="space-y-0.5">
+                                    <div className="flex items-center gap-2">
+                                      <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${
+                                        reg.tipo === "ENTRADA" ? "bg-emerald-500/20 text-emerald-300" : reg.tipo === "SAIDA" ? "bg-sky-500/20 text-sky-300" : "bg-amber-500/20 text-amber-300"
+                                      }`}>
+                                        {reg.tipo}
+                                      </span>
+                                      <span className="font-mono font-bold text-white text-sm">
+                                        {new Date(reg.timestamp).toLocaleTimeString("pt-BR", { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                      </span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-400">
+                                      📍 <span className="text-sky-300 font-mono">{reg.enderecoGPS || `${reg.distanciaMetros}m da base`}</span>
+                                    </p>
+                                  </div>
+                                </div>
+                                <span className={`px-2.5 py-1 rounded-full font-bold text-[10px] ${
+                                  reg.status === "AProvado" ? "bg-emerald-500/10 text-emerald-400" : "bg-amber-500/10 text-amber-400"
+                                }`}>
+                                  {reg.status}
+                                </span>
+                              </motion.div>
+                            ));
+                          })()}
+                        </div>
+                      </motion.div>
+                    );
+                  })()}
 
                   {lastResult && (
                     <motion.div
@@ -3089,6 +2926,113 @@ export default function App() {
                         Lat: {localCustomColab.lat} | Lon: {localCustomColab.lon}
                       </div>
                     </div>
+                  </div>
+
+                  <div className="mt-6 pt-6 border-t border-slate-800 space-y-4 md:col-span-12">
+                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                      <Globe className="w-4 h-4 text-sky-400" /> Mapa de Trajetória (Últimos 5 Registros de Ponto)
+                    </h4>
+                    <p className="text-[11px] text-slate-400">
+                      Visualização cartográfica interativa dos últimos 5 locais onde o colaborador <strong className="text-white">{colaboradores.find(c => c.id === selectedAdmColabId)?.nome || "Selecionado"}</strong> registrou ponto.
+                    </p>
+
+                    {(() => {
+                      const targetColabPunches = registros
+                        .filter(r => r.colaboradorId === selectedAdmColabId)
+                        .slice(0, 5);
+
+                      if (targetColabPunches.length === 0) {
+                        return (
+                          <div className="bg-slate-950 border border-slate-800 rounded-xl p-8 text-center text-xs text-slate-400">
+                            Nenhum registro recente encontrado para este colaborador.
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-4">
+                          <div className="relative w-full h-72 bg-slate-900 rounded-xl border border-slate-800 overflow-hidden flex items-center justify-center p-4">
+                            <svg className="w-full h-full" viewBox="0 0 400 300" preserveAspectRatio="none">
+                              <defs>
+                                <radialGradient id="mapGlow" cx="50%" cy="50%" r="50%">
+                                  <stop offset="0%" stopColor="#0284c7" stopOpacity="0.25" />
+                                  <stop offset="100%" stopColor="#0f172a" stopOpacity="0" />
+                                </radialGradient>
+                              </defs>
+                              <rect width="400" height="300" fill="#020617" />
+                              <circle cx="200" cy="150" r="120" fill="url(#mapGlow)" />
+                              <circle cx="200" cy="150" r="80" stroke="#1e293b" strokeWidth="1" fill="none" strokeDasharray="4 4" />
+                              <circle cx="200" cy="150" r="40" stroke="#1e293b" strokeWidth="1" fill="none" />
+
+                              {/* Base Center Marker */}
+                              <circle cx="200" cy="150" r="7" fill="#10b981" />
+                              <text x="200" y="136" fill="#10b981" fontSize="10" textAnchor="middle" fontWeight="bold">Base / Sede (Tupaciguara)</text>
+
+                              {/* Trajectory Lines */}
+                              {targetColabPunches.length > 1 && (
+                                <polyline
+                                  points={targetColabPunches.map((_, idx) => {
+                                    const angle = (idx / targetColabPunches.length) * Math.PI * 2;
+                                    const distOffset = (idx + 1) * 22;
+                                    const cx = 200 + Math.cos(angle) * distOffset;
+                                    const cy = 150 + Math.sin(angle) * distOffset;
+                                    return `${cx},${cy}`;
+                                  }).join(" ")}
+                                  fill="none"
+                                  stroke="#38bdf8"
+                                  strokeWidth="2"
+                                  strokeDasharray="5 5"
+                                />
+                              )}
+
+                              {/* Punch Pins */}
+                              {targetColabPunches.map((reg, idx) => {
+                                const angle = (idx / targetColabPunches.length) * Math.PI * 2;
+                                const distOffset = (idx + 1) * 22;
+                                const cx = 200 + Math.cos(angle) * distOffset;
+                                const cy = 150 + Math.sin(angle) * distOffset;
+
+                                return (
+                                  <g key={reg.id} className="cursor-pointer group">
+                                    <circle cx={cx} cy={cy} r="12" fill="#0284c7" className="animate-pulse" />
+                                    <circle cx={cx} cy={cy} r="8" fill="#38bdf8" stroke="#fff" strokeWidth="1.5" />
+                                    <text x={cx} y={cy + 3} fill="#0f172a" fontSize="9" textAnchor="middle" fontWeight="bold">{idx + 1}</text>
+                                  </g>
+                                );
+                              })}
+                            </svg>
+
+                            <div className="absolute bottom-3 left-3 bg-slate-900/95 backdrop-blur-md px-3 py-1.5 rounded-lg border border-slate-800 text-[10px] text-slate-300 font-sans">
+                              📍 Exibindo os últimos {targetColabPunches.length} registros plotados na trajetória
+                            </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            {targetColabPunches.map((reg, idx) => (
+                              <div key={reg.id} className="bg-slate-900 border border-slate-800 p-3 rounded-xl flex items-center justify-between text-xs">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-6 h-6 rounded-full bg-sky-600 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                                    {idx + 1}
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-bold text-white text-sm">{reg.tipo}</span>
+                                      <span className="text-slate-400 font-mono text-[10px]">{new Date(reg.timestamp).toLocaleString("pt-BR")}</span>
+                                    </div>
+                                    <span className="block text-[11px] text-sky-300 font-mono mt-0.5">{reg.enderecoGPS || `${reg.distanciaMetros}m da base`}</span>
+                                  </div>
+                                </div>
+                                <span className={`px-2.5 py-0.5 rounded-full font-bold text-[10px] ${
+                                  reg.status === "AProvado" ? "bg-emerald-500/10 text-emerald-400" : "bg-amber-500/10 text-amber-400"
+                                }`}>
+                                  {reg.status}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
