@@ -609,6 +609,52 @@ export default function App() {
     }
   };
 
+  const handleLimparDadosTeste = async () => {
+    try {
+      let countRemovidos = 0;
+      
+      // Remover registros de teste (ID com 'TEST_' ou similar)
+      const regsParaRemover = registros.filter(r => r.id.startsWith("TEST_") || r.id.startsWith("PEND_0") || r.colaboradorId?.startsWith("TEST_"));
+      for (const reg of regsParaRemover) {
+        try {
+          await deleteDoc(doc(db, "registros", reg.id));
+          countRemovidos++;
+        } catch (e) {
+          console.warn("Erro ao remover registro:", e);
+        }
+      }
+      setRegistros(prev => prev.filter(r => !r.id.startsWith("TEST_") && !r.id.startsWith("PEND_0") && !r.colaboradorId?.startsWith("TEST_")));
+
+      // Remover atestados de teste
+      const atestsParaRemover = atestados.filter(a => a.id.startsWith("TEST_") || a.id.startsWith("PEND_0"));
+      for (const atest of atestsParaRemover) {
+        try {
+          await deleteDoc(doc(db, "atestados", atest.id));
+          countRemovidos++;
+        } catch (e) {
+          console.warn("Erro ao remover atestado:", e);
+        }
+      }
+      setAtestados(prev => prev.filter(a => !a.id.startsWith("TEST_") && !a.id.startsWith("PEND_0")));
+
+      // Remover solicitações de ajuste / aprovações de teste
+      const pendsParaRemover = pendencias.filter(p => p.id.startsWith("TEST_") || p.id.startsWith("PEND_0"));
+      for (const pend of pendsParaRemover) {
+        try {
+          await deleteDoc(doc(db, "pendencias", pend.id));
+          countRemovidos++;
+        } catch (e) {
+          console.warn("Erro ao remover pendência:", e);
+        }
+      }
+      setPendencias(prev => prev.filter(p => !p.id.startsWith("TEST_") && !p.id.startsWith("PEND_0")));
+
+      addToast("success", "Base de Testes Limpa", `Foram removidos ${countRemovidos} registros, atestados e aprovações de teste da base de dados.`);
+    } catch (err) {
+      addToast("error", "Erro na Limpeza", "Ocorreu um erro ao limpar os dados de teste.");
+    }
+  };
+
   const [tipoPonto, setTipoPonto] = useState<"ENTRADA" | "SAIDA" | "INTERVALO">("ENTRADA");
   
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -3308,6 +3354,19 @@ export default function App() {
                   </div>
                 </div>
 
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => {
+                      if (window.confirm("Deseja realmente limpar todos os registros e atestados de teste (ID com 'TEST_' ou 'PEND_0') da base de dados?")) {
+                        handleLimparDadosTeste();
+                      }
+                    }}
+                    className="px-4 py-2.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-xl font-semibold border border-rose-500/30 transition-colors flex items-center gap-2 text-xs shadow-lg"
+                  >
+                    <X className="w-4 h-4" /> Limpar Dados de Teste da Base (TEST_ / PEND_0)
+                  </button>
+                </div>
+
                 <div className="space-y-3">
                   <h4 className="text-sm font-bold text-white mb-2">Últimos Registros em Tempo Real</h4>
                   {registros.map((reg) => (
@@ -3357,11 +3416,44 @@ export default function App() {
       )}
 
       {punchResultModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-hidden">
+          {punchResultModal.success && (
+            <div className="absolute inset-0 pointer-events-none overflow-hidden">
+              {Array.from({ length: 30 }).map((_, i) => {
+                const randomX = Math.random() * 100;
+                const randomDelay = Math.random() * 0.5;
+                const randomDuration = 1.5 + Math.random() * 1.5;
+                const colors = ["bg-sky-400", "bg-emerald-400", "bg-amber-400", "bg-indigo-400", "bg-pink-400"];
+                const colorClass = colors[i % colors.length];
+                return (
+                  <motion.div
+                    key={i}
+                    initial={{ opacity: 1, y: "-10vh", x: `${randomX}vw`, scale: 0.5, rotate: 0 }}
+                    animate={{
+                      opacity: [1, 1, 0],
+                      y: "110vh",
+                      x: `${randomX + (Math.random() * 20 - 10)}vw`,
+                      rotate: Math.random() * 720 - 360,
+                      scale: [0.8, 1.2, 0.6]
+                    }}
+                    transition={{
+                      duration: randomDuration,
+                      delay: randomDelay,
+                      ease: "easeOut",
+                      repeat: Infinity,
+                      repeatDelay: Math.random() * 1
+                    }}
+                    className={`absolute w-3 h-3 rounded-sm ${colorClass} shadow-lg`}
+                  />
+                );
+              })}
+            </div>
+          )}
+
           <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl text-slate-100"
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl text-slate-100 z-10"
           >
             <div className="flex items-center space-x-3 mb-4">
               <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg ${
