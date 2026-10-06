@@ -529,6 +529,15 @@ export default function App() {
   const [novoRaio, setNovoRaio] = useState<number>(150);
   const [novoHorarioNotif, setNovoHorarioNotif] = useState("08:00");
   const [cameraPermissionStatus, setCameraPermissionStatus] = useState<"prompt" | "granted" | "denied" | "checking" | "unsupported">("checking");
+  const [punchResultModal, setPunchResultModal] = useState<any | null>(null);
+
+  useEffect(() => {
+    if (authRole === "colaborador" && colabTab === "bater-ponto") {
+      startCamera();
+    } else {
+      stopCamera();
+    }
+  }, [authRole, colabTab]);
 
   useEffect(() => {
     if (authRole === "colaborador") {
@@ -596,7 +605,14 @@ export default function App() {
       });
       if (items.length > 0) {
         setColaboradores(items);
-        if (!currentColabUser) setCurrentColabUser(items[0]);
+        if (!currentColabUser) {
+          setCurrentColabUser(items[0]);
+        } else {
+          const updatedCurrent = items.find(c => c.id === currentColabUser.id);
+          if (updatedCurrent) {
+            setCurrentColabUser(updatedCurrent);
+          }
+        }
       } else {
         seedInitialData();
       }
@@ -953,8 +969,11 @@ export default function App() {
       } else {
         addToast("error", "Ponto Recusado", data.mensagem || "Verifique os critérios de biometria.");
       }
+      setPunchResultModal(data);
     } catch (err: any) {
       handleFirestoreError(err, OperationType.WRITE, "registros");
+      const errPayload = { success: false, mensagem: "Erro na Marcação", justificativa: err.message || "Erro interno ao processar o ponto." };
+      setPunchResultModal(errPayload);
       addToast("error", "Erro na Marcação", err.message || "Erro interno ao processar o ponto.");
     } finally {
       setLoading(false);
@@ -1037,18 +1056,27 @@ export default function App() {
   const handleColabLoginWithPassword = () => {
     if (!currentColabUser) return;
     const correctPassword = currentColabUser.senha || "AC2026@";
-    if (loginSenha !== correctPassword && loginSenha !== "AC2026@") {
-      setLoginError("Senha incorreta! A senha padrão inicial é AC2026@.");
-      addToast("error", "Senha Incorreta", "A senha digitada está incorreta. A senha padrão inicial é AC2026@.");
+
+    if (currentColabUser.mustChangePassword) {
+      if (loginSenha !== "AC2026@" && loginSenha !== correctPassword) {
+        setLoginError("Senha incorreta! Como é seu primeiro acesso, use a senha padrão AC2026@.");
+        addToast("error", "Senha Incorreta", "Use a senha padrão inicial AC2026@.");
+        return;
+      }
+      setLoginError("");
+      setShowChangePasswordModal(true);
       return;
     }
-    setLoginError("");
-    if (currentColabUser.mustChangePassword || loginSenha === "AC2026@") {
-      setShowChangePasswordModal(true);
-    } else {
-      setAuthRole("colaborador");
-      addToast("success", "Sessão Iniciada", `Bem-vindo ao Ponto A&C, ${currentColabUser.nome}.`);
+
+    if (loginSenha !== correctPassword) {
+      setLoginError("Senha incorreta.");
+      addToast("error", "Senha Incorreta", "A senha digitada está incorreta.");
+      return;
     }
+
+    setLoginError("");
+    setAuthRole("colaborador");
+    addToast("success", "Sessão Iniciada", `Bem-vindo ao Ponto A&C, ${currentColabUser.nome}.`);
   };
 
   const handleSaveNewPassword = async (e: React.FormEvent) => {
@@ -3210,6 +3238,72 @@ export default function App() {
               </div>
             )}
           </main>
+        </div>
+      )}
+
+      {punchResultModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl text-slate-100"
+          >
+            <div className="flex items-center space-x-3 mb-4">
+              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg ${
+                punchResultModal.success ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40" : "bg-rose-500/20 text-rose-400 border border-rose-500/40"
+              }`}>
+                {punchResultModal.success ? <CheckCircle2 className="w-6 h-6" /> : <XCircle className="w-6 h-6" />}
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">
+                  {punchResultModal.success ? "Ponto Registrado com Sucesso!" : "Falha no Registro de Ponto"}
+                </h3>
+                <p className={`text-xs ${punchResultModal.success ? "text-emerald-400" : "text-rose-400"}`}>
+                  {punchResultModal.success ? "Validação biométrica e GPS confirmadas" : "Registro recusado pelo sistema"}
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2.5 text-xs mb-6 font-sans">
+              {punchResultModal.success && punchResultModal.registro && (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Horário Registrado:</span>
+                    <span className="font-mono font-bold text-sky-300">
+                      {new Date(punchResultModal.registro.timestamp).toLocaleString("pt-BR")}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Tipo:</span>
+                    <span className="font-bold text-white">{punchResultModal.registro.tipo}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Distância da Base:</span>
+                    <span className="font-mono text-emerald-400">{punchResultModal.distancia}m</span>
+                  </div>
+                </>
+              )}
+              <div className="pt-2 border-t border-slate-900">
+                <span className="text-[10px] text-slate-400 block mb-1">
+                  {punchResultModal.success ? "Relatório de Auditoria Biométrica & IA:" : "Motivo do Erro / Justificativa:"}
+                </span>
+                <p className={`p-3 rounded-xl border text-[11px] leading-relaxed ${
+                  punchResultModal.success ? "bg-sky-950/40 border-sky-500/30 text-sky-200" : "bg-rose-950/40 border-rose-500/30 text-rose-200 font-semibold"
+                }`}>
+                  {punchResultModal.mensagem || punchResultModal.justificativa}
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setPunchResultModal(null)}
+              className={`w-full py-3 rounded-xl font-bold text-xs shadow-lg transition-all ${
+                punchResultModal.success ? "bg-sky-600 hover:bg-sky-500 text-white shadow-sky-600/30" : "bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/30"
+              }`}
+            >
+              {punchResultModal.success ? "Concluir & Continuar" : "Tentar Novamente"}
+            </button>
+          </motion.div>
         </div>
       )}
     </div>
