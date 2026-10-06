@@ -649,6 +649,19 @@ export default function App() {
       // ignore
     });
 
+    const unsubEscalas = onSnapshot(collection(db, "escalas"), (snapshot) => {
+      const map: Record<string, EscalaColaborador> = {};
+      snapshot.forEach((docSnap) => {
+        const item = docSnap.data() as EscalaColaborador;
+        map[item.colaboradorId] = item;
+      });
+      if (Object.keys(map).length > 0) {
+        setEscalasColaboradores(prev => ({ ...prev, ...map }));
+      }
+    }, (error) => {
+      // ignore
+    });
+
     return () => {
       unsubColab();
       unsubReg();
@@ -658,6 +671,7 @@ export default function App() {
       unsubLogo();
       unsubBanco();
       unsubFeriados();
+      unsubEscalas();
     };
   }, []);
 
@@ -2524,9 +2538,15 @@ export default function App() {
                         </div>
 
                         <button
-                          onClick={() => {
-                            const targetColab = colaboradores.find((c) => c.id === selectedAdmColabId);
-                            addToast("success", "Escala Salva", `Horários por dia da semana salvos com sucesso para ${targetColab?.nome}.`);
+                          onClick={async () => {
+                            try {
+                              await setDoc(doc(db, "escalas", selectedAdmColabId), escala);
+                              const targetColab = colaboradores.find((c) => c.id === selectedAdmColabId);
+                              addToast("success", "Escala Salva & Sincronizada", `Horários por dia da semana salvos e persistidos com sucesso para ${targetColab?.nome}.`);
+                            } catch (err) {
+                              handleFirestoreError(err, OperationType.WRITE, "escalas");
+                              addToast("error", "Erro ao Salvar", "Não foi possível salvar a escala no banco de dados.");
+                            }
                           }}
                           className="w-full py-3 bg-sky-600 hover:bg-sky-500 text-white rounded-xl font-semibold shadow-md shadow-sky-600/30"
                         >
