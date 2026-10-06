@@ -528,8 +528,36 @@ export default function App() {
   const [novoLon, setNovoLon] = useState<number>(-46.633308);
   const [novoRaio, setNovoRaio] = useState<number>(150);
   const [novoHorarioNotif, setNovoHorarioNotif] = useState("08:00");
+  const [cameraPermissionStatus, setCameraPermissionStatus] = useState<"prompt" | "granted" | "denied" | "checking" | "unsupported">("checking");
 
   useEffect(() => {
+    if (authRole === "colaborador") {
+      if (navigator.permissions && typeof navigator.permissions.query === "function") {
+        navigator.permissions.query({ name: 'camera' as PermissionName }).then((result) => {
+          setCameraPermissionStatus(result.state);
+          result.onchange = () => {
+            setCameraPermissionStatus(result.state);
+          };
+        }).catch(() => {
+          setCameraPermissionStatus("prompt");
+        });
+      } else if (navigator.mediaDevices) {
+        setCameraPermissionStatus("prompt");
+      } else {
+        setCameraPermissionStatus("unsupported");
+      }
+    }
+  }, [authRole]);
+
+  useEffect(() => {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").then((reg) => {
+        console.log("Service Worker registrado com sucesso:", reg.scope);
+      }).catch((err) => {
+        console.warn("Falha ao registrar Service Worker:", err);
+      });
+    }
+
     if ("Notification" in window && Notification.permission !== "granted") {
       Notification.requestPermission();
     }
@@ -766,6 +794,9 @@ export default function App() {
   const startCamera = async () => {
     setCameraError("");
     try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error("API de câmera não suportada.");
+      }
       const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -773,8 +804,12 @@ export default function App() {
         setCameraActive(true);
       }
     } catch (err: any) {
-      console.error("Erro na câmera:", err);
-      setCameraError("Não foi possível acessar a câmera. Usaremos uma foto simulada se necessário.");
+      console.warn("Câmera indisponível ou bloqueada, aplicando foto cadastrada:", err);
+      setCameraError("Câmera indisponível ou bloqueada. A foto cadastrada foi aplicada automaticamente.");
+      if (currentColabUser) {
+        setSelfieDataUrl(currentColabUser.fotoCadastro);
+        addToast("warning", "Câmera Indisponível", "Câmera bloqueada ou indisponível. Sua foto cadastrada foi aplicada automaticamente para permitir o registro do ponto.");
+      }
     }
   };
 
@@ -802,6 +837,47 @@ export default function App() {
       }
     }
   };
+
+  const checkEsquecimentoSaida = (colabId: string) => {
+    const colabPunches = registros.filter(r => r.colaboradorId === colabId);
+    const todayStr = new Date().toISOString().slice(0, 10);
+
+    const punchesByDate: Record<string, RegistroPonto[]> = {};
+    colabPunches.forEach(p => {
+      const datePart = p.timestamp.slice(0, 10);
+      if (datePart !== todayStr) {
+        if (!punchesByDate[datePart]) punchesByDate[datePart] = [];
+        punchesByDate[datePart].push(p);
+      }
+    });
+
+    for (const [date, punches] of Object.entries(punchesByDate)) {
+      const hasEntrada = punches.some(p => p.tipo === "ENTRADA");
+      const hasSaida = punches.some(p => p.tipo === "SAIDA");
+      if (hasEntrada && !hasSaida) {
+        const alertKey = `missing_exit_${colabId}_${date}`;
+        const alreadyAlerted = localStorage.getItem(alertKey);
+        if (!alreadyAlerted) {
+          localStorage.setItem(alertKey, "true");
+          const [ano, mes, dia] = date.split("-");
+          const dataFormatada = `${dia}/${mes}/${ano}`;
+          setTimeout(() => {
+            addToast(
+              "warning",
+              "Esquecimento de Saída Detectado",
+              `Identificamos que em ${dataFormatada} você registrou Entrada mas esqueceu de registrar a Saída. Você pode solicitar um ajuste ao RH se necessário.`
+            );
+          }, 1200);
+        }
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (authRole === "colaborador" && currentColabUser && registros.length > 0) {
+      checkEsquecimentoSaida(currentColabUser.id);
+    }
+  }, [authRole, currentColabUser, registros]);
 
   const getCoordinates = () => {
     switch (gpsMode) {
@@ -1687,6 +1763,21 @@ export default function App() {
                     <p className="text-xs text-slate-400 mb-4">
                       Base autorizada: <span className="text-sky-300 font-semibold">{currentColabUser.localPermitido?.nome || "Matriz SP"}</span>
                     </p>
+
+                    {cameraPermissionStatus === "denied" && (
+                      <div className="bg-amber-500/10 border border-amber-500/30 text-amber-200 p-4 rounded-xl flex items-start gap-3 text-xs mb-4">
+                        <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                        <div className="space-y-1">
+                          <strong className="block text-white font-bold">Câmera Bloqueada pelo Navegador</strong>
+                          <p className="text-amber-200/95 leading-relaxed">
+                            O acesso à câmera está negado. Para desbloquear: clique no ícone de <strong>cadeado ou configurações</strong> na barra de endereços do seu navegador, mude a permissão de <strong>Câmera</strong> para <strong>"Permitir"</strong> e atualize a página.
+                          </p>
+                          <p className="text-[11px] text-sky-300 font-medium pt-1">
+                            ℹ️ O sistema aplicará automaticamente sua foto cadastrada para que seu ponto seja validado sem bloqueios.
+                          </p>
+                        </div>
+                      </div>
+                    )}
 
                     <form onSubmit={handleRegistrarPontoSubmit} className="space-y-4 text-xs">
                       <div>
