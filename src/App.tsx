@@ -810,15 +810,18 @@ export default function App() {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error("API de câmera não suportada.");
       }
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
-        setCameraActive(true);
-      }
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: 640, height: 480 } });
+      setCameraActive(true);
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(e => console.log("Play error:", e));
+        }
+      }, 150);
     } catch (err: any) {
       console.warn("Câmera indisponível ou bloqueada, aplicando foto cadastrada:", err);
       setCameraError("Câmera indisponível ou bloqueada. A foto cadastrada foi aplicada automaticamente.");
+      setCameraActive(false);
       if (currentColabUser) {
         setSelfieDataUrl(currentColabUser.fotoCadastro);
         addToast("warning", "Câmera Indisponível", "Câmera bloqueada ou indisponível. Sua foto cadastrada foi aplicada automaticamente para permitir o registro do ponto.");
@@ -957,6 +960,7 @@ export default function App() {
       if (data.registro) {
         await setDoc(doc(db, "registros", data.registro.id), data.registro);
         setRegistros((prev) => [data.registro, ...prev]);
+        setColabTab("historico");
 
         if (data.pendenteLocal) {
           const novaPendencia: AjustePendente = {
@@ -1951,39 +1955,73 @@ export default function App() {
                 </div>
 
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
-                  <h4 className="text-sm font-bold text-white mb-4">Registros Oficiais do Funcionário</h4>
-                  <div className="space-y-3">
-                    {registros.filter(r => r.colaboradorId === currentColabUser.id).length === 0 ? (
-                      <p className="text-xs text-slate-400 py-6 text-center">Nenhum registro de ponto encontrado para o seu perfil.</p>
-                    ) : (
-                      registros.filter(r => r.colaboradorId === currentColabUser.id).map((reg) => (
-                        <div key={reg.id} className="bg-slate-950 border border-slate-800 p-4 rounded-xl flex items-center justify-between text-xs">
-                          <div className="flex items-center gap-3">
-                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm ${
-                              reg.tipo === "ENTRADA" ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : reg.tipo === "SAIDA" ? "bg-sky-500/20 text-sky-400 border border-sky-500/30" : "bg-amber-500/20 text-amber-400 border border-amber-500/30"
-                            }`}>
-                              {reg.tipo[0]}
-                            </div>
-                            <div>
+                  <h4 className="text-sm font-bold text-white mb-4">Linha do Tempo de Registros Diários</h4>
+                  <div className="space-y-4">
+                    {(() => {
+                      const myPunches = registros.filter(r => r.colaboradorId === currentColabUser.id);
+                      const byDate: Record<string, RegistroPonto[]> = {};
+                      myPunches.forEach(p => {
+                        const d = p.timestamp.slice(0, 10);
+                        if (!byDate[d]) byDate[d] = [];
+                        byDate[d].push(p);
+                      });
+                      const sortedDates = Object.keys(byDate).sort((a, b) => b.localeCompare(a));
+
+                      if (sortedDates.length === 0) {
+                        return <p className="text-xs text-slate-400 py-6 text-center">Nenhum registro de ponto encontrado para o seu perfil.</p>;
+                      }
+
+                      return sortedDates.map(dateStr => {
+                        const dayPunches = byDate[dateStr].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+                        const [ano, mes, dia] = dateStr.split("-");
+                        const dataFormatada = `${dia}/${mes}/${ano}`;
+
+                        return (
+                          <div key={dateStr} className="bg-slate-950 border border-slate-800 rounded-2xl p-5 shadow-lg space-y-4">
+                            <div className="flex items-center justify-between border-b border-slate-900 pb-3">
                               <div className="flex items-center gap-2">
-                                <span className="font-bold text-white text-sm">{reg.tipo}</span>
-                                <span className="text-[10px] text-slate-400 font-mono">ID: {reg.id}</span>
+                                <Calendar className="w-4 h-4 text-sky-400" />
+                                <span className="font-bold text-white text-sm">Data: {dataFormatada}</span>
                               </div>
-                              <span className="text-slate-300 font-mono text-[11px] block mt-0.5">{new Date(reg.timestamp).toLocaleString("pt-BR")}</span>
-                              <span className="block text-[11px] text-sky-400 mt-0.5">Distância GPS da Base: {reg.distanciaMetros}m • Biometria IA: {Math.round((reg.confiancaBiometrica || 0.95) * 100)}%</span>
+                              <span className="px-2.5 py-0.5 rounded-full bg-sky-600/20 text-sky-300 font-mono text-[11px] font-bold">
+                                {dayPunches.length} marcação(ões)
+                              </span>
+                            </div>
+
+                            <div className="relative pl-6 space-y-4 before:content-[''] before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-800">
+                              {dayPunches.map((reg) => (
+                                <div key={reg.id} className="relative flex items-start justify-between text-xs bg-slate-900/80 p-3.5 rounded-xl border border-slate-800">
+                                  <div className="absolute -left-6 top-4 w-3.5 h-3.5 rounded-full border-2 border-slate-950 bg-sky-500 shadow-md"></div>
+                                  <div className="space-y-1">
+                                    <div className="flex items-center gap-2">
+                                      <span className={`px-2.5 py-0.5 rounded font-bold text-[10px] ${
+                                        reg.tipo === "ENTRADA" ? "bg-emerald-500/20 text-emerald-300" : reg.tipo === "SAIDA" ? "bg-sky-500/20 text-sky-300" : "bg-amber-500/20 text-amber-300"
+                                      }`}>
+                                        {reg.tipo}
+                                      </span>
+                                      <span className="font-mono font-bold text-white text-sm">
+                                        {new Date(reg.timestamp).toLocaleTimeString("pt-BR", { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                      </span>
+                                    </div>
+                                    <p className="text-slate-400 text-[11px]">
+                                      Distância da Base: <strong className="text-emerald-400 font-mono">{reg.distanciaMetros}m</strong> • IA Biometria: <strong className="text-sky-300 font-mono">{Math.round((reg.confiancaBiometrica || 0.95) * 100)}%</strong>
+                                    </p>
+                                  </div>
+                                  <div className="flex flex-col items-end gap-1">
+                                    <span className={`px-2.5 py-1 rounded-full font-bold text-[10px] ${
+                                      reg.status === "AProvado" ? "bg-emerald-500/10 text-emerald-400" : "bg-amber-500/10 text-amber-400"
+                                    }`}>
+                                      {reg.status}
+                                    </span>
+                                    <span className="text-[10px] text-slate-500">{reg.ehFotoAoVivo ? "Foto Ao Vivo" : "Foto Cadastrada"}</span>
+                                  </div>
+                                </div>
+                              ))}
                             </div>
                           </div>
-                          <div className="flex flex-col items-end gap-1">
-                            <span className={`px-3 py-1 rounded-full font-bold text-[11px] ${
-                              reg.status === "AProvado" ? "bg-emerald-500/10 text-emerald-400" : "bg-amber-500/10 text-amber-400"
-                            }`}>
-                              {reg.status}
-                            </span>
-                            <span className="text-[10px] text-slate-500">{reg.ehFotoAoVivo ? "Foto Ao Vivo" : "Foto Cadastrada"}</span>
-                          </div>
-                        </div>
-                      ))
-                    )}
+                        );
+                      });
+                    })()}
                   </div>
                 </div>
               </div>
