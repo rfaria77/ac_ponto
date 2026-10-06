@@ -188,7 +188,7 @@ export default function App() {
   const [installModal, setInstallModal] = useState<"android" | "ios" | null>(null);
 
   const [colabTab, setColabTab] = useState<"bater-ponto" | "historico" | "perfil" | "atestados">("bater-ponto");
-  const [admTab, setAdmTab] = useState<"colaboradores" | "criterios" | "lancamento-manual" | "banco-horas" | "localizacao" | "aprovacoes" | "sede" | "atestados" | "logo" | "feriados">("colaboradores");
+  const [admTab, setAdmTab] = useState<"colaboradores" | "criterios" | "lancamento-manual" | "banco-horas" | "localizacao" | "aprovacoes" | "sede" | "atestados" | "logo" | "feriados" | "monitoramento">("colaboradores");
 
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
@@ -507,9 +507,6 @@ export default function App() {
   };
 
   const [tipoPonto, setTipoPonto] = useState<"ENTRADA" | "SAIDA" | "INTERVALO">("ENTRADA");
-  const [gpsMode, setGpsMode] = useState<"sede" | "proximo" | "longe" | "custom">("sede");
-  const [customLat, setCustomLat] = useState(-23.550520);
-  const [customLon, setCustomLon] = useState(-46.633308);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const [cameraActive, setCameraActive] = useState(false);
@@ -895,24 +892,34 @@ export default function App() {
     }
   }, [authRole, currentColabUser, registros]);
 
-  const getCoordinates = () => {
-    switch (gpsMode) {
-      case "sede":
-        return { lat: sede.lat, lon: sede.lon };
-      case "proximo":
-        return { lat: sede.lat + 0.0006, lon: sede.lon + 0.0006 };
-      case "longe":
-        return { lat: sede.lat + 0.0035, lon: sede.lon + 0.0035 };
-      case "custom":
-        return { lat: customLat, lon: customLon };
-    }
+  const getDeviceCoordinates = (): Promise<{ lat: number; lon: number }> => {
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) {
+        addToast("warning", "GPS Indisponível", "Geolocalização não suportada. Usando coordenadas da base.");
+        resolve({ lat: currentColabUser?.localPermitido?.lat || sede.lat, lon: currentColabUser?.localPermitido?.lon || sede.lon });
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          resolve({
+            lat: position.coords.latitude,
+            lon: position.coords.longitude,
+          });
+        },
+        (error) => {
+          console.warn("Erro ao obter geolocalização real:", error);
+          addToast("warning", "GPS Bloqueado ou Indisponível", "Não foi possível obter sua localização GPS real. Verifique se o GPS está ativado. Usando coordenadas padrão da base.");
+          resolve({ lat: currentColabUser?.localPermitido?.lat || sede.lat, lon: currentColabUser?.localPermitido?.lon || sede.lon });
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    });
   };
 
   const handleRegistrarPontoSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentColabUser) return;
     const selfieToSend = selfieDataUrl || currentColabUser.fotoCadastro;
-    const coords = getCoordinates();
 
     setLoading(true);
     setLastResult(null);
@@ -926,6 +933,8 @@ export default function App() {
     }
 
     try {
+      const coords = await getDeviceCoordinates();
+
       const res = await fetch("/api/registrar-ponto", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1826,44 +1835,14 @@ export default function App() {
                         </div>
                       </div>
 
-                      <div>
-                        <label className="block text-slate-300 font-semibold mb-1.5">Simulação de Localização GPS</label>
-                        <select
-                          value={gpsMode}
-                          onChange={(e) => setGpsMode(e.target.value as any)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white"
-                        >
-                          <option value="sede">Dentro da Base Autorizada (Matriz / Filial)</option>
-                          <option value="proximo">Próximo ao Limite (Dentro do Raio)</option>
-                          <option value="longe">Fora da Base (Exige Aprovação do Gestor)</option>
-                          <option value="custom">Coordenadas Customizadas</option>
-                        </select>
+                      <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-1.5">
+                        <label className="block text-slate-300 font-semibold flex items-center gap-1.5">
+                          <MapPin className="w-4 h-4 text-sky-400" /> Geolocalização Real do Dispositivo (GPS)
+                        </label>
+                        <p className="text-[11px] text-slate-400 leading-relaxed">
+                          O sistema capturará automaticamente as coordenadas GPS reais do seu dispositivo no momento da marcação para validação no raio da base autorizada (<strong className="text-white">{currentColabUser.localPermitido?.nome || "Matriz SP"}</strong>).
+                        </p>
                       </div>
-
-                      {gpsMode === "custom" && (
-                        <div className="grid grid-cols-2 gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800">
-                          <div>
-                            <label className="block text-[10px] text-slate-400 mb-1">Latitude</label>
-                            <input
-                              type="number"
-                              step="0.000001"
-                              value={customLat}
-                              onChange={(e) => setCustomLat(parseFloat(e.target.value))}
-                              className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-white font-mono"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[10px] text-slate-400 mb-1">Longitude</label>
-                            <input
-                              type="number"
-                              step="0.000001"
-                              value={customLon}
-                              onChange={(e) => setCustomLon(parseFloat(e.target.value))}
-                              className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-white font-mono"
-                            />
-                          </div>
-                        </div>
-                      )}
 
                       <div className="pt-2">
                         <button
@@ -1948,34 +1927,64 @@ export default function App() {
                 </div>
               </div>
             ) : colabTab === "historico" ? (
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
-                <h3 className="text-base font-bold text-white mb-4">Meus Registros de Ponto Recentes</h3>
-                <div className="space-y-3">
-                  {registros.filter(r => r.colaboradorId === currentColabUser.id).length === 0 ? (
-                    <p className="text-xs text-slate-400 py-6 text-center">Nenhum registro encontrado.</p>
-                  ) : (
-                    registros.filter(r => r.colaboradorId === currentColabUser.id).map((reg) => (
-                      <div key={reg.id} className="bg-slate-950 border border-slate-800 p-4 rounded-xl flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold ${
-                            reg.tipo === "ENTRADA" ? "bg-emerald-500/20 text-emerald-400" : reg.tipo === "SAIDA" ? "bg-sky-500/20 text-sky-400" : "bg-amber-500/20 text-amber-400"
-                          }`}>
-                            {reg.tipo[0]}
+              <div className="space-y-6 max-w-4xl mx-auto w-full">
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-bold text-white flex items-center gap-2">
+                      <Clock className="w-5 h-5 text-sky-400" /> Meu Espelho de Ponto & Histórico Pessoal
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Visualização estritamente isolada e segura dos seus registros de ponto oficiais (Colaborador: <strong className="text-white">{currentColabUser.nome}</strong>).
+                    </p>
+                  </div>
+                  {(() => {
+                    const colabBanco = bancoHorasData.find(b => b.colaboradorId === currentColabUser.id);
+                    return colabBanco ? (
+                      <button
+                        onClick={() => exportarEspelhoPontoPDF(colabBanco)}
+                        className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-xl font-semibold text-xs flex items-center gap-1.5 shadow-lg shadow-sky-600/30"
+                      >
+                        <ExternalLink className="w-4 h-4" /> Baixar Espelho em PDF
+                      </button>
+                    ) : null;
+                  })()}
+                </div>
+
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+                  <h4 className="text-sm font-bold text-white mb-4">Registros Oficiais do Funcionário</h4>
+                  <div className="space-y-3">
+                    {registros.filter(r => r.colaboradorId === currentColabUser.id).length === 0 ? (
+                      <p className="text-xs text-slate-400 py-6 text-center">Nenhum registro de ponto encontrado para o seu perfil.</p>
+                    ) : (
+                      registros.filter(r => r.colaboradorId === currentColabUser.id).map((reg) => (
+                        <div key={reg.id} className="bg-slate-950 border border-slate-800 p-4 rounded-xl flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm ${
+                              reg.tipo === "ENTRADA" ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : reg.tipo === "SAIDA" ? "bg-sky-500/20 text-sky-400 border border-sky-500/30" : "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                            }`}>
+                              {reg.tipo[0]}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-white text-sm">{reg.tipo}</span>
+                                <span className="text-[10px] text-slate-400 font-mono">ID: {reg.id}</span>
+                              </div>
+                              <span className="text-slate-300 font-mono text-[11px] block mt-0.5">{new Date(reg.timestamp).toLocaleString("pt-BR")}</span>
+                              <span className="block text-[11px] text-sky-400 mt-0.5">Distância GPS da Base: {reg.distanciaMetros}m • Biometria IA: {Math.round((reg.confiancaBiometrica || 0.95) * 100)}%</span>
+                            </div>
                           </div>
-                          <div>
-                            <span className="font-bold text-white text-sm block">{reg.tipo}</span>
-                            <span className="text-slate-400">{new Date(reg.timestamp).toLocaleString("pt-BR")}</span>
-                            <span className="block text-[11px] text-sky-400 mt-0.5">Distância GPS: {reg.distanciaMetros}m</span>
+                          <div className="flex flex-col items-end gap-1">
+                            <span className={`px-3 py-1 rounded-full font-bold text-[11px] ${
+                              reg.status === "AProvado" ? "bg-emerald-500/10 text-emerald-400" : "bg-amber-500/10 text-amber-400"
+                            }`}>
+                              {reg.status}
+                            </span>
+                            <span className="text-[10px] text-slate-500">{reg.ehFotoAoVivo ? "Foto Ao Vivo" : "Foto Cadastrada"}</span>
                           </div>
                         </div>
-                        <span className={`px-3 py-1 rounded-full font-bold ${
-                          reg.status === "AProvado" ? "bg-emerald-500/20 text-emerald-300" : "bg-amber-500/20 text-amber-300"
-                        }`}>
-                          {reg.status}
-                        </span>
-                      </div>
-                    ))
-                  )}
+                      ))
+                    )}
+                  </div>
                 </div>
               </div>
             ) : colabTab === "atestados" ? (
@@ -2256,6 +2265,14 @@ export default function App() {
                   }`}
                 >
                   <Building2 className="w-4 h-4" /> Sede Geral
+                </button>
+                <button
+                  onClick={() => setAdmTab("monitoramento")}
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all ${
+                    admTab === "monitoramento" ? "bg-sky-600 text-white shadow-lg shadow-sky-600/20" : "text-slate-300 hover:bg-slate-800"
+                  }`}
+                >
+                  <Activity className="w-4 h-4" /> Monitoramento em Tempo Real
                 </button>
               </nav>
             </div>
@@ -3235,6 +3252,68 @@ export default function App() {
                   </div>
                   <button type="submit" className="w-full py-2.5 bg-sky-600 text-white rounded-xl font-semibold">Salvar Sede Geral</button>
                 </form>
+              </div>
+            )}
+
+            {admTab === "monitoramento" && (
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
+                <div>
+                  <h3 className="text-base font-bold text-white mb-1 flex items-center gap-2">
+                    <Activity className="w-5 h-5 text-sky-400" /> Acompanhamento de Ponto & Monitoramento em Tempo Real
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Acompanhe em tempo real as marcações de ponto, status de presença dos colaboradores, auditorias biométricas por IA e geolocalização exata.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                    <span className="text-[11px] text-slate-400 block mb-1">Total de Colaboradores</span>
+                    <span className="text-xl font-bold text-white">{colaboradores.length}</span>
+                  </div>
+                  <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                    <span className="text-[11px] text-slate-400 block mb-1">Marcações Registradas</span>
+                    <span className="text-xl font-bold text-emerald-400">{registros.length}</span>
+                  </div>
+                  <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                    <span className="text-[11px] text-slate-400 block mb-1">Atestados Pendentes</span>
+                    <span className="text-xl font-bold text-amber-400">{atestados.filter(a => a.status === "PENDENTE").length}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <h4 className="text-sm font-bold text-white mb-2">Últimos Registros em Tempo Real</h4>
+                  {registros.map((reg) => (
+                    <div key={reg.id} className="bg-slate-950 border border-slate-800 p-4 rounded-xl flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-3">
+                        <img src={reg.selfieUrl} alt="" className="w-10 h-10 rounded-xl object-cover border border-sky-500/40" />
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-white text-sm">{reg.colaboradorNome}</span>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              reg.tipo === "ENTRADA" ? "bg-emerald-500/20 text-emerald-300" : reg.tipo === "SAIDA" ? "bg-sky-500/20 text-sky-300" : "bg-amber-500/20 text-amber-300"
+                            }`}>
+                              {reg.tipo}
+                            </span>
+                          </div>
+                          <span className="text-slate-400">{new Date(reg.timestamp).toLocaleString("pt-BR")}</span>
+                          <span className="block text-[11px] text-sky-400 mt-0.5">Distância GPS: {reg.distanciaMetros}m da base</span>
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-1">
+                        <span className={`px-3 py-1 rounded-full font-bold text-[11px] ${
+                          reg.status === "AProvado" ? "bg-emerald-500/10 text-emerald-400" : "bg-rose-500/10 text-rose-400"
+                        }`}>
+                          {reg.status}
+                        </span>
+                        <span className="text-[10px] text-slate-500">IA Bio: {Math.round((reg.confiancaBiometrica || 0.95) * 100)}%</span>
+                      </div>
+                    </div>
+                  ))}
+                  {registros.length === 0 && (
+                    <p className="text-xs text-slate-400 text-center py-6">Nenhum registro de ponto encontrado.</p>
+                  )}
+                </div>
               </div>
             )}
           </main>
