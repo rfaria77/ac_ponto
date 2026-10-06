@@ -973,8 +973,14 @@ export default function App() {
       setSelfieDataUrl(null);
 
       if (data.registro) {
-        await setDoc(doc(db, "registros", data.registro.id), data.registro);
-        setRegistros((prev) => [data.registro, ...prev]);
+        await setDoc(doc(db, "registros", data.registro.id), data.registro, { merge: true });
+        setRegistros((prev) => {
+          const exists = prev.some(r => r.id === data.registro.id);
+          if (exists) {
+            return prev.map(r => r.id === data.registro.id ? data.registro : r);
+          }
+          return [data.registro, ...prev];
+        });
         setColabTab("historico");
 
         if (data.pendenteLocal) {
@@ -1867,10 +1873,19 @@ export default function App() {
                         <button
                           type="submit"
                           disabled={loading}
-                          className="w-full py-3.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white rounded-xl font-bold shadow-lg shadow-sky-600/30 flex items-center justify-center gap-2"
+                          className="w-full py-3.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white rounded-xl font-bold shadow-lg shadow-sky-600/30 flex items-center justify-center gap-2 disabled:opacity-60"
                         >
-                          {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Clock className="w-4 h-4" />}
-                          Bater Ponto com Biometria Facial & GPS
+                          {loading ? (
+                            <>
+                              <RefreshCw className="w-4 h-4 animate-spin text-sky-300" />
+                              <span>Validando Biometria & Gravando no Firestore...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Clock className="w-4 h-4" />
+                              <span>Bater Ponto com Biometria Facial & GPS</span>
+                            </>
+                          )}
                         </button>
                       </div>
                     </form>
@@ -3431,12 +3446,15 @@ export default function App() {
             </div>
 
             <button
-              onClick={() => setPunchResultModal(null)}
+              onClick={() => {
+                setPunchResultModal(null);
+                setColabTab("historico");
+              }}
               className={`w-full py-3 rounded-xl font-bold text-xs shadow-lg transition-all ${
                 punchResultModal.success ? "bg-sky-600 hover:bg-sky-500 text-white shadow-sky-600/30" : "bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/30"
               }`}
             >
-              {punchResultModal.success ? "Concluir & Continuar" : "Tentar Novamente"}
+              {punchResultModal.success ? "Concluir & Ver no Histórico" : "Tentar Novamente"}
             </button>
           </motion.div>
         </div>
