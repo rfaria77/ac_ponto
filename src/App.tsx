@@ -50,6 +50,7 @@ import { motion, AnimatePresence } from "motion/react";
 import jsPDF from "jspdf";
 import { db, handleFirestoreError, OperationType } from "./firebase";
 import { collection, doc, setDoc, addDoc, onSnapshot } from "firebase/firestore";
+import { Logo, LogoIcon } from "./components/Logo";
 
 interface Colaborador {
   id: string;
@@ -105,6 +106,20 @@ interface AjustePendente {
   dataSolicitacao: string;
   motivo: string;
   status: "PENDENTE" | "APROVADO" | "RECUSADO";
+}
+
+interface AtestadoMedico {
+  id: string;
+  colaboradorId: string;
+  colaboradorNome: string;
+  dataInicio: string;
+  dataFim: string;
+  dias: number;
+  motivo: string;
+  cid?: string;
+  comprovanteUrl: string;
+  status: "PENDENTE" | "APROVADO" | "RECUSADO";
+  dataSolicitacao: string;
 }
 
 interface BancoHorasColab {
@@ -163,8 +178,8 @@ export default function App() {
 
   const [installModal, setInstallModal] = useState<"android" | "ios" | null>(null);
 
-  const [colabTab, setColabTab] = useState<"bater-ponto" | "historico" | "perfil">("bater-ponto");
-  const [admTab, setAdmTab] = useState<"colaboradores" | "criterios" | "lancamento-manual" | "banco-horas" | "localizacao" | "aprovacoes" | "sede">("colaboradores");
+  const [colabTab, setColabTab] = useState<"bater-ponto" | "historico" | "perfil" | "atestados">("bater-ponto");
+  const [admTab, setAdmTab] = useState<"colaboradores" | "criterios" | "lancamento-manual" | "banco-horas" | "localizacao" | "aprovacoes" | "sede" | "atestados" | "logo">("colaboradores");
 
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
@@ -199,6 +214,27 @@ export default function App() {
     lon: -46.633308,
     raio: 150,
   });
+
+  const [customLogoUrl, setCustomLogoUrl] = useState<string>("");
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const result = event.target?.result as string;
+      if (result) {
+        setCustomLogoUrl(result);
+        try {
+          await setDoc(doc(db, "configuracoes", "logo"), { url: result });
+          addToast("success", "Logo Atualizada", "A logo oficial foi salva com sucesso e aplicada em todo o sistema.");
+        } catch (err) {
+          handleFirestoreError(err, OperationType.WRITE, "configuracoes/logo");
+        }
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   const defaultDiaEscala = (ent = "08:00", sai = "17:00"): DiaEscala => ({
     ativo: true,
@@ -343,6 +379,84 @@ export default function App() {
     },
   ]);
 
+  const [atestados, setAtestados] = useState<AtestadoMedico[]>([
+    {
+      id: "ATEST_01",
+      colaboradorId: "FUNC_001",
+      colaboradorNome: "Thais Moreira de Souza",
+      dataInicio: "2026-10-02",
+      dataFim: "2026-10-03",
+      dias: 2,
+      motivo: "Consulta médica e repouso (Gripe forte)",
+      cid: "J00",
+      comprovanteUrl: "https://images.unsplash.com/photo-1584515979956-d9f6e5d09982?w=400&auto=format&fit=crop&q=80",
+      status: "APROVADO",
+      dataSolicitacao: "2026-10-02 08:30",
+    },
+  ]);
+
+  const [atestadoDataInicio, setAtestadoDataInicio] = useState(new Date().toISOString().slice(0, 10));
+  const [atestadoDataFim, setAtestadoDataFim] = useState(new Date().toISOString().slice(0, 10));
+  const [atestadoDias, setAtestadoDias] = useState(1);
+  const [atestadoMotivo, setAtestadoMotivo] = useState("");
+  const [atestadoCid, setAtestadoCid] = useState("");
+  const [atestadoUrl, setAtestadoUrl] = useState("https://images.unsplash.com/photo-1584515979956-d9f6e5d09982?w=400&auto=format&fit=crop&q=80");
+
+  const handleEnviarAtestado = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentColabUser) return;
+    try {
+      const novoAtestado: AtestadoMedico = {
+        id: `ATEST_${Date.now()}`,
+        colaboradorId: currentColabUser.id,
+        colaboradorNome: currentColabUser.nome,
+        dataInicio: atestadoDataInicio,
+        dataFim: atestadoDataFim,
+        dias: Number(atestadoDias) || 1,
+        motivo: atestadoMotivo.trim() || "Atestado médico",
+        cid: atestadoCid.trim() || undefined,
+        comprovanteUrl: atestadoUrl.trim() || "https://images.unsplash.com/photo-1584515979956-d9f6e5d09982?w=400&auto=format&fit=crop&q=80",
+        status: "PENDENTE",
+        dataSolicitacao: new Date().toLocaleString("pt-BR"),
+      };
+
+      await setDoc(doc(db, "atestados", novoAtestado.id), novoAtestado);
+      setAtestados((prev) => [novoAtestado, ...prev]);
+      setAtestadoMotivo("");
+      setAtestadoCid("");
+      addToast("success", "Atestado Enviado", "Seu atestado médico foi enviado para validação do RH.");
+    } catch (err: any) {
+      handleFirestoreError(err, OperationType.WRITE, "atestados");
+      addToast("error", "Erro ao Enviar", "Não foi possível enviar o atestado.");
+    }
+  };
+
+  const handleAprovarAtestado = async (id: string) => {
+    try {
+      const atest = atestados.find(a => a.id === id);
+      if (!atest) return;
+      const updated = { ...atest, status: "APROVADO" as const };
+      await setDoc(doc(db, "atestados", id), updated);
+      setAtestados((prev) => prev.map(a => a.id === id ? updated : a));
+      addToast("success", "Atestado Aprovado", `Atestado de ${atest.colaboradorNome} (${atest.dias} dias) foi aprovado.`);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, "atestados");
+    }
+  };
+
+  const handleRecusarAtestado = async (id: string) => {
+    try {
+      const atest = atestados.find(a => a.id === id);
+      if (!atest) return;
+      const updated = { ...atest, status: "RECUSADO" as const };
+      await setDoc(doc(db, "atestados", id), updated);
+      setAtestados((prev) => prev.map(a => a.id === id ? updated : a));
+      addToast("warning", "Atestado Recusado", `Atestado de ${atest.colaboradorNome} foi recusado.`);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, "atestados");
+    }
+  };
+
   const [tipoPonto, setTipoPonto] = useState<"ENTRADA" | "SAIDA" | "INTERVALO">("ENTRADA");
   const [gpsMode, setGpsMode] = useState<"sede" | "proximo" | "longe" | "custom">("sede");
   const [customLat, setCustomLat] = useState(-23.550520);
@@ -411,11 +525,33 @@ export default function App() {
       handleFirestoreError(error, OperationType.GET, "configuracoes/sede");
     });
 
+    const unsubAtestados = onSnapshot(collection(db, "atestados"), (snapshot) => {
+      const items: AtestadoMedico[] = [];
+      snapshot.forEach((docSnap) => {
+        items.push(docSnap.data() as AtestadoMedico);
+      });
+      if (items.length > 0) {
+        setAtestados(items);
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, "atestados");
+    });
+
+    const unsubLogo = onSnapshot(doc(db, "configuracoes", "logo"), (docSnap) => {
+      if (docSnap.exists() && docSnap.data().url) {
+        setCustomLogoUrl(docSnap.data().url);
+      }
+    }, (error) => {
+      // ignore
+    });
+
     return () => {
       unsubColab();
       unsubReg();
       unsubSol();
       unsubConfig();
+      unsubAtestados();
+      unsubLogo();
     };
   }, []);
 
@@ -1031,9 +1167,7 @@ export default function App() {
 
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-sky-600 flex items-center justify-center text-white font-black">
-                  A&C
-                </div>
+                <LogoIcon className="w-10 h-10" />
                 <div>
                   <h3 className="text-base font-bold text-white">Acesso Administrador (RH)</h3>
                   <p className="text-xs text-sky-400">Autenticação Restrita</p>
@@ -1202,12 +1336,9 @@ export default function App() {
           >
             <div className="absolute top-0 right-0 w-48 h-48 bg-sky-600/10 rounded-full blur-3xl pointer-events-none" />
 
-            <div className="text-center mb-6">
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-sky-600 to-blue-500 flex items-center justify-center mx-auto mb-3 shadow-xl shadow-sky-500/30 text-white font-black text-xl tracking-wider">
-                A&C
-              </div>
-              <h1 className="text-2xl font-bold text-white tracking-tight">Ponto A&C</h1>
-              <p className="text-xs text-sky-400 mt-1 font-medium">Saúde e Segurança do Trabalho</p>
+            <div className="flex flex-col items-center justify-center text-center mb-6">
+              <Logo className="mb-2 justify-center scale-110" />
+              <h1 className="text-xl font-bold text-white tracking-tight mt-1">Ponto A&C</h1>
             </div>
 
             <div className="space-y-4 text-xs">
@@ -1311,13 +1442,10 @@ export default function App() {
           <header className="bg-slate-900/80 backdrop-blur-md border-b border-slate-800 sticky top-0 z-45">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
               <div className="flex items-center space-x-3">
-                <img src={currentColabUser.fotoCadastro} alt="" className="w-9 h-9 rounded-xl object-cover border border-sky-500/40" />
+                <LogoIcon className="w-10 h-10" />
                 <div>
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-sky-500"></span>
-                    <span className="text-xs font-black tracking-wider text-sky-400">PONTO A&C</span>
-                  </div>
                   <h1 className="text-sm font-bold text-white">{currentColabUser.nome}</h1>
+                  <p className="text-[10px] text-sky-400">Ponto A&C — {currentColabUser.cargo}</p>
                 </div>
               </div>
 
@@ -1337,6 +1465,14 @@ export default function App() {
                   }`}
                 >
                   Histórico
+                </button>
+                <button
+                  onClick={() => setColabTab("atestados")}
+                  className={`px-3.5 py-2 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
+                    colabTab === "atestados" ? "bg-sky-600 text-white" : "text-slate-300 hover:bg-slate-800"
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" /> Atestados
                 </button>
                 <button
                   onClick={() => setColabTab("perfil")}
@@ -1579,6 +1715,127 @@ export default function App() {
                   )}
                 </div>
               </div>
+            ) : colabTab === "atestados" ? (
+              <div className="space-y-6 max-w-4xl mx-auto w-full">
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+                  <h3 className="text-base font-bold text-white mb-2 flex items-center gap-2">
+                    <FileText className="w-5 h-5 text-sky-400" /> Enviar Atestado Médico / Licença
+                  </h3>
+                  <p className="text-xs text-slate-400 mb-6">
+                    Cadastre os dias de atestado médico, informe a CID (opcional) e envie o comprovante para homologação do RH e abono das horas.
+                  </p>
+
+                  <form onSubmit={handleEnviarAtestado} className="space-y-4 text-xs">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-slate-400 mb-1 font-semibold">Data Início</label>
+                        <input
+                          type="date"
+                          required
+                          value={atestadoDataInicio}
+                          onChange={(e) => setAtestadoDataInicio(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-400 mb-1 font-semibold">Data Fim</label>
+                        <input
+                          type="date"
+                          required
+                          value={atestadoDataFim}
+                          onChange={(e) => setAtestadoDataFim(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-slate-400 mb-1 font-semibold">Total de Dias</label>
+                        <input
+                          type="number"
+                          min="1"
+                          required
+                          value={atestadoDias}
+                          onChange={(e) => setAtestadoDias(parseInt(e.target.value) || 1)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-400 mb-1 font-semibold">CID (Opcional)</label>
+                        <input
+                          type="text"
+                          placeholder="Ex: J00"
+                          value={atestadoCid}
+                          onChange={(e) => setAtestadoCid(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white font-mono uppercase"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 mb-1 font-semibold">Motivo / Descrição / Médico</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ex: Consulta médica e repouso de 2 dias"
+                        value={atestadoMotivo}
+                        onChange={(e) => setAtestadoMotivo(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2.5 text-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 mb-1 font-semibold">URL do Comprovante (Foto do Atestado)</label>
+                      <input
+                        type="url"
+                        value={atestadoUrl}
+                        onChange={(e) => setAtestadoUrl(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="w-full py-3 bg-sky-600 hover:bg-sky-500 text-white rounded-xl font-semibold shadow-md shadow-sky-600/30"
+                    >
+                      Enviar Atestado para Validação do RH
+                    </button>
+                  </form>
+                </div>
+
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+                  <h3 className="text-base font-bold text-white">Meus Atestados Enviados</h3>
+                  <div className="space-y-3">
+                    {atestados.filter(a => a.colaboradorId === currentColabUser.id).map((a) => (
+                      <div key={a.id} className="bg-slate-950 border border-slate-800 p-4 rounded-xl flex items-center justify-between text-xs">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-white text-sm">{a.dias} Dia(s) de Atestado ({a.dataInicio} a {a.dataFim})</span>
+                            {a.cid && <span className="px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 font-mono text-[10px]">CID: {a.cid}</span>}
+                          </div>
+                          <p className="text-slate-300">{a.motivo}</p>
+                          <span className="text-[10px] text-slate-400">Enviado em: {a.dataSolicitacao}</span>
+                        </div>
+                        <div className="flex flex-col items-end gap-2">
+                          <span className={`px-3 py-1 rounded-full font-bold text-[11px] ${
+                            a.status === "APROVADO" ? "bg-emerald-500/10 text-emerald-400" :
+                            a.status === "RECUSADO" ? "bg-rose-500/10 text-rose-400" : "bg-amber-500/10 text-amber-400"
+                          }`}>
+                            {a.status}
+                          </span>
+                          <a href={a.comprovanteUrl} target="_blank" rel="noreferrer" className="text-sky-400 hover:underline flex items-center gap-1 text-[11px]">
+                            <ExternalLink className="w-3 h-3" /> Ver Comprovante
+                          </a>
+                        </div>
+                      </div>
+                    ))}
+                    {atestados.filter(a => a.colaboradorId === currentColabUser.id).length === 0 && (
+                      <p className="text-xs text-slate-400 text-center py-6">Nenhum atestado cadastrado.</p>
+                    )}
+                  </div>
+                </div>
+              </div>
             ) : (
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl max-w-xl mx-auto space-y-6">
                 <h3 className="text-base font-bold text-white flex items-center gap-2">
@@ -1634,9 +1891,7 @@ export default function App() {
           <aside className="w-full md:w-64 bg-slate-900 border-r border-slate-800 p-6 flex flex-col justify-between">
             <div className="space-y-6">
               <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-sky-600 to-blue-500 flex items-center justify-center text-white font-black">
-                  A&C
-                </div>
+                <LogoIcon className="w-10 h-10" />
                 <div>
                   <h2 className="text-sm font-bold text-white">Painel Gestor RH</h2>
                   <p className="text-[10px] text-sky-400">Ponto A&C — Admin</p>
@@ -1691,6 +1946,22 @@ export default function App() {
                   }`}
                 >
                   <ShieldAlert className="w-4 h-4" /> Aprovações
+                </button>
+                <button
+                  onClick={() => setAdmTab("atestados")}
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all ${
+                    admTab === "atestados" ? "bg-sky-600 text-white shadow-lg shadow-sky-600/20" : "text-slate-300 hover:bg-slate-800"
+                  }`}
+                >
+                  <FileText className="w-4 h-4" /> Atestados Médicos ({atestados.filter(a => a.status === "PENDENTE").length})
+                </button>
+                <button
+                  onClick={() => setAdmTab("logo")}
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all ${
+                    admTab === "logo" ? "bg-sky-600 text-white shadow-lg shadow-sky-600/20" : "text-slate-300 hover:bg-slate-800"
+                  }`}
+                >
+                  <ImageIcon className="w-4 h-4" /> Logo Oficial
                 </button>
                 <button
                   onClick={() => setAdmTab("sede")}
@@ -2341,6 +2612,107 @@ export default function App() {
                       </div>
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {admTab === "atestados" && (
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+                <h3 className="text-base font-bold text-white mb-2">Gerenciamento de Atestados Médicos & Licenças</h3>
+                <p className="text-xs text-slate-400 mb-6">Analise os atestados enviados pelos colaboradores, aprove para abonar as faltas ou recuse se necessário.</p>
+                <div className="space-y-3">
+                  {atestados.map((a) => (
+                    <div key={a.id} className="bg-slate-950 border border-slate-800 p-4 rounded-xl flex items-center justify-between text-xs">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-white text-sm">{a.colaboradorNome}</span>
+                          <span className="px-2 py-0.5 rounded bg-sky-600/20 text-sky-300 font-bold">{a.dias} Dia(s)</span>
+                          {a.cid && <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 font-mono text-[10px]">CID: {a.cid}</span>}
+                        </div>
+                        <p className="text-slate-300"><strong className="text-slate-400">Período:</strong> {a.dataInicio} até {a.dataFim}</p>
+                        <p className="text-slate-400">{a.motivo}</p>
+                        <div className="flex items-center gap-3 pt-1">
+                          <span className="text-[10px] text-slate-500">Enviado em: {a.dataSolicitacao}</span>
+                          <a href={a.comprovanteUrl} target="_blank" rel="noreferrer" className="text-sky-400 hover:underline flex items-center gap-1 text-[11px]">
+                            <ExternalLink className="w-3 h-3" /> Ver Comprovante do Atestado
+                          </a>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {a.status === "PENDENTE" ? (
+                          <>
+                            <button onClick={() => handleAprovarAtestado(a.id)} className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-semibold">Aprovar</button>
+                            <button onClick={() => handleRecusarAtestado(a.id)} className="px-3.5 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-semibold">Recusar</button>
+                          </>
+                        ) : (
+                          <span className={`px-3.5 py-1.5 rounded-full font-bold text-xs ${a.status === "APROVADO" ? "text-emerald-400 bg-emerald-500/10" : "text-rose-400 bg-rose-500/10"}`}>{a.status}</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {atestados.length === 0 && (
+                    <p className="text-xs text-slate-400 text-center py-8">Nenhum atestado cadastrado no sistema.</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {admTab === "logo" && (
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl max-w-xl space-y-6">
+                <div>
+                  <h3 className="text-base font-bold text-white mb-2 flex items-center gap-2">
+                    <ImageIcon className="w-5 h-5 text-sky-400" /> Gerenciar Logo Oficial da A&C
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Faça o upload da imagem oficial da logo da empresa para substituir automaticamente em todas as telas, cabeçalhos e relatórios do sistema.
+                  </p>
+                </div>
+
+                <div className="bg-slate-950 p-6 rounded-xl border border-slate-800 flex flex-col items-center justify-center space-y-4">
+                  <div className="w-48 h-24 bg-slate-900 rounded-xl border border-slate-800 flex items-center justify-center overflow-hidden p-2">
+                    {customLogoUrl ? (
+                      <img src={customLogoUrl} alt="Logo Preview" className="max-h-full max-w-full object-contain" />
+                    ) : (
+                      <span className="text-xs text-slate-500">Nenhuma logo carregada</span>
+                    )}
+                  </div>
+
+                  <div className="w-full space-y-3">
+                    <label className="block text-slate-300 text-xs font-semibold mb-1">Selecionar Imagem do Computador</label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleLogoUpload}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-300 file:mr-4 file:py-1.5 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-sky-600 file:text-white hover:file:bg-sky-500 cursor-pointer"
+                    />
+                  </div>
+
+                  <div className="w-full pt-3 border-t border-slate-800 space-y-2">
+                    <label className="block text-slate-300 text-xs font-semibold">Ou insira a URL direta da imagem</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="url"
+                        placeholder="https://exemplo.com/logo.jpg"
+                        value={customLogoUrl}
+                        onChange={(e) => setCustomLogoUrl(e.target.value)}
+                        className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await setDoc(doc(db, "configuracoes", "logo"), { url: customLogoUrl });
+                            addToast("success", "Logo Salva", "A URL da logo foi atualizada com sucesso.");
+                          } catch (err) {
+                            handleFirestoreError(err, OperationType.WRITE, "configuracoes/logo");
+                          }
+                        }}
+                        className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-semibold"
+                      >
+                        Salvar URL
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
