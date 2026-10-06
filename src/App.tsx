@@ -62,6 +62,7 @@ interface Colaborador {
   fotoCadastro: string;
   senha?: string;
   mustChangePassword?: boolean;
+  horarioNotificacao?: string;
   localPermitido?: {
     nome: string;
     lat: number;
@@ -526,6 +527,37 @@ export default function App() {
   const [novoLat, setNovoLat] = useState<number>(-23.550520);
   const [novoLon, setNovoLon] = useState<number>(-46.633308);
   const [novoRaio, setNovoRaio] = useState<number>(150);
+  const [novoHorarioNotif, setNovoHorarioNotif] = useState("08:00");
+
+  useEffect(() => {
+    if ("Notification" in window && Notification.permission !== "granted") {
+      Notification.requestPermission();
+    }
+  }, []);
+
+  useEffect(() => {
+    if (authRole !== "colaborador" || !currentColabUser || !currentColabUser.horarioNotificacao) return;
+
+    const interval = setInterval(() => {
+      const now = new Date();
+      const horaAtual = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      if (horaAtual === currentColabUser.horarioNotificacao) {
+        const lastNotif = sessionStorage.getItem(`notified_${currentColabUser.id}_${now.toDateString()}`);
+        if (!lastNotif) {
+          sessionStorage.setItem(`notified_${currentColabUser.id}_${now.toDateString()}`, "true");
+          addToast("warning", "Lembrete de Ponto", `Olá, ${currentColabUser.nome}! Este é seu horário programado (${currentColabUser.horarioNotificacao}) para registrar o ponto.`);
+          if ("Notification" in window && Notification.permission === "granted") {
+            new Notification("Ponto A&C — Hora de Bater o Ponto!", {
+              body: `Olá ${currentColabUser.nome}, horário programado (${currentColabUser.horarioNotificacao}) para registrar sua jornada.`,
+              icon: currentColabUser.fotoCadastro,
+            });
+          }
+        }
+      }
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [authRole, currentColabUser]);
 
   // Firestore Real-Time Synchronization & Seeding
   useEffect(() => {
@@ -989,6 +1021,7 @@ export default function App() {
         fotoCadastro: novaFotoUrl.trim() || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80",
         senha: "AC2026@",
         mustChangePassword: true,
+        horarioNotificacao: novoHorarioNotif || "08:00",
         localPermitido: { nome: novoLocalNome.trim() || "Local Autorizado", lat: Number(novoLat) || sede.lat, lon: Number(novoLon) || sede.lon, raio: Number(novoRaio) || 150 },
       };
 
@@ -1038,6 +1071,7 @@ export default function App() {
       setNovoLat(sede.lat);
       setNovoLon(sede.lon);
       setNovoRaio(150);
+      setNovoHorarioNotif("08:00");
       addToast("success", "Colaborador Cadastrado", `${novoColab.nome} adicionado com sucesso.`);
     } catch (err: any) {
       console.error("Erro ao cadastrar colaborador:", err);
@@ -1960,6 +1994,21 @@ export default function App() {
                     />
                   </div>
 
+                  <div>
+                    <label className="block text-slate-300 font-semibold mb-1 flex items-center gap-1">
+                      <Bell className="w-3.5 h-3.5 text-sky-400" /> Horário de Notificação / Lembrete para Bater Ponto
+                    </label>
+                    <input
+                      type="time"
+                      value={currentColabUser.horarioNotificacao || "08:00"}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setCurrentColabUser({ ...currentColabUser, horarioNotificacao: val });
+                      }}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white font-mono"
+                    />
+                  </div>
+
                   <button
                     onClick={async () => {
                       try {
@@ -2146,6 +2195,18 @@ export default function App() {
                           className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white"
                         />
                       </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 mb-1 font-semibold flex items-center gap-1">
+                        <Bell className="w-3.5 h-3.5 text-sky-400" /> Horário de Notificação / Lembrete para Bater Ponto
+                      </label>
+                      <input
+                        type="time"
+                        value={novoHorarioNotif}
+                        onChange={(e) => setNovoHorarioNotif(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white font-mono"
+                      />
                     </div>
 
                     <div>
