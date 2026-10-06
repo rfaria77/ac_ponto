@@ -545,6 +545,14 @@ export default function App() {
       // ignore
     });
 
+    const unsubBanco = onSnapshot(doc(db, "configuracoes", "banco_horas"), (docSnap) => {
+      if (docSnap.exists() && docSnap.data().items) {
+        setBancoHorasData(docSnap.data().items);
+      }
+    }, (error) => {
+      // ignore
+    });
+
     return () => {
       unsubColab();
       unsubReg();
@@ -552,6 +560,7 @@ export default function App() {
       unsubConfig();
       unsubAtestados();
       unsubLogo();
+      unsubBanco();
     };
   }, []);
 
@@ -985,6 +994,16 @@ export default function App() {
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, "configuracoes");
       addToast("error", "Erro", "Não foi possível salvar as configurações da sede.");
+    }
+  };
+
+  const handleSaveBancoHoras = async () => {
+    try {
+      await setDoc(doc(db, "configuracoes", "banco_horas"), { items: bancoHorasData });
+      addToast("success", "Banco de Horas Salvo", "Os saldos e dados de banco de horas foram salvos com sucesso no sistema.");
+    } catch (err: any) {
+      handleFirestoreError(err, OperationType.WRITE, "configuracoes/banco_horas");
+      addToast("error", "Erro ao Salvar", "Não foi possível salvar os dados do banco de horas.");
     }
   };
 
@@ -2447,6 +2466,15 @@ export default function App() {
                       ))}
                     </tbody>
                   </table>
+                </div>
+
+                <div className="p-4 bg-slate-950/80 border-t border-slate-800 flex justify-end">
+                  <button
+                    onClick={handleSaveBancoHoras}
+                    className="px-6 py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl font-semibold text-xs shadow-lg shadow-sky-600/30 flex items-center gap-2"
+                  >
+                    <Check className="w-4 h-4" /> Salvar Banco de Horas & Saldos
+                  </button>
                 </div>
               </div>
             )}
