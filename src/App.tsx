@@ -49,7 +49,7 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import jsPDF from "jspdf";
 import { db, handleFirestoreError, OperationType } from "./firebase";
-import { collection, doc, setDoc, addDoc, onSnapshot } from "firebase/firestore";
+import { collection, doc, setDoc, deleteDoc, addDoc, onSnapshot } from "firebase/firestore";
 import { Logo, LogoIcon } from "./components/Logo";
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
 
@@ -89,6 +89,7 @@ interface RegistroPonto {
   distanciaMetros: number;
   confiancaBiometrica: number;
   ehFotoAoVivo: boolean;
+  enderecoGPS?: string;
   justificativa: string;
   selfieUrl: string;
 }
@@ -506,6 +507,16 @@ export default function App() {
     }
   };
 
+  const handleExcluirRegistroPonto = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, "registros", id));
+      setRegistros(prev => prev.filter(r => r.id !== id));
+      addToast("success", "Apontamento Excluído", "O registro de ponto foi removido com sucesso do sistema.");
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, "registros");
+    }
+  };
+
   const [tipoPonto, setTipoPonto] = useState<"ENTRADA" | "SAIDA" | "INTERVALO">("ENTRADA");
   
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -771,9 +782,9 @@ export default function App() {
 
       const defaultSede: SedeConfig = {
         id: "sede",
-        nome: "Matriz São Paulo / Sede Principal",
-        lat: -23.550520,
-        lon: -46.633308,
+        nome: "Sede Tupaciguara MG — Rua Modesto Alves Prudente, 266, Primavera",
+        lat: -18.59969,
+        lon: -48.016335,
         raioMaximoMetros: 150.0,
       };
       await setDoc(doc(db, "configuracoes", "sede"), defaultSede);
@@ -2035,8 +2046,9 @@ export default function App() {
                                           {new Date(reg.timestamp).toLocaleTimeString("pt-BR", { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                                         </span>
                                       </div>
-                                      <p className="text-slate-400 text-[11px]">
-                                        Distância da Base: <strong className="text-emerald-400 font-mono">{reg.distanciaMetros}m</strong> • IA Biometria: <strong className="text-sky-300 font-mono">{Math.round((reg.confiancaBiometrica || 0.95) * 100)}%</strong>
+                                      <p className="text-slate-400 text-[11px] space-y-0.5">
+                                        <span className="block text-sky-300 font-mono">📍 Local: {reg.enderecoGPS || `${reg.distanciaMetros}m da base`}</span>
+                                        <span>Biometria IA: <strong className="text-sky-300 font-mono">{Math.round((reg.confiancaBiometrica || 0.95) * 100)}%</strong></span>
                                       </p>
                                     </div>
                                   </div>
@@ -3368,16 +3380,25 @@ export default function App() {
                             </span>
                           </div>
                           <span className="text-slate-400">{new Date(reg.timestamp).toLocaleString("pt-BR")}</span>
-                          <span className="block text-[11px] text-sky-400 mt-0.5">Distância GPS: {reg.distanciaMetros}m da base</span>
+                          <span className="block text-[11px] text-sky-300 font-mono mt-0.5">📍 {reg.enderecoGPS || `${reg.distanciaMetros}m da base`}</span>
                         </div>
                       </div>
-                      <div className="flex flex-col items-end gap-1">
-                        <span className={`px-3 py-1 rounded-full font-bold text-[11px] ${
-                          reg.status === "AProvado" ? "bg-emerald-500/10 text-emerald-400" : "bg-rose-500/10 text-rose-400"
-                        }`}>
-                          {reg.status}
-                        </span>
-                        <span className="text-[10px] text-slate-500">IA Bio: {Math.round((reg.confiancaBiometrica || 0.95) * 100)}%</span>
+                      <div className="flex items-center gap-3">
+                        <div className="flex flex-col items-end gap-1">
+                          <span className={`px-3 py-1 rounded-full font-bold text-[11px] ${
+                            reg.status === "AProvado" ? "bg-emerald-500/10 text-emerald-400" : "bg-rose-500/10 text-rose-400"
+                          }`}>
+                            {reg.status}
+                          </span>
+                          <span className="text-[10px] text-slate-500">IA Bio: {Math.round((reg.confiancaBiometrica || 0.95) * 100)}%</span>
+                        </div>
+                        <button
+                          onClick={() => handleExcluirRegistroPonto(reg.id)}
+                          className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg font-semibold border border-rose-500/30 transition-colors flex items-center gap-1"
+                          title="Excluir Apontamento"
+                        >
+                          <X className="w-3.5 h-3.5" /> Excluir
+                        </button>
                       </div>
                     </div>
                   ))}

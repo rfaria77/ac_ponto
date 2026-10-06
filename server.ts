@@ -36,9 +36,9 @@ function calcularDistanciaMetros(lat1: number, lon1: number, lat2: number, lon2:
 }
 
 let sedeConfig = {
-  nome: "Matriz São Paulo / Sede Principal",
-  lat: -23.550520,
-  lon: -46.633308,
+  nome: "Sede Tupaciguara MG — Rua Modesto Alves Prudente, 266, Primavera",
+  lat: -18.59969,
+  lon: -48.016335,
   raioMaximoMetros: 150.0,
 };
 
@@ -284,17 +284,15 @@ app.post("/api/registrar-ponto", async (req, res) => {
       }
     }
 
-    // If outside permitted location -> Send to admin approval instead of hard reject
-    let statusRegistro: "AProvado" | "RECUSADO_GEO" | "RECUSADO_BIO" | "RECUSADO_FOTO_ESTATICA" | "PENDENTE_APROVACAO_LOCAL" = "AProvado";
-    if (!geoValida) {
-      statusRegistro = "PENDENTE_APROVACAO_LOCAL";
-    } else if (!resultadoBio.eh_foto_ao_vivo) {
+    let statusRegistro: "AProvado" | "RECUSADO_BIO" | "RECUSADO_FOTO_ESTATICA" = "AProvado";
+    if (!resultadoBio.eh_foto_ao_vivo) {
       statusRegistro = "RECUSADO_FOTO_ESTATICA";
-    } else if (!resultadoBio.mesma_pessoa || resultadoBio.confianca_estimada < 0.75) {
+    } else if (!resultadoBio.mesma_pessoa || resultadoBio.confianca_estimada < 0.70) {
       statusRegistro = "RECUSADO_BIO";
     }
 
-    const aprovado = statusRegistro === "AProvado" || statusRegistro === "PENDENTE_APROVACAO_LOCAL";
+    const aprovado = statusRegistro === "AProvado";
+    const enderecoGPS = `Lat: ${Number(latUsuario).toFixed(5)}, Lon: ${Number(lonUsuario).toFixed(5)} (${distanciaArredondada}m da base — Tupaciguara, MG)`;
 
     const registro = {
       id: `REG_${Date.now()}`,
@@ -306,9 +304,8 @@ app.post("/api/registrar-ponto", async (req, res) => {
       distanciaMetros: distanciaArredondada,
       confiancaBiometrica: resultadoBio.confianca_estimada,
       ehFotoAoVivo: resultadoBio.eh_foto_ao_vivo,
-      justificativa: !geoValida 
-        ? `Localização alternativa detectada a ${distanciaArredondada}m da base (${colaborador.localPermitido?.nome || "Sede"}). Requer aprovação do gestor.`
-        : resultadoBio.justificativa,
+      enderecoGPS,
+      justificativa: aprovado ? `Ponto registrado via GPS do celular com sucesso. Local: ${enderecoGPS}` : resultadoBio.justificativa,
       selfieUrl: selfieBase64 || colaborador.fotoCadastro,
     };
 
@@ -316,14 +313,12 @@ app.post("/api/registrar-ponto", async (req, res) => {
 
     res.json({
       success: aprovado,
-      pendenteLocal: !geoValida,
+      pendenteLocal: false,
       distancia: distanciaArredondada,
       biometria: resultadoBio,
       registro,
-      mensagem: !geoValida
-        ? `⚠️ Ponto realizado em local alternativo (${distanciaArredondada}m da base). Enviado para aprovação do Administrador.`
-        : aprovado
-        ? "✅ Ponto registrado com sucesso!"
+      mensagem: aprovado
+        ? "✅ Ponto registrado e confirmado com sucesso via GPS do celular!"
         : "❌ Ponto recusado por incompatibilidade biométrica.",
     });
   } catch (err: any) {
