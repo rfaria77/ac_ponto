@@ -33,6 +33,10 @@ import {
   History,
   TrendingUp,
   TrendingDown,
+  Lock,
+  Key,
+  LogOut,
+  Menu,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import jsPDF from "jspdf";
@@ -72,6 +76,8 @@ interface Colaborador {
   saldoAnteriorBancoMinutos: number; // Saldo de banco antes de iniciar o sistema
   dataInicioSaldo?: string; // Data base do saldo inicial
   observacaoSaldo?: string; // Observação explicativa do saldo inicial
+  senha?: string; // Senha de acesso (padrão Aec2026@)
+  primeiroAcesso?: boolean; // True se precisar alterar senha no primeiro acesso
   horarioTrabalho: HorarioTrabalhoColab;
 }
 
@@ -84,6 +90,8 @@ const COLABORADORES_INICIAIS: Colaborador[] = [
     salarioBase: 2450.0,
     saldoAnteriorBancoMinutos: 270, // +04h 30m
     dataInicioSaldo: "01/09/2026",
+    senha: "Aec2026@",
+    primeiroAcesso: true,
     horarioTrabalho: {
       entrada: "08:00",
       almocoSaida: "12:00",
@@ -100,6 +108,8 @@ const COLABORADORES_INICIAIS: Colaborador[] = [
     salarioBase: 2650.0,
     saldoAnteriorBancoMinutos: -120, // -02h 00m
     dataInicioSaldo: "01/09/2026",
+    senha: "Aec2026@",
+    primeiroAcesso: true,
     horarioTrabalho: {
       entrada: "07:30",
       almocoSaida: "11:30",
@@ -116,6 +126,8 @@ const COLABORADORES_INICIAIS: Colaborador[] = [
     salarioBase: 2300.0,
     saldoAnteriorBancoMinutos: 0,
     dataInicioSaldo: "01/09/2026",
+    senha: "Aec2026@",
+    primeiroAcesso: true,
     horarioTrabalho: {
       entrada: "08:30",
       almocoSaida: "12:30",
@@ -132,6 +144,8 @@ const COLABORADORES_INICIAIS: Colaborador[] = [
     salarioBase: 3100.0,
     saldoAnteriorBancoMinutos: 180, // +03h 00m
     dataInicioSaldo: "01/09/2026",
+    senha: "Aec2026@",
+    primeiroAcesso: true,
     horarioTrabalho: {
       entrada: "08:00",
       almocoSaida: "12:00",
@@ -152,9 +166,29 @@ interface FechamentoArmazenado {
 }
 
 export default function App() {
-  const [abaAtiva, setAbaAtiva] = useState<"digitalizar" | "fechamento" | "historico" | "criterios" | "colaboradores">("digitalizar");
+  const [userRole, setUserRole] = useState<"escolha" | "admin" | "funcionario">("escolha");
+  const [adminSenhaInput, setAdminSenhaInput] = useState<string>("");
+  const [adminLoginErro, setAdminLoginErro] = useState<boolean>(false);
+  const [funcionarioLoginId, setFuncionarioLoginId] = useState<string>("FUNC_001");
+
+  // Estados para Login e Senhas de Funcionários
+  const [modalLoginFuncionarioAberta, setModalLoginFuncionarioAberta] = useState<boolean>(false);
+  const [colabTentandoLogarId, setColabTentandoLogarId] = useState<string>("FUNC_001");
+  const [senhaLoginFuncInput, setSenhaLoginFuncInput] = useState<string>("");
+  const [modalAlterarSenhaAberta, setModalAlterarSenhaAberta] = useState<boolean>(false);
+  const [novaSenhaInput, setNovaSenhaInput] = useState<string>("");
+  const [confirmaNovaSenhaInput, setConfirmaNovaSenhaInput] = useState<string>("");
+  const [sidebarAbertaMobile, setSidebarAbertaMobile] = useState<boolean>(false);
+
+  const [abaAtiva, setAbaAtiva] = useState<"digitalizar" | "fechamento" | "historico" | "criterios" | "colaboradores" | "baterPonto">("baterPonto");
   const [colaboradores, setColaboradores] = useState<Colaborador[]>(COLABORADORES_INICIAIS);
   const [criterios, setCriterios] = useState<CriteriosApuracao>(CRITERIOS_PADRAO);
+
+  // Portal do Funcionário (Bater Ponto)
+  const [portalColaboradorId, setPortalColaboradorId] = useState<string>("FUNC_001");
+  const [portalDiaSelecionado, setPortalDiaSelecionado] = useState<number>(new Date().getDate());
+  const [portalMesAno, setPortalMesAno] = useState<string>("09/2026");
+  const [portalSucessoModal, setPortalSucessoModal] = useState<{ tipo: string; hora: string } | null>(null);
   
   // Seleção e parâmetros de upload
   const [colaboradorSelecionadoId, setColaboradorSelecionadoId] = useState<string>("FUNC_001");
@@ -485,6 +519,65 @@ export default function App() {
     showToast("sucesso", "Colaborador Removido", `${nome} foi removido da lista.`);
   };
 
+  const handleResetarSenhaColaborador = (id: string) => {
+    const atualizados = colaboradores.map((c) =>
+      c.id === id ? { ...c, senha: "Aec2026@", primeiroAcesso: true } : c
+    );
+    setColaboradores(atualizados);
+    localStorage.setItem("ac_gestor_colaboradores", JSON.stringify(atualizados));
+    showToast("sucesso", "Senha Redefinida", "Senha resetada para a padrão: Aec2026@ (primeiro acesso obrigatório).");
+  };
+
+  const handleConfirmarLoginFuncionario = () => {
+    const colab = colaboradores.find((c) => c.id === colabTentandoLogarId);
+    if (!colab) return;
+
+    const senhaCadastrada = colab.senha || "Aec2026@";
+    if (senhaLoginFuncInput === senhaCadastrada) {
+      if (colab.primeiroAcesso !== false || senhaCadastrada === "Aec2026@") {
+        setModalLoginFuncionarioAberta(false);
+        setModalAlterarSenhaAberta(true);
+        setNovaSenhaInput("");
+        setConfirmaNovaSenhaInput("");
+      } else {
+        setPortalColaboradorId(colab.id);
+        setUserRole("funcionario");
+        setAbaAtiva("baterPonto");
+        setModalLoginFuncionarioAberta(false);
+        setSenhaLoginFuncInput("");
+        showToast("sucesso", "Bem-vindo(a)!", `Acesso liberado para ${colab.nome}.`);
+      }
+    } else {
+      showToast("erro", "Senha Incorreta", "Senha incorreta. A senha inicial padrão é Aec2026@.");
+    }
+  };
+
+  const handleSalvarNovaSenhaPessoal = () => {
+    if (!novaSenhaInput || novaSenhaInput.length < 4) {
+      showToast("aviso", "Senha Curta", "A nova senha deve ter pelo menos 4 caracteres.");
+      return;
+    }
+    if (novaSenhaInput !== confirmaNovaSenhaInput) {
+      showToast("erro", "Senhas Diferentes", "A confirmação de senha não confere.");
+      return;
+    }
+
+    const atualizados = colaboradores.map((c) =>
+      c.id === colabTentandoLogarId
+        ? { ...c, senha: novaSenhaInput, primeiroAcesso: false }
+        : c
+    );
+    setColaboradores(atualizados);
+    localStorage.setItem("ac_gestor_colaboradores", JSON.stringify(atualizados));
+
+    setPortalColaboradorId(colabTentandoLogarId);
+    setUserRole("funcionario");
+    setAbaAtiva("baterPonto");
+    setModalAlterarSenhaAberta(false);
+    setSenhaLoginFuncInput("");
+    showToast("sucesso", "Senha Alterada com Sucesso!", "Sua senha pessoal foi salva. Bem-vindo(a) ao seu portal de ponto.");
+  };
+
   const handleAdicionarFeriadoFixo = (e: React.FormEvent) => {
     e.preventDefault();
     if (!novoFeriadoDesc.trim()) {
@@ -547,6 +640,58 @@ export default function App() {
     }
 
     showToast("sucesso", "Feriado Removido", "Feriado removido da lista anual.");
+  };
+
+  const handlePortalBaterPonto = (campo: "entrada1" | "saida1" | "entrada2" | "saida2") => {
+    const colab = colaboradores.find((c) => c.id === portalColaboradorId);
+    if (!colab) {
+      showToast("aviso", "Selecione o Funcionário", "Selecione seu nome na lista para registrar o ponto.");
+      return;
+    }
+
+    const agora = new Date();
+    const horaStr = `${String(agora.getHours()).padStart(2, "0")}:${String(agora.getMinutes()).padStart(2, "0")}`;
+
+    let dias: BatidaDia[] = [];
+    let salario = colab.salarioBase;
+    let saldoAnt = colab.saldoAnteriorBancoMinutos;
+    let mesAno = portalMesAno;
+
+    if (fechamentoAtual && fechamentoAtual.colaboradorId === colab.id) {
+      dias = [...fechamentoAtual.dias];
+      mesAno = fechamentoAtual.mesAno;
+      salario = fechamentoAtual.salarioBase;
+      saldoAnt = fechamentoAtual.saldoAnteriorBancoMinutos;
+    } else {
+      const [mesStr, anoStr] = portalMesAno.includes("/") ? portalMesAno.split("/") : ["09", "2026"];
+      dias = gerarDiasMes(parseInt(anoStr, 10) || 2026, parseInt(mesStr, 10) || 9, criterios.feriadosFixos, colab.horarioTrabalho);
+    }
+
+    const diaIndex = dias.findIndex((d) => d.dia === portalDiaSelecionado);
+    if (diaIndex === -1) {
+      showToast("erro", "Dia Inválido", "Selecione um dia válido do mês.");
+      return;
+    }
+
+    dias[diaIndex] = {
+      ...dias[diaIndex],
+      [campo]: horaStr,
+      observacao: dias[diaIndex].observacao === "Folga" || dias[diaIndex].observacao === "DSR" ? "Normal" : (dias[diaIndex].observacao || "Normal"),
+    };
+
+    const recalculado = calcularFechamentoMensal(dias, criterios, {
+      colaboradorNome: colab.nome,
+      colaboradorCargo: colab.cargo,
+      colaboradorId: colab.id,
+      mesAno,
+      salarioBase: salario,
+      saldoAnteriorBancoMinutos: saldoAnt,
+      horarioNominal: colab.horarioTrabalho,
+    });
+
+    setFechamentoAtual(recalculado);
+    setPortalSucessoModal({ tipo: campo, hora: horaStr });
+    showToast("sucesso", "Ponto Registrado com Sucesso!", `${colab.nome}: ${campo.toUpperCase()} marcada às ${horaStr}.`);
   };
 
   // Carregar dados iniciais da API e LocalStorage
@@ -937,8 +1082,268 @@ export default function App() {
     showToast("sucesso", "CSV Exportado", "Arquivo CSV gerado para importação em folha de pagamento.");
   };
 
+  if (userRole === "escolha") {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-4 font-sans selection:bg-sky-500 selection:text-white relative overflow-hidden">
+        {/* Background glow effects */}
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-sky-500/10 rounded-full blur-[120px] pointer-events-none"></div>
+        <div className="absolute bottom-10 right-10 w-96 h-96 bg-emerald-500/10 rounded-full blur-[100px] pointer-events-none"></div>
+
+        <div className="max-w-4xl w-full mx-auto space-y-8 relative z-10">
+          <div className="text-center space-y-3">
+            <div className="inline-flex items-center justify-center p-3 rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl mb-2">
+              <Logo />
+            </div>
+            <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">A&C Gestão de Ponto & Banco de Horas</h1>
+            <p className="text-sm text-slate-400 max-w-lg mx-auto">
+              Selecione o seu perfil de acesso abaixo para entrar no sistema.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Card 1: Portal do Funcionário */}
+            <div className="bg-slate-900/90 border border-slate-800 hover:border-sky-500/50 rounded-3xl p-6 sm:p-8 shadow-2xl transition-all duration-300 flex flex-col justify-between group">
+              <div className="space-y-4">
+                <div className="w-14 h-14 rounded-2xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 group-hover:scale-110 transition-transform">
+                  <Clock className="w-7 h-7" />
+                </div>
+                <div>
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-sky-400 bg-sky-500/10 px-2.5 py-1 rounded-full border border-sky-500/20">
+                    Acesso Colaborador
+                  </span>
+                  <h3 className="text-xl font-bold text-white mt-2">Portal do Funcionário</h3>
+                  <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                    Registre seus horários de entrada, almoço e saída diários e acompanhe seu saldo de banco de horas.
+                  </p>
+                </div>
+
+                <div className="space-y-2 pt-2">
+                  <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider">Selecione seu Nome:</label>
+                  <select
+                    value={funcionarioLoginId}
+                    onChange={(e) => setFuncionarioLoginId(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-medium focus:outline-none focus:border-sky-500 transition-colors"
+                  >
+                    {colaboradores.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nome} — {c.cargo}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <button
+                onClick={() => {
+                  setColabTentandoLogarId(funcionarioLoginId);
+                  setSenhaLoginFuncInput("");
+                  setModalLoginFuncionarioAberta(true);
+                }}
+                className="mt-6 w-full py-3.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-sky-600/30 flex items-center justify-center gap-2 transition-all"
+              >
+                Entrar no Portal de Ponto <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Card 2: Área Administrativa (Gestor) */}
+            <div className="bg-slate-900/90 border border-slate-800 hover:border-emerald-500/50 rounded-3xl p-6 sm:p-8 shadow-2xl transition-all duration-300 flex flex-col justify-between group">
+              <div className="space-y-4">
+                <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform">
+                  <ShieldAlert className="w-7 h-7" />
+                </div>
+                <div>
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
+                    Acesso Restrito (Gestor / DP)
+                  </span>
+                  <h3 className="text-xl font-bold text-white mt-2">Área Administrativa</h3>
+                  <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                    Digitalização de folhas escaneadas por IA, fechamento de folha, histórico, critérios e gerenciamento de colaboradores.
+                  </p>
+                </div>
+
+                <div className="space-y-2 pt-2">
+                  <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider">Senha do Administrador:</label>
+                  <input
+                    type="password"
+                    value={adminSenhaInput}
+                    onChange={(e) => {
+                      setAdminSenhaInput(e.target.value);
+                      setAdminLoginErro(false);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        if (adminSenhaInput === "admin123" || adminSenhaInput === "1234" || adminSenhaInput === "") {
+                          setUserRole("admin");
+                          setAbaAtiva("digitalizar");
+                        } else {
+                          setAdminLoginErro(true);
+                        }
+                      }
+                    }}
+                    placeholder="Digite a senha (padrão: admin123)"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-medium focus:outline-none focus:border-emerald-500 transition-colors font-mono"
+                  />
+                  {adminLoginErro && (
+                    <p className="text-xs text-rose-400 font-bold mt-1">Senha incorreta. Tente "admin123".</p>
+                  )}
+                  <p className="text-[11px] text-slate-500">Dica: Deixe em branco ou digite admin123 para entrar.</p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => {
+                  if (adminSenhaInput === "admin123" || adminSenhaInput === "1234" || adminSenhaInput === "") {
+                    setUserRole("admin");
+                    setAbaAtiva("digitalizar");
+                  } else {
+                    setAdminLoginErro(true);
+                  }
+                }}
+                className="mt-6 w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all"
+              >
+                Acessar Painel Administrativo <ShieldAlert className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* MODAL 1: LOGIN DE FUNCIONÁRIO (SENHA) */}
+        <AnimatePresence>
+          {modalLoginFuncionarioAberta && (
+            <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl space-y-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400">
+                      <Lock className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-white">Acesso ao Portal de Ponto</h3>
+                      <p className="text-xs text-slate-400">
+                        {colaboradores.find((c) => c.id === colabTentandoLogarId)?.nome}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setModalLoginFuncionarioAberta(false)}
+                    className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
+                      Senha de Acesso (Inicial: Aec2026@)
+                    </label>
+                    <input
+                      type="password"
+                      value={senhaLoginFuncInput}
+                      onChange={(e) => setSenhaLoginFuncInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          handleConfirmarLoginFuncionario();
+                        }
+                      }}
+                      placeholder="Digite sua senha"
+                      autoFocus
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-medium focus:outline-none focus:border-sky-500 transition-colors font-mono"
+                    />
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      No primeiro acesso, digite a senha padrão da empresa: <strong className="text-sky-400">Aec2026@</strong>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
+                  <button
+                    onClick={() => setModalLoginFuncionarioAberta(false)}
+                    className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleConfirmarLoginFuncionario}
+                    className="px-5 py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-sky-600/30 flex items-center gap-2 transition-all"
+                  >
+                    Entrar no Portal <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </AnimatePresence>
+
+        {/* MODAL 2: ALTERAR SENHA PESSOAL (PRIMEIRO ACESSO) */}
+        <AnimatePresence>
+          {modalAlterarSenhaAberta && (
+            <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl space-y-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+                      <Key className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-white">Alteração de Senha Obrigatória</h3>
+                      <p className="text-xs text-slate-400">Primeiro acesso ao sistema</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setModalAlterarSenhaAberta(false)}
+                    className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    Você utilizou a senha padrão <strong className="text-sky-400">Aec2026@</strong>. Por favor, cadastre uma nova senha pessoal para continuar acessando seu portal.
+                  </p>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">Nova Senha Pessoal</label>
+                    <input
+                      type="password"
+                      value={novaSenhaInput}
+                      onChange={(e) => setNovaSenhaInput(e.target.value)}
+                      placeholder="Mínimo de 4 caracteres"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-medium focus:outline-none focus:border-sky-500 transition-colors font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">Confirmar Nova Senha</label>
+                    <input
+                      type="password"
+                      value={confirmaNovaSenhaInput}
+                      onChange={(e) => setConfirmaNovaSenhaInput(e.target.value)}
+                      placeholder="Repita a nova senha"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-medium focus:outline-none focus:border-sky-500 transition-colors font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-slate-800">
+                  <button
+                    onClick={handleSalvarNovaSenhaPessoal}
+                    className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all"
+                  >
+                    Salvar Nova Senha & Entrar no Portal <CheckCircle2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-sky-500 selection:text-white">
+    <div className={`min-h-screen bg-slate-950 text-slate-100 flex ${userRole === "admin" ? "flex-col md:flex-row" : "flex-col"} font-sans selection:bg-sky-500 selection:text-white`}>
       {/* Toast de Notificação */}
       <AnimatePresence>
         {toast && (
@@ -969,93 +1374,562 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Header Oficial A&C Gestor */}
-      <header className="border-b border-slate-800/80 bg-slate-900/80 backdrop-blur-md sticky top-0 z-40 px-4 lg:px-8 py-3.5">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+      {/* ADMIN: Topbar Mobile (< md) */}
+      {userRole === "admin" && (
+        <div className="md:hidden flex items-center justify-between p-3.5 bg-slate-900 border-b border-slate-800 sticky top-0 z-30">
+          <div className="flex items-center gap-2.5">
             <Logo />
-            <div className="h-6 w-px bg-slate-800 hidden sm:block" />
             <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-white uppercase tracking-wider">Painel do Gestor / DP</span>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-500/10 text-sky-400 border border-sky-500/20">
-                  Critérios WhatsApp A&C
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-400">Digitalização de Folhas Escaneadas & Fechamento de Banco e Horas Extras</p>
+              <div className="text-xs font-bold text-white uppercase tracking-wider">Painel Admin</div>
+              <span className="text-[10px] text-sky-400 font-semibold block">
+                {abaAtiva === "digitalizar" && "Digitalizar Folha"}
+                {abaAtiva === "fechamento" && "Espelho & Fechamento"}
+                {abaAtiva === "historico" && "Histórico"}
+                {abaAtiva === "criterios" && "Critérios"}
+                {abaAtiva === "colaboradores" && "Colaboradores"}
+                {abaAtiva === "baterPonto" && "Portal de Ponto"}
+              </span>
             </div>
           </div>
-
-          {/* Navegação por Abas */}
-          <nav className="flex items-center gap-1.5 bg-slate-950 p-1.5 rounded-2xl border border-slate-800/80 text-xs font-semibold overflow-x-auto w-full sm:w-auto">
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => setAbaAtiva("digitalizar")}
-              className={`px-3.5 py-2 rounded-xl transition-all flex items-center gap-2 whitespace-nowrap ${
-                abaAtiva === "digitalizar"
-                  ? "bg-sky-600 text-white shadow-lg shadow-sky-600/30"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
-              }`}
+              onClick={() => setSidebarAbertaMobile(!sidebarAbertaMobile)}
+              className="px-3 py-1.5 rounded-xl bg-sky-600 text-white flex items-center gap-1.5 text-xs font-bold shadow-md shadow-sky-600/30"
             >
-              <Upload className="w-3.5 h-3.5" /> Digitalizar Folha (IA)
+              <Menu className="w-4 h-4" /> Módulos
             </button>
             <button
-              onClick={() => setAbaAtiva("fechamento")}
-              className={`px-3.5 py-2 rounded-xl transition-all flex items-center gap-2 whitespace-nowrap ${
-                abaAtiva === "fechamento"
-                  ? "bg-sky-600 text-white shadow-lg shadow-sky-600/30"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
-              }`}
+              onClick={() => setUserRole("escolha")}
+              className="p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-rose-300"
+              title="Sair"
             >
-              <FileText className="w-3.5 h-3.5" /> Espelho & Fechamento
+              <LogOut className="w-4 h-4" />
             </button>
-            <button
-              onClick={() => setAbaAtiva("historico")}
-              className={`px-3.5 py-2 rounded-xl transition-all flex items-center gap-2 whitespace-nowrap ${
-                abaAtiva === "historico"
-                  ? "bg-sky-600 text-white shadow-lg shadow-sky-600/30"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
-              }`}
-            >
-              <Calendar className="w-3.5 h-3.5" /> Histórico ({fechamentosSalvos.length})
-            </button>
-            <button
-              onClick={() => setAbaAtiva("criterios")}
-              className={`px-3.5 py-2 rounded-xl transition-all flex items-center gap-2 whitespace-nowrap ${
-                abaAtiva === "criterios"
-                  ? "bg-sky-600 text-white shadow-lg shadow-sky-600/30"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
-              }`}
-            >
-              <Sliders className="w-3.5 h-3.5" /> Critérios da Empresa
-            </button>
-            <button
-              onClick={() => {
-                setAbaAtiva("colaboradores");
-                setSubAbaColaborador("lista");
-              }}
-              className={`px-3.5 py-2 rounded-xl transition-all flex items-center gap-2 whitespace-nowrap ${
-                abaAtiva === "colaboradores"
-                  ? "bg-sky-600 text-white shadow-lg shadow-sky-600/30"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
-              }`}
-            >
-              <Users className="w-3.5 h-3.5" /> Colaboradores & Horários ({colaboradores.length})
-            </button>
-            <button
-              onClick={() => {
-                handleAbrirNovoColaborador();
-                setAbaAtiva("colaboradores");
-              }}
-              className="px-3 py-2 rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600 hover:text-white font-bold"
-            >
-              <Plus className="w-3.5 h-3.5" /> + Novo Colaborador
-            </button>
-          </nav>
+          </div>
         </div>
-      </header>
+      )}
 
-      {/* Conteúdo Principal */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+      {/* ADMIN: Drawer Mobile quando aberto */}
+      <AnimatePresence>
+        {userRole === "admin" && sidebarAbertaMobile && (
+          <>
+            <div
+              onClick={() => setSidebarAbertaMobile(false)}
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-40 md:hidden animate-fade-in"
+            />
+            <motion.div
+              initial={{ x: -280 }}
+              animate={{ x: 0 }}
+              exit={{ x: -280 }}
+              className="fixed top-0 left-0 bottom-0 w-72 bg-slate-900 border-r border-slate-800 p-5 flex flex-col justify-between z-50 md:hidden shadow-2xl overflow-y-auto"
+            >
+              <div className="space-y-5">
+                <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+                  <div className="flex items-center gap-2">
+                    <Logo />
+                    <span className="text-xs font-bold text-white uppercase">Painel DP</span>
+                  </div>
+                  <button
+                    onClick={() => setSidebarAbertaMobile(false)}
+                    className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <nav className="space-y-1.5 text-xs font-semibold">
+                  <button
+                    onClick={() => {
+                      setAbaAtiva("digitalizar");
+                      setSidebarAbertaMobile(false);
+                    }}
+                    className={`w-full px-3.5 py-3 rounded-xl transition-all flex items-center gap-3 text-left ${
+                      abaAtiva === "digitalizar"
+                        ? "bg-sky-600 text-white font-bold shadow-md shadow-sky-600/30"
+                        : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                    }`}
+                  >
+                    <Upload className="w-4 h-4 text-sky-400" /> Digitalizar Folha (IA)
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAbaAtiva("fechamento");
+                      setSidebarAbertaMobile(false);
+                    }}
+                    className={`w-full px-3.5 py-3 rounded-xl transition-all flex items-center gap-3 text-left ${
+                      abaAtiva === "fechamento"
+                        ? "bg-sky-600 text-white font-bold shadow-md shadow-sky-600/30"
+                        : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                    }`}
+                  >
+                    <FileText className="w-4 h-4 text-indigo-400" /> Espelho & Fechamento
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAbaAtiva("historico");
+                      setSidebarAbertaMobile(false);
+                    }}
+                    className={`w-full px-3.5 py-3 rounded-xl transition-all flex items-center gap-3 text-left ${
+                      abaAtiva === "historico"
+                        ? "bg-sky-600 text-white font-bold shadow-md shadow-sky-600/30"
+                        : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                    }`}
+                  >
+                    <Calendar className="w-4 h-4 text-emerald-400" /> Histórico ({fechamentosSalvos.length})
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAbaAtiva("criterios");
+                      setSidebarAbertaMobile(false);
+                    }}
+                    className={`w-full px-3.5 py-3 rounded-xl transition-all flex items-center gap-3 text-left ${
+                      abaAtiva === "criterios"
+                        ? "bg-sky-600 text-white font-bold shadow-md shadow-sky-600/30"
+                        : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                    }`}
+                  >
+                    <Sliders className="w-4 h-4 text-amber-400" /> Critérios da Empresa
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAbaAtiva("colaboradores");
+                      setSubAbaColaborador("lista");
+                      setSidebarAbertaMobile(false);
+                    }}
+                    className={`w-full px-3.5 py-3 rounded-xl transition-all flex items-center gap-3 text-left ${
+                      abaAtiva === "colaboradores"
+                        ? "bg-sky-600 text-white font-bold shadow-md shadow-sky-600/30"
+                        : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                    }`}
+                  >
+                    <Users className="w-4 h-4 text-purple-400" /> Colaboradores & Senhas ({colaboradores.length})
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAbaAtiva("baterPonto");
+                      setSidebarAbertaMobile(false);
+                    }}
+                    className={`w-full px-3.5 py-3 rounded-xl transition-all flex items-center gap-3 text-left ${
+                      abaAtiva === "baterPonto"
+                        ? "bg-sky-600 text-white font-bold shadow-md shadow-sky-600/30"
+                        : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                    }`}
+                  >
+                    <Clock className="w-4 h-4 text-teal-400" /> Portal de Ponto
+                  </button>
+
+                  <div className="pt-3">
+                    <button
+                      onClick={() => {
+                        handleAbrirNovoColaborador();
+                        setAbaAtiva("colaboradores");
+                        setSidebarAbertaMobile(false);
+                      }}
+                      className="w-full px-4 py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 font-bold"
+                    >
+                      <Plus className="w-4 h-4" /> + Novo Colaborador
+                    </button>
+                  </div>
+                </nav>
+              </div>
+
+              <div className="pt-4 border-t border-slate-800">
+                <button
+                  onClick={() => setUserRole("escolha")}
+                  className="w-full py-2.5 px-4 rounded-xl bg-slate-800 text-slate-300 hover:text-rose-200 border border-slate-700 flex items-center justify-center gap-2 text-xs font-bold"
+                >
+                  <LogOut className="w-4 h-4" /> Sair do Painel Admin
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* ADMIN: Sidebar Desktop Fixa à Esquerda (Visível em md e superior) */}
+      {userRole === "admin" && (
+        <aside className="hidden md:flex md:w-64 lg:w-72 bg-slate-900 border-r border-slate-800 p-5 flex-col justify-between shrink-0 sticky top-0 h-screen overflow-y-auto z-20">
+          <div className="space-y-6">
+            <div className="flex items-center gap-3 pb-5 border-b border-slate-800">
+              <Logo />
+              <div>
+                <div className="text-xs font-bold text-white uppercase tracking-wider">Painel Administrativo</div>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  Acesso Restrito DP
+                </span>
+              </div>
+            </div>
+
+            <nav className="space-y-1 text-xs font-semibold">
+              <button
+                onClick={() => setAbaAtiva("digitalizar")}
+                className={`w-full px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-2.5 text-left ${
+                  abaAtiva === "digitalizar"
+                    ? "bg-sky-600 text-white shadow-lg shadow-sky-600/30 font-bold"
+                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
+                }`}
+              >
+                <Upload className="w-4 h-4 text-sky-400" /> Digitalizar Folha (IA)
+              </button>
+              <button
+                onClick={() => setAbaAtiva("fechamento")}
+                className={`w-full px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-2.5 text-left ${
+                  abaAtiva === "fechamento"
+                    ? "bg-sky-600 text-white shadow-lg shadow-sky-600/30 font-bold"
+                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
+                }`}
+              >
+                <FileText className="w-4 h-4 text-indigo-400" /> Espelho & Fechamento
+              </button>
+              <button
+                onClick={() => setAbaAtiva("historico")}
+                className={`w-full px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-2.5 text-left ${
+                  abaAtiva === "historico"
+                    ? "bg-sky-600 text-white shadow-lg shadow-sky-600/30 font-bold"
+                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
+                }`}
+              >
+                <Calendar className="w-4 h-4 text-emerald-400" /> Histórico ({fechamentosSalvos.length})
+              </button>
+              <button
+                onClick={() => setAbaAtiva("criterios")}
+                className={`w-full px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-2.5 text-left ${
+                  abaAtiva === "criterios"
+                    ? "bg-sky-600 text-white shadow-lg shadow-sky-600/30 font-bold"
+                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
+                }`}
+              >
+                <Sliders className="w-4 h-4 text-amber-400" /> Critérios da Empresa
+              </button>
+              <button
+                onClick={() => {
+                  setAbaAtiva("colaboradores");
+                  setSubAbaColaborador("lista");
+                }}
+                className={`w-full px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-2.5 text-left ${
+                  abaAtiva === "colaboradores"
+                    ? "bg-sky-600 text-white shadow-lg shadow-sky-600/30 font-bold"
+                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
+                }`}
+              >
+                <Users className="w-4 h-4 text-purple-400" /> Colaboradores & Senhas ({colaboradores.length})
+              </button>
+              <button
+                onClick={() => setAbaAtiva("baterPonto")}
+                className={`w-full px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-2.5 text-left ${
+                  abaAtiva === "baterPonto"
+                    ? "bg-sky-600 text-white shadow-lg shadow-sky-600/30 font-bold"
+                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
+                }`}
+              >
+                <Clock className="w-4 h-4 text-teal-400" /> Portal de Ponto
+              </button>
+
+              <div className="pt-3">
+                <button
+                  onClick={() => {
+                    handleAbrirNovoColaborador();
+                    setAbaAtiva("colaboradores");
+                  }}
+                  className="w-full px-3.5 py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600 hover:text-white font-bold"
+                >
+                  <Plus className="w-4 h-4" /> + Novo Colaborador
+                </button>
+              </div>
+            </nav>
+          </div>
+
+          <div className="pt-4 border-t border-slate-800">
+            <button
+              onClick={() => setUserRole("escolha")}
+              className="w-full py-2.5 px-3.5 rounded-xl bg-slate-800 hover:bg-rose-950/80 text-slate-300 hover:text-rose-200 border border-slate-700 hover:border-rose-500/40 transition-all flex items-center justify-center gap-2 text-xs font-bold shadow"
+            >
+              <LogOut className="w-4 h-4" /> Sair do Painel Admin
+            </button>
+          </div>
+        </aside>
+      )}
+
+      {/* FUNCIONÁRIO: Header Superior */}
+      {userRole === "funcionario" && (
+        <header className="border-b border-slate-800/80 bg-slate-900/80 backdrop-blur-md sticky top-0 z-40 px-4 lg:px-8 py-3.5">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <Logo />
+              <div className="h-6 w-px bg-slate-800 hidden sm:block" />
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-white uppercase tracking-wider">Portal do Funcionário (A&C Ponto)</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                    Colaborador
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Logado como: {colaboradores.find((c) => c.id === portalColaboradorId)?.nome || "Funcionário"}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setUserRole("escolha")}
+                title="Sair / Trocar de Perfil"
+                className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-rose-950/80 text-slate-300 hover:text-rose-200 border border-slate-700 hover:border-rose-500/40 transition-all flex items-center gap-1.5 text-xs font-bold whitespace-nowrap shadow"
+              >
+                <LogOut className="w-3.5 h-3.5" /> Sair
+              </button>
+            </div>
+          </div>
+        </header>
+      )}
+
+      {/* Conteúdo Principal (Fluido, lado a lado com a sidebar e sem sobreposição) */}
+      <main className="flex-1 min-w-0 w-full p-4 sm:p-6 lg:p-8 space-y-6 overflow-y-auto">
+        {/* Banner Superior no modo Admin com atalhos rápidos dos módulos */}
+        {userRole === "admin" && (
+          <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-800/80 bg-slate-950/50">
+            <div className="flex items-center gap-2.5">
+              <span className="px-2.5 py-1 rounded-lg bg-sky-500/10 text-sky-400 font-bold text-xs border border-sky-500/20 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                Módulo Aberto:
+              </span>
+              <h2 className="text-base sm:text-lg font-black text-white">
+                {abaAtiva === "digitalizar" && "Digitalização de Folhas de Ponto (IA)"}
+                {abaAtiva === "fechamento" && "Espelho de Ponto & Fechamento Mensal"}
+                {abaAtiva === "historico" && "Histórico de Fechamentos"}
+                {abaAtiva === "criterios" && "Critérios de Apuração da Empresa"}
+                {abaAtiva === "colaboradores" && "Gestão de Colaboradores & Senhas"}
+                {abaAtiva === "baterPonto" && "Terminal de Ponto"}
+              </h2>
+            </div>
+
+            {/* Abas Rápidas de navegação direta */}
+            <div className="flex items-center gap-1.5 overflow-x-auto text-xs py-1">
+              <button
+                onClick={() => setAbaAtiva("digitalizar")}
+                className={`px-3 py-1.5 rounded-lg font-semibold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                  abaAtiva === "digitalizar" ? "bg-sky-600 text-white font-bold" : "bg-slate-900 text-slate-400 hover:text-white"
+                }`}
+              >
+                <Upload className="w-3.5 h-3.5" /> 1. Digitalizar
+              </button>
+              <button
+                onClick={() => setAbaAtiva("fechamento")}
+                className={`px-3 py-1.5 rounded-lg font-semibold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                  abaAtiva === "fechamento" ? "bg-sky-600 text-white font-bold" : "bg-slate-900 text-slate-400 hover:text-white"
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" /> 2. Fechamento
+              </button>
+              <button
+                onClick={() => setAbaAtiva("historico")}
+                className={`px-3 py-1.5 rounded-lg font-semibold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                  abaAtiva === "historico" ? "bg-sky-600 text-white font-bold" : "bg-slate-900 text-slate-400 hover:text-white"
+                }`}
+              >
+                <Calendar className="w-3.5 h-3.5" /> 3. Histórico
+              </button>
+              <button
+                onClick={() => setAbaAtiva("criterios")}
+                className={`px-3 py-1.5 rounded-lg font-semibold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                  abaAtiva === "criterios" ? "bg-sky-600 text-white font-bold" : "bg-slate-900 text-slate-400 hover:text-white"
+                }`}
+              >
+                <Sliders className="w-3.5 h-3.5" /> 4. Critérios
+              </button>
+              <button
+                onClick={() => {
+                  setAbaAtiva("colaboradores");
+                  setSubAbaColaborador("lista");
+                }}
+                className={`px-3 py-1.5 rounded-lg font-semibold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                  abaAtiva === "colaboradores" ? "bg-sky-600 text-white font-bold" : "bg-slate-900 text-slate-400 hover:text-white"
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" /> 5. Colaboradores
+              </button>
+            </div>
+          </div>
+        )}
+        {/* ================= ABA: PORTAL DE PONTO (FUNCIONÁRIOS) ================= */}
+        {abaAtiva === "baterPonto" && (
+          <div className="space-y-6 max-w-4xl mx-auto">
+            <div className="bg-gradient-to-r from-slate-900 via-sky-950/40 to-slate-900 border border-sky-500/20 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-sky-500/10 rounded-full blur-3xl pointer-events-none"></div>
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
+                <div className="space-y-2">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sky-500/10 text-sky-400 text-xs font-bold border border-sky-500/20">
+                    <Clock className="w-3.5 h-3.5" /> Terminal de Ponto Individual
+                  </span>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">Registro Diário do Colaborador</h2>
+                  <p className="text-sm text-slate-400 max-w-xl">
+                    Cada funcionário pode registrar sua entrada, saída de almoço, retorno e saída do dia diretamente aqui ou registrar os horários em tempo real.
+                  </p>
+                </div>
+                <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 text-center min-w-[200px] shadow-inner">
+                  <div className="text-xs text-slate-400 uppercase font-bold tracking-wider">Horário Atual</div>
+                  <div className="text-2xl font-mono font-bold text-sky-400 mt-1">
+                    {new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-1">
+                    {new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Seleção de Funcionário, Mês e Dia */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl">
+              <div>
+                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">1. Selecionar Funcionário</label>
+                <select
+                  value={portalColaboradorId}
+                  onChange={(e) => setPortalColaboradorId(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-medium focus:outline-none focus:border-sky-500 transition-colors"
+                >
+                  {colaboradores.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nome} — {c.cargo}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">2. Mês de Referência</label>
+                <input
+                  type="text"
+                  value={portalMesAno}
+                  onChange={(e) => setPortalMesAno(e.target.value)}
+                  placeholder="MM/AAAA"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-medium focus:outline-none focus:border-sky-500 transition-colors text-center font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">3. Dia do Mês (1 - 31)</label>
+                <select
+                  value={portalDiaSelecionado}
+                  onChange={(e) => setPortalDiaSelecionado(parseInt(e.target.value, 10))}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-medium focus:outline-none focus:border-sky-500 transition-colors text-center font-mono"
+                >
+                  {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                    <option key={d} value={d}>
+                      Dia {d < 10 ? `0${d}` : d}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Painel de Ações de Batida */}
+            {(() => {
+              const colabAtual = colaboradores.find((c) => c.id === portalColaboradorId) || colaboradores[0];
+              return (
+                <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
+                    <div>
+                      <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                        <Users className="w-5 h-5 text-sky-400" />
+                        Registrar Ponto para: <span className="text-sky-400">{colabAtual?.nome || "Colaborador"}</span>
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Cargo: {colabAtual?.cargo} | Horário Padrão: {colabAtual?.horarioTrabalho.entrada} às {colabAtual?.horarioTrabalho.saida}
+                      </p>
+                    </div>
+                    {portalSucessoModal && (
+                      <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 animate-pulse">
+                        <CheckCircle2 className="w-4 h-4" /> {portalSucessoModal.tipo.toUpperCase()} registrada às {portalSucessoModal.hora}!
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <button
+                      onClick={() => handlePortalBaterPonto("entrada1")}
+                      className="group bg-gradient-to-b from-slate-950 to-slate-900 hover:from-sky-950/40 hover:to-slate-900 border border-slate-800 hover:border-sky-500/50 rounded-2xl p-6 text-center transition-all duration-300 shadow-lg hover:shadow-sky-500/10 flex flex-col items-center justify-center gap-3"
+                    >
+                      <div className="w-14 h-14 rounded-2xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 group-hover:scale-110 transition-transform shadow-inner">
+                        <Clock className="w-7 h-7" />
+                      </div>
+                      <div>
+                        <div className="text-xs text-slate-400 uppercase font-bold tracking-wider">1º Horário</div>
+                        <div className="text-xl font-extrabold text-white mt-0.5">Entrada 1</div>
+                      </div>
+                      <span className="px-3 py-1.5 rounded-xl bg-sky-600/20 text-sky-300 text-xs font-bold group-hover:bg-sky-600 group-hover:text-white transition-colors w-full">
+                        Bater Entrada Agora
+                      </span>
+                    </button>
+
+                    <button
+                      onClick={() => handlePortalBaterPonto("saida1")}
+                      className="group bg-gradient-to-b from-slate-950 to-slate-900 hover:from-amber-950/40 hover:to-slate-900 border border-slate-800 hover:border-amber-500/50 rounded-2xl p-6 text-center transition-all duration-300 shadow-lg hover:shadow-amber-500/10 flex flex-col items-center justify-center gap-3"
+                    >
+                      <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 group-hover:scale-110 transition-transform shadow-inner">
+                        <Clock className="w-7 h-7" />
+                      </div>
+                      <div>
+                        <div className="text-xs text-slate-400 uppercase font-bold tracking-wider">Almoço</div>
+                        <div className="text-xl font-extrabold text-white mt-0.5">Saída Almoço</div>
+                      </div>
+                      <span className="px-3 py-1.5 rounded-xl bg-amber-600/20 text-amber-300 text-xs font-bold group-hover:bg-amber-600 group-hover:text-white transition-colors w-full">
+                        Bater Saída Almoço
+                      </span>
+                    </button>
+
+                    <button
+                      onClick={() => handlePortalBaterPonto("entrada2")}
+                      className="group bg-gradient-to-b from-slate-950 to-slate-900 hover:from-emerald-950/40 hover:to-slate-900 border border-slate-800 hover:border-emerald-500/50 rounded-2xl p-6 text-center transition-all duration-300 shadow-lg hover:shadow-emerald-500/10 flex flex-col items-center justify-center gap-3"
+                    >
+                      <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform shadow-inner">
+                        <Clock className="w-7 h-7" />
+                      </div>
+                      <div>
+                        <div className="text-xs text-slate-400 uppercase font-bold tracking-wider">Retorno</div>
+                        <div className="text-xl font-extrabold text-white mt-0.5">Retorno Almoço</div>
+                      </div>
+                      <span className="px-3 py-1.5 rounded-xl bg-emerald-600/20 text-emerald-300 text-xs font-bold group-hover:bg-emerald-600 group-hover:text-white transition-colors w-full">
+                        Bater Retorno
+                      </span>
+                    </button>
+
+                    <button
+                      onClick={() => handlePortalBaterPonto("saida2")}
+                      className="group bg-gradient-to-b from-slate-950 to-slate-900 hover:from-purple-950/40 hover:to-slate-900 border border-slate-800 hover:border-purple-500/50 rounded-2xl p-6 text-center transition-all duration-300 shadow-lg hover:shadow-purple-500/10 flex flex-col items-center justify-center gap-3"
+                    >
+                      <div className="w-14 h-14 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 group-hover:scale-110 transition-transform shadow-inner">
+                        <Clock className="w-7 h-7" />
+                      </div>
+                      <div>
+                        <div className="text-xs text-slate-400 uppercase font-bold tracking-wider">Fim do Dia</div>
+                        <div className="text-xl font-extrabold text-white mt-0.5">Saída Expediente</div>
+                      </div>
+                      <span className="px-3 py-1.5 rounded-xl bg-purple-600/20 text-purple-300 text-xs font-bold group-hover:bg-purple-600 group-hover:text-white transition-colors w-full">
+                        Bater Saída
+                      </span>
+                    </button>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-slate-800">
+                    <p className="text-xs text-slate-400">
+                      Após registrar os pontos, acesse o <strong>Espelho & Fechamento</strong> para calcular o saldo de banco de horas e horas extras do mês.
+                    </p>
+                    <button
+                      onClick={() => {
+                        setColaboradorSelecionadoId(colabAtual.id);
+                        setAbaAtiva("fechamento");
+                      }}
+                      className="px-5 py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-sky-600/30 flex items-center gap-2 transition-all"
+                    >
+                      Ver Fechamento & Espelho <ArrowRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
         {/* ================= ABA 1: DIGITALIZAR FOLHA ================= */}
         {abaAtiva === "digitalizar" && (
           <div className="space-y-6">
@@ -2713,6 +3587,22 @@ export default function App() {
                                 )}
                               </div>
                             </div>
+                          </div>
+
+                          {/* Gestão de Senha do Funcionário */}
+                          <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                            <span className="text-slate-400 flex items-center gap-1.5 font-mono">
+                              <Key className="w-3.5 h-3.5 text-sky-400" />
+                              Senha: <strong className="text-white">{c.primeiroAcesso ? "Padrão (Aec2026@)" : "Pessoal Definida"}</strong>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleResetarSenhaColaborador(c.id)}
+                              className="px-2.5 py-1 rounded-xl bg-amber-500/10 text-amber-300 border border-amber-500/30 hover:bg-amber-500 hover:text-white font-bold text-[11px] transition-colors flex items-center gap-1"
+                              title="Resetar senha para a padrão (Aec2026@)"
+                            >
+                              <RefreshCw className="w-3 h-3" /> Resetar Senha
+                            </button>
                           </div>
 
                           {/* Seção 3: Dados Salariais & Ação de Lançar Folha */}
