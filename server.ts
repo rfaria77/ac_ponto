@@ -1,6 +1,7 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
@@ -42,44 +43,128 @@ let sedeConfig = {
   raioMaximoMetros: 150.0,
 };
 
-let colaboradores = [
+let colaboradores: Array<{
+  id: string;
+  nome: string;
+  cargo: string;
+  departamento: string;
+  salarioBase: number;
+  saldoAnteriorBancoMinutos: number;
+  dataInicioSaldo?: string;
+  observacaoSaldo?: string;
+  horarioTrabalho: {
+    entrada: string;
+    almocoSaida: string;
+    almocoRetorno: string;
+    saida: string;
+    sabadoAtivo?: boolean;
+    sabadoEntrada?: string;
+    sabadoSaida?: string;
+  };
+  fotoCadastro: string;
+  localPermitido?: {
+    nome: string;
+    lat: number;
+    lon: number;
+    raio: number;
+  };
+}> = [
   {
     id: "FUNC_001",
-    nome: "Ana Beatriz Souza",
-    cargo: "Desenvolvedora Sênior",
-    departamento: "Engenharia",
+    nome: "Thais Moreira de Souza",
+    cargo: "Assistente de coletas",
+    departamento: "Operações / Coletas",
+    salarioBase: 2450.0,
+    saldoAnteriorBancoMinutos: 270, // +04h 30m
+    dataInicioSaldo: "01/09/2026",
+    observacaoSaldo: "Saldo apurado em folha anterior",
     fotoCadastro: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400&auto=format&fit=crop&q=80",
+    horarioTrabalho: {
+      entrada: "08:00",
+      almocoSaida: "12:00",
+      almocoRetorno: "13:00",
+      saida: "17:00",
+      sabadoAtivo: false,
+    },
     localPermitido: {
-      nome: "Matriz São Paulo",
-      lat: -23.550520,
-      lon: -46.633308,
-      raio: 150,
+      nome: sedeConfig.nome,
+      lat: sedeConfig.lat,
+      lon: sedeConfig.lon,
+      raio: sedeConfig.raioMaximoMetros,
     },
   },
   {
     id: "FUNC_002",
-    nome: "Carlos Eduardo Lima",
-    cargo: "Analista de Suporte",
-    departamento: "Operações",
+    nome: "Marcos Vinicius Ferreira Mendes",
+    cargo: "Assistente de segurança do Trabalho",
+    departamento: "Segurança do Trabalho",
+    salarioBase: 2650.0,
+    saldoAnteriorBancoMinutos: -120, // -02h 00m
+    dataInicioSaldo: "01/09/2026",
+    observacaoSaldo: "Saldo devedor anterior",
     fotoCadastro: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80",
+    horarioTrabalho: {
+      entrada: "07:30",
+      almocoSaida: "11:30",
+      almocoRetorno: "12:30",
+      saida: "16:30",
+      sabadoAtivo: false,
+    },
     localPermitido: {
-      nome: "Filial Paulista",
-      lat: -23.561500,
-      lon: -46.656000,
-      raio: 150,
+      nome: sedeConfig.nome,
+      lat: sedeConfig.lat,
+      lon: sedeConfig.lon,
+      raio: sedeConfig.raioMaximoMetros,
     },
   },
   {
     id: "FUNC_003",
-    nome: "Mariana Costa Silva",
-    cargo: "Gerente de Recursos Humanos",
-    departamento: "RH",
+    nome: "Amanda Inácio Medeiros Silva",
+    cargo: "Assistente Administrativo",
+    departamento: "Administrativo",
+    salarioBase: 2300.0,
+    saldoAnteriorBancoMinutos: 0,
+    dataInicioSaldo: "01/09/2026",
+    observacaoSaldo: "Sem saldo inicial",
     fotoCadastro: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80",
+    horarioTrabalho: {
+      entrada: "08:30",
+      almocoSaida: "12:30",
+      almocoRetorno: "13:30",
+      saida: "17:30",
+      sabadoAtivo: false,
+    },
     localPermitido: {
-      nome: "Matriz São Paulo",
-      lat: -23.550520,
-      lon: -46.633308,
-      raio: 150,
+      nome: sedeConfig.nome,
+      lat: sedeConfig.lat,
+      lon: sedeConfig.lon,
+      raio: sedeConfig.raioMaximoMetros,
+    },
+  },
+  {
+    id: "FUNC_004",
+    nome: "Denise Cristina Fernandes Costa Felip",
+    cargo: "Técnico em segurança do Trabalho JR",
+    departamento: "Segurança do Trabalho",
+    salarioBase: 3100.0,
+    saldoAnteriorBancoMinutos: 180, // +03h 00m
+    dataInicioSaldo: "01/09/2026",
+    observacaoSaldo: "Saldo positivo anterior",
+    fotoCadastro: "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=400&auto=format&fit=crop&q=80",
+    horarioTrabalho: {
+      entrada: "08:00",
+      almocoSaida: "12:00",
+      almocoRetorno: "13:00",
+      saida: "17:00",
+      sabadoAtivo: true,
+      sabadoEntrada: "08:00",
+      sabadoSaida: "12:00",
+    },
+    localPermitido: {
+      nome: sedeConfig.nome,
+      lat: sedeConfig.lat,
+      lon: sedeConfig.lon,
+      raio: sedeConfig.raioMaximoMetros,
     },
   },
 ];
@@ -131,12 +216,40 @@ app.get("/api/colaboradores", (req, res) => {
 });
 
 app.post("/api/colaboradores", (req, res) => {
-  const { id, nome, cargo, departamento, fotoCadastro, localPermitido } = req.body;
-  const novoColaborador = {
-    id: id || `FUNC_00${colaboradores.length + 1}`,
+  const {
+    id,
     nome,
     cargo,
     departamento,
+    salarioBase,
+    saldoAnteriorBancoMinutos,
+    dataInicioSaldo,
+    observacaoSaldo,
+    horarioTrabalho,
+    fotoCadastro,
+    localPermitido,
+  } = req.body;
+
+  if (!nome || !cargo) {
+    return res.status(400).json({ error: "Nome e cargo são obrigatórios." });
+  }
+
+  const novoColaborador = {
+    id: id || `FUNC_${Date.now()}`,
+    nome,
+    cargo,
+    departamento: departamento || "Geral",
+    salarioBase: typeof salarioBase === "number" ? salarioBase : 2200.0,
+    saldoAnteriorBancoMinutos: typeof saldoAnteriorBancoMinutos === "number" ? saldoAnteriorBancoMinutos : 0,
+    dataInicioSaldo: dataInicioSaldo || new Date().toLocaleDateString("pt-BR"),
+    observacaoSaldo: observacaoSaldo || "",
+    horarioTrabalho: horarioTrabalho || {
+      entrada: "08:00",
+      almocoSaida: "12:00",
+      almocoRetorno: "13:00",
+      saida: "17:00",
+      sabadoAtivo: false,
+    },
     fotoCadastro: fotoCadastro || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80",
     localPermitido: localPermitido || {
       nome: sedeConfig.nome,
@@ -145,8 +258,44 @@ app.post("/api/colaboradores", (req, res) => {
       raio: sedeConfig.raioMaximoMetros,
     },
   };
+
   colaboradores.push(novoColaborador);
   res.json({ success: true, colaborador: novoColaborador });
+});
+
+app.put("/api/colaboradores/:id", (req, res) => {
+  const { id } = req.params;
+  const index = colaboradores.findIndex((c) => c.id === id);
+  if (index === -1) {
+    return res.status(404).json({ error: "Colaborador não encontrado." });
+  }
+
+  const colabExistente = colaboradores[index];
+  const dados = req.body;
+
+  colaboradores[index] = {
+    ...colabExistente,
+    nome: dados.nome !== undefined ? dados.nome : colabExistente.nome,
+    cargo: dados.cargo !== undefined ? dados.cargo : colabExistente.cargo,
+    departamento: dados.departamento !== undefined ? dados.departamento : colabExistente.departamento,
+    salarioBase: typeof dados.salarioBase === "number" ? dados.salarioBase : colabExistente.salarioBase,
+    saldoAnteriorBancoMinutos:
+      typeof dados.saldoAnteriorBancoMinutos === "number"
+        ? dados.saldoAnteriorBancoMinutos
+        : colabExistente.saldoAnteriorBancoMinutos,
+    dataInicioSaldo: dados.dataInicioSaldo !== undefined ? dados.dataInicioSaldo : colabExistente.dataInicioSaldo,
+    observacaoSaldo: dados.observacaoSaldo !== undefined ? dados.observacaoSaldo : colabExistente.observacaoSaldo,
+    horarioTrabalho: dados.horarioTrabalho ? { ...colabExistente.horarioTrabalho, ...dados.horarioTrabalho } : colabExistente.horarioTrabalho,
+    fotoCadastro: dados.fotoCadastro !== undefined ? dados.fotoCadastro : colabExistente.fotoCadastro,
+  };
+
+  res.json({ success: true, colaborador: colaboradores[index] });
+});
+
+app.delete("/api/colaboradores/:id", (req, res) => {
+  const { id } = req.params;
+  colaboradores = colaboradores.filter((c) => c.id !== id);
+  res.json({ success: true, mensagem: "Colaborador excluído com sucesso." });
 });
 
 app.post("/api/colaboradores/local", (req, res) => {
@@ -199,8 +348,9 @@ app.post("/api/registrar-ponto", async (req, res) => {
         }
 
         let refPart: any;
-        if (colaborador.fotoCadastro.startsWith("data:image")) {
-          const refMatches = colaborador.fotoCadastro.match(/^data:(.+);base64,(.+)$/);
+        const fotoUrl = colaborador.fotoCadastro || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80";
+        if (fotoUrl.startsWith("data:image")) {
+          const refMatches = fotoUrl.match(/^data:(.+);base64,(.+)$/);
           refPart = {
             inlineData: {
               mimeType: refMatches ? refMatches[1] : "image/jpeg",
@@ -208,7 +358,7 @@ app.post("/api/registrar-ponto", async (req, res) => {
             },
           };
         } else {
-          const fetchImg = await fetch(colaborador.fotoCadastro);
+          const fetchImg = await fetch(fotoUrl);
           const buffer = await fetchImg.arrayBuffer();
           const b64 = Buffer.from(buffer).toString("base64");
           refPart = {
@@ -327,8 +477,252 @@ app.post("/api/registrar-ponto", async (req, res) => {
   }
 });
 
+// Import calculation engine
+import {
+  calcularFechamentoMensal,
+  CRITERIOS_PADRAO,
+  gerarDiasMes,
+  BatidaDia,
+  CriteriosApuracao,
+  ResumoMensalFechamento,
+} from "./src/lib/calculosPonto.ts";
+
+let criteriosArmazenados: CriteriosApuracao = { ...CRITERIOS_PADRAO };
+
+interface FechamentoArmazenado {
+  id: string;
+  dataCriacao: string;
+  imagemUrl?: string;
+  fechamento: ResumoMensalFechamento;
+}
+
+let fechamentosSalvos: FechamentoArmazenado[] = [
+  {
+    id: "FECH_001",
+    dataCriacao: "2026-10-01 10:30",
+    imagemUrl: "https://images.unsplash.com/photo-1586281380349-632531db7ed4?w=600&auto=format&fit=crop&q=80",
+    fechamento: (() => {
+      const diasMes = gerarDiasMes(2026, 9);
+      // Aplicar algumas batidas realistas de exemplo
+      diasMes[1].saida2 = "19:00"; // 2h extras no banco
+      diasMes[2].saida2 = "20:00"; // 3h extras: 2h no banco + 1h HE 50%
+      diasMes[3].saida1 = "12:00";
+      diasMes[3].entrada2 = "12:40"; // Almoço de 40min: 20min de supressão calculados a 50%
+      diasMes[4].saida2 = "16:30"; // Saída 30min antes: desconta 30min do banco de horas
+      diasMes[5].entrada1 = "08:00"; // Sábado trabalhado: 4h no banco (1:1)
+      diasMes[5].saida2 = "12:00";
+      diasMes[5].observacao = "Sábado trabalhado (Banco de horas 1:1)";
+      diasMes[6].entrada1 = "08:00"; // Domingo trabalhado sem folga compensatória: 4h a 100%
+      diasMes[6].saida2 = "12:00";
+      diasMes[6].observacao = "Domingo trabalhado sem folga";
+      diasMes[6].folgaCompensatoria = false;
+      diasMes[7].entrada1 = "04:30"; // Entrada 04:30: 30min de adicional noturno (antes das 05h)
+      diasMes[7].saida2 = "17:00";
+      diasMes[8].saida2 = "23:00"; // Saída 23:00: 1h de adicional noturno (após 22h)
+
+      return calcularFechamentoMensal(diasMes, CRITERIOS_PADRAO, {
+        colaboradorNome: "Thais Moreira de Souza",
+        colaboradorCargo: "Assistente de coletas",
+        colaboradorId: "FUNC_001",
+        mesAno: "09/2026",
+        salarioBase: 2450.0,
+        saldoAnteriorBancoMinutos: 270, // +04h 30m anterior
+      });
+    })(),
+  },
+];
+
+app.get("/api/criterios", (req, res) => {
+  res.json(criteriosArmazenados);
+});
+
+app.post("/api/criterios", (req, res) => {
+  criteriosArmazenados = { ...criteriosArmazenados, ...req.body };
+  res.json({ success: true, criterios: criteriosArmazenados });
+});
+
+app.get("/api/fechamentos", (req, res) => {
+  res.json(fechamentosSalvos);
+});
+
+app.post("/api/fechamentos", (req, res) => {
+  const { fechamento, imagemUrl } = req.body;
+  if (!fechamento) {
+    return res.status(400).json({ error: "Fechamento é obrigatório" });
+  }
+  const novo: FechamentoArmazenado = {
+    id: `FECH_${Date.now()}`,
+    dataCriacao: new Date().toLocaleString("pt-BR"),
+    imagemUrl,
+    fechamento,
+  };
+  fechamentosSalvos.unshift(novo);
+  res.json({ success: true, fechamentoSalvo: novo });
+});
+
+app.delete("/api/fechamentos/:id", (req, res) => {
+  const { id } = req.params;
+  fechamentosSalvos = fechamentosSalvos.filter((f) => f.id !== id);
+  res.json({ success: true, mensagem: "Fechamento excluído com sucesso." });
+});
+
+// Recalcular apuração com novos dados ou critérios editados
+app.post("/api/recalcular-fechamento", (req, res) => {
+  try {
+    const { dias, criterios, colaboradorNome, colaboradorCargo, colaboradorId, mesAno, salarioBase, saldoAnteriorBancoMinutos, horarioNominal } = req.body;
+    const criteriosUsados = criterios || criteriosArmazenados;
+    const resultado = calcularFechamentoMensal(dias, criteriosUsados, {
+      colaboradorNome: colaboradorNome || "Colaborador",
+      colaboradorCargo: colaboradorCargo || "Geral",
+      colaboradorId,
+      mesAno: mesAno || "10/2026",
+      salarioBase: Number(salarioBase) || 2200,
+      saldoAnteriorBancoMinutos: Number(saldoAnteriorBancoMinutos) || 0,
+      horarioNominal,
+    });
+    res.json({ success: true, fechamento: resultado });
+  } catch (err: any) {
+    console.error("Erro ao recalcular:", err);
+    res.status(500).json({ error: err.message || "Erro ao recalcular folha." });
+  }
+});
+
+// Processar folha escaneada usando Gemini Vision AI
+app.post("/api/processar-folha-ponto", async (req, res) => {
+  try {
+    const {
+      imageBase64,
+      colaboradorNomeManual,
+      colaboradorCargoManual,
+      colaboradorIdManual,
+      mesAnoManual,
+      salarioBaseManual,
+      saldoAnteriorManual,
+      criteriosCustom,
+      horarioNominal,
+    } = req.body;
+
+    let dadosExtraidos: {
+      colaboradorNome?: string;
+      cargo?: string;
+      mesAno?: string;
+      dias?: BatidaDia[];
+    } = {};
+
+    if (imageBase64 && imageBase64.startsWith("data:")) {
+      try {
+        const matches = imageBase64.match(/^data:(.+);base64,(.+)$/);
+        let mimeType = "image/jpeg";
+        let base64Data = imageBase64;
+        if (matches && matches.length === 3) {
+          mimeType = matches[1];
+          base64Data = matches[2];
+        }
+
+        const promptOCR = `
+Você é um especialista em Departamento Pessoal (DP) e auditoria de Cartões de Ponto / Folhas de Ponto escaneadas e impressas no Brasil.
+Analise detalhadamente a imagem da folha de ponto enviada.
+
+Sua tarefa é fazer o OCR e estruturar com máxima precisão todos os dias e batidas de ponto:
+1. "colaboradorNome": Nome completo do funcionário na folha (se visível).
+2. "cargo": Função / cargo do colaborador (se visível).
+3. "mesAno": Mês e ano de referência no formato "MM/AAAA" (ex: "09/2026" ou "10/2026").
+4. "dias": Lista com cada dia do mês (1 a 31) contendo:
+   - "dia": número do dia (1..31).
+   - "diaSemana": "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb" ou "Dom".
+   - "entrada1": Horário no formato "HH:MM" (Entrada da manhã). Se não trabalhou, use "".
+   - "saida1": Horário no formato "HH:MM" (Saída para almoço). Se não houve, use "".
+   - "entrada2": Horário no formato "HH:MM" (Retorno do almoço). Se não houve, use "".
+   - "saida2": Horário no formato "HH:MM" (Saída da tarde/final). Se não trabalhou, use "".
+   - "observacao": Se tiver anotações manuscritas ou impressas como "Folga", "DSR", "Feriado", "Atestado", "Falta", "Normal".
+   - "ehFeriado": true se for feriado, false caso contrário.
+   - "folgaCompensatoria": false por padrão.
+
+Retorne estritamente um JSON válido.
+`;
+
+        const response = await ai.models.generateContent({
+          model: "gemini-3.8-flash",
+          contents: [
+            promptOCR,
+            {
+              inlineData: {
+                mimeType,
+                data: base64Data,
+              },
+            },
+          ],
+          config: {
+            responseMimeType: "application/json",
+            temperature: 0.1,
+          },
+        });
+
+        if (response.text) {
+          const parsed = JSON.parse(response.text);
+          dadosExtraidos = parsed;
+        }
+      } catch (geminiErr: any) {
+        console.warn("Aviso na chamada Gemini OCR:", geminiErr?.message || geminiErr);
+      }
+    }
+
+    // Determinar mês e ano de referência
+    const mesAnoFinal = mesAnoManual || dadosExtraidos.mesAno || "10/2026";
+    const [mesStr, anoStr] = mesAnoFinal.includes("/") ? mesAnoFinal.split("/") : ["10", "2026"];
+    const ano = parseInt(anoStr, 10) || 2026;
+    const mes = parseInt(mesStr, 10) || 10;
+    const criteriosUsados = criteriosCustom || criteriosArmazenados;
+
+    // Gerar a grade completa do mês e mesclar com o que foi extraído pelo OCR
+    const gradeBase = gerarDiasMes(ano, mes, criteriosUsados.feriadosFixos, horarioNominal);
+    const diasMesclados: BatidaDia[] = gradeBase.map((diaBase) => {
+      if (dadosExtraidos.dias && Array.isArray(dadosExtraidos.dias)) {
+        const diaEncontrado = dadosExtraidos.dias.find((d: any) => Number(d.dia) === diaBase.dia);
+        if (diaEncontrado) {
+          return {
+            ...diaBase,
+            entrada1: diaEncontrado.entrada1 !== undefined ? diaEncontrado.entrada1 : diaBase.entrada1,
+            saida1: diaEncontrado.saida1 !== undefined ? diaEncontrado.saida1 : diaBase.saida1,
+            entrada2: diaEncontrado.entrada2 !== undefined ? diaEncontrado.entrada2 : diaBase.entrada2,
+            saida2: diaEncontrado.saida2 !== undefined ? diaEncontrado.saida2 : diaBase.saida2,
+            observacao: diaEncontrado.observacao || diaBase.observacao,
+            ehFeriado: Boolean(diaEncontrado.ehFeriado),
+            folgaCompensatoria: Boolean(diaEncontrado.folgaCompensatoria),
+          };
+        }
+      }
+      return diaBase;
+    });
+
+    const nomeFinal = colaboradorNomeManual || dadosExtraidos.colaboradorNome || "Thais Moreira de Souza";
+    const cargoFinal = colaboradorCargoManual || dadosExtraidos.cargo || "Assistente de coletas";
+
+    const fechamento = calcularFechamentoMensal(diasMesclados, criteriosUsados, {
+      colaboradorNome: nomeFinal,
+      colaboradorCargo: cargoFinal,
+      colaboradorId: colaboradorIdManual || "FUNC_001",
+      mesAno: mesAnoFinal,
+      salarioBase: Number(salarioBaseManual) || 2450.0,
+      saldoAnteriorBancoMinutos: Number(saldoAnteriorManual) || 0,
+      horarioNominal,
+    });
+
+    res.json({
+      success: true,
+      dadosExtraidos,
+      fechamento,
+    });
+  } catch (err: any) {
+    console.error("Erro geral no processamento de folha de ponto:", err);
+    res.status(500).json({ error: err.message || "Erro ao processar folha de ponto com IA." });
+  }
+});
+
 // Vite middleware setup for development vs production static serving
-if (process.env.NODE_ENV === "production") {
+const isProduction = process.env.NODE_ENV === "production" || fs.existsSync(path.join(__dirname, "dist"));
+
+if (isProduction) {
   app.use(express.static(path.join(__dirname, "dist")));
   app.get("*", (req, res) => {
     res.sendFile(path.join(__dirname, "dist", "index.html"));
