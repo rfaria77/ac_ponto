@@ -52,6 +52,7 @@ let colaboradores: Array<{
   saldoAnteriorBancoMinutos: number;
   dataInicioSaldo?: string;
   observacaoSaldo?: string;
+  escalaId?: string;
   horarioTrabalho: {
     entrada: string;
     almocoSaida: string;
@@ -78,6 +79,7 @@ let colaboradores: Array<{
     saldoAnteriorBancoMinutos: 270, // +04h 30m
     dataInicioSaldo: "01/09/2026",
     observacaoSaldo: "Saldo apurado em folha anterior",
+    escalaId: "ESC_001",
     fotoCadastro: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400&auto=format&fit=crop&q=80",
     horarioTrabalho: {
       entrada: "08:00",
@@ -102,6 +104,7 @@ let colaboradores: Array<{
     saldoAnteriorBancoMinutos: -120, // -02h 00m
     dataInicioSaldo: "01/09/2026",
     observacaoSaldo: "Saldo devedor anterior",
+    escalaId: "ESC_002",
     fotoCadastro: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80",
     horarioTrabalho: {
       entrada: "07:30",
@@ -126,6 +129,7 @@ let colaboradores: Array<{
     saldoAnteriorBancoMinutos: 0,
     dataInicioSaldo: "01/09/2026",
     observacaoSaldo: "Sem saldo inicial",
+    escalaId: "ESC_003",
     fotoCadastro: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80",
     horarioTrabalho: {
       entrada: "08:30",
@@ -150,6 +154,7 @@ let colaboradores: Array<{
     saldoAnteriorBancoMinutos: 180, // +03h 00m
     dataInicioSaldo: "01/09/2026",
     observacaoSaldo: "Saldo positivo anterior",
+    escalaId: "ESC_004",
     fotoCadastro: "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=400&auto=format&fit=crop&q=80",
     horarioTrabalho: {
       entrada: "08:00",
@@ -166,6 +171,131 @@ let colaboradores: Array<{
       lon: sedeConfig.lon,
       raio: sedeConfig.raioMaximoMetros,
     },
+  },
+];
+
+let escalas: Array<{
+  id: string;
+  nome: string;
+  tipo: "5x2" | "6x1" | "12x36" | "personalizada";
+  descricao?: string;
+  diasSemana: string;
+  cargaSemanalHoras: number;
+  horario: {
+    entrada: string;
+    almocoSaida: string;
+    almocoRetorno: string;
+    saida: string;
+    sabadoAtivo?: boolean;
+    sabadoEntrada?: string;
+    sabadoSaida?: string;
+  };
+  toleranciaMinutos?: number;
+  cor?: string;
+}> = [
+  {
+    id: "ESC_001",
+    nome: "Administrativo Geral (08h às 17h)",
+    tipo: "5x2",
+    descricao: "Jornada padrão de 40h semanais com 1h de almoço das 12h às 13h e sábados livres.",
+    diasSemana: "Segunda a Sexta",
+    cargaSemanalHoras: 40,
+    horario: {
+      entrada: "08:00",
+      almocoSaida: "12:00",
+      almocoRetorno: "13:00",
+      saida: "17:00",
+      sabadoAtivo: false,
+    },
+    toleranciaMinutos: 10,
+    cor: "sky",
+  },
+  {
+    id: "ESC_002",
+    nome: "Segurança do Trabalho (07h30 às 16h30)",
+    tipo: "5x2",
+    descricao: "Jornada antecipada para acompanhamento de campo e obras, 40h semanais.",
+    diasSemana: "Segunda a Sexta",
+    cargaSemanalHoras: 40,
+    horario: {
+      entrada: "07:30",
+      almocoSaida: "11:30",
+      almocoRetorno: "12:30",
+      saida: "16:30",
+      sabadoAtivo: false,
+    },
+    toleranciaMinutos: 10,
+    cor: "emerald",
+  },
+  {
+    id: "ESC_003",
+    nome: "Comercial & Atendimento (08h30 às 17h30)",
+    tipo: "5x2",
+    descricao: "Jornada de suporte comercial com início às 08h30 e término às 17h30.",
+    diasSemana: "Segunda a Sexta",
+    cargaSemanalHoras: 40,
+    horario: {
+      entrada: "08:30",
+      almocoSaida: "12:30",
+      almocoRetorno: "13:30",
+      saida: "17:30",
+      sabadoAtivo: false,
+    },
+    toleranciaMinutos: 10,
+    cor: "purple",
+  },
+  {
+    id: "ESC_004",
+    nome: "Operacional com Sábado (44h semanais)",
+    tipo: "6x1",
+    descricao: "Jornada integral de segunda a sexta (08h-17h) e sábados das 08h às 12h.",
+    diasSemana: "Segunda a Sábado",
+    cargaSemanalHoras: 44,
+    horario: {
+      entrada: "08:00",
+      almocoSaida: "12:00",
+      almocoRetorno: "13:00",
+      saida: "17:00",
+      sabadoAtivo: true,
+      sabadoEntrada: "08:00",
+      sabadoSaida: "12:00",
+    },
+    toleranciaMinutos: 10,
+    cor: "amber",
+  },
+  {
+    id: "ESC_005",
+    nome: "Plantão 12x36 Diurno (07h às 19h)",
+    tipo: "12x36",
+    descricao: "Plantão de 12 horas diurnas de trabalho por 36 horas de descanso, 1h de intervalo.",
+    diasSemana: "12x36 (Dia Sim, Dia Não)",
+    cargaSemanalHoras: 36,
+    horario: {
+      entrada: "07:00",
+      almocoSaida: "12:00",
+      almocoRetorno: "13:00",
+      saida: "19:00",
+      sabadoAtivo: false,
+    },
+    toleranciaMinutos: 10,
+    cor: "teal",
+  },
+  {
+    id: "ESC_006",
+    nome: "Plantão 12x36 Noturno (19h às 07h)",
+    tipo: "12x36",
+    descricao: "Plantão noturno 12x36 com adicional noturno integral das 22h às 05h.",
+    diasSemana: "12x36 Noturno",
+    cargaSemanalHoras: 36,
+    horario: {
+      entrada: "19:00",
+      almocoSaida: "00:00",
+      almocoRetorno: "01:00",
+      saida: "07:00",
+      sabadoAtivo: false,
+    },
+    toleranciaMinutos: 10,
+    cor: "indigo",
   },
 ];
 
@@ -285,6 +415,7 @@ app.put("/api/colaboradores/:id", (req, res) => {
         : colabExistente.saldoAnteriorBancoMinutos,
     dataInicioSaldo: dados.dataInicioSaldo !== undefined ? dados.dataInicioSaldo : colabExistente.dataInicioSaldo,
     observacaoSaldo: dados.observacaoSaldo !== undefined ? dados.observacaoSaldo : colabExistente.observacaoSaldo,
+    escalaId: dados.escalaId !== undefined ? dados.escalaId : colabExistente.escalaId,
     horarioTrabalho: dados.horarioTrabalho ? { ...colabExistente.horarioTrabalho, ...dados.horarioTrabalho } : colabExistente.horarioTrabalho,
     fotoCadastro: dados.fotoCadastro !== undefined ? dados.fotoCadastro : colabExistente.fotoCadastro,
   };
@@ -296,6 +427,62 @@ app.delete("/api/colaboradores/:id", (req, res) => {
   const { id } = req.params;
   colaboradores = colaboradores.filter((c) => c.id !== id);
   res.json({ success: true, mensagem: "Colaborador excluído com sucesso." });
+});
+
+// Rotas para Gestão de Escalas & Horários
+app.get("/api/escalas", (req, res) => {
+  res.json(escalas);
+});
+
+app.post("/api/escalas", (req, res) => {
+  const { nome, tipo, descricao, diasSemana, cargaSemanalHoras, horario, toleranciaMinutos, cor } = req.body;
+  if (!nome || !horario) {
+    return res.status(400).json({ error: "Nome e horários da escala são obrigatórios." });
+  }
+
+  const novaEscala = {
+    id: `ESC_${Date.now()}`,
+    nome,
+    tipo: tipo || "5x2",
+    descricao: descricao || "",
+    diasSemana: diasSemana || "Segunda a Sexta",
+    cargaSemanalHoras: typeof cargaSemanalHoras === "number" ? cargaSemanalHoras : 40,
+    horario,
+    toleranciaMinutos: typeof toleranciaMinutos === "number" ? toleranciaMinutos : 10,
+    cor: cor || "sky",
+  };
+
+  escalas.push(novaEscala);
+  res.json({ success: true, escala: novaEscala });
+});
+
+app.put("/api/escalas/:id", (req, res) => {
+  const { id } = req.params;
+  const index = escalas.findIndex((e) => e.id === id);
+  if (index === -1) {
+    return res.status(404).json({ error: "Escala não encontrada." });
+  }
+
+  const dados = req.body;
+  escalas[index] = {
+    ...escalas[index],
+    ...dados,
+    horario: dados.horario ? { ...escalas[index].horario, ...dados.horario } : escalas[index].horario,
+  };
+
+  res.json({ success: true, escala: escalas[index] });
+});
+
+app.delete("/api/escalas/:id", (req, res) => {
+  const { id } = req.params;
+  escalas = escalas.filter((e) => e.id !== id);
+  // Desvincula colaboradores que usavam essa escala
+  colaboradores.forEach((c) => {
+    if (c.escalaId === id) {
+      c.escalaId = undefined;
+    }
+  });
+  res.json({ success: true, mensagem: "Escala excluída com sucesso." });
 });
 
 app.post("/api/colaboradores/local", (req, res) => {

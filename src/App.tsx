@@ -21,6 +21,7 @@ import {
   Moon,
   Sun,
   Printer,
+  ChevronLeft,
   ChevronRight,
   Info,
   Check,
@@ -37,6 +38,12 @@ import {
   Key,
   LogOut,
   Menu,
+  CalendarClock,
+  Link2,
+  Copy,
+  CheckSquare,
+  Square,
+  Layers,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import jsPDF from "jspdf";
@@ -67,6 +74,125 @@ interface HorarioTrabalhoColab {
   sabadoSaida?: string;
 }
 
+export interface EscalaTrabalho {
+  id: string;
+  nome: string;
+  tipo: "5x2" | "6x1" | "12x36" | "personalizada";
+  descricao?: string;
+  diasSemana: string;
+  cargaSemanalHoras: number;
+  horario: HorarioTrabalhoColab;
+  toleranciaMinutos?: number;
+  cor?: string;
+}
+
+export const ESCALAS_INICIAIS: EscalaTrabalho[] = [
+  {
+    id: "ESC_001",
+    nome: "Administrativo Geral (08h às 17h)",
+    tipo: "5x2",
+    descricao: "Jornada padrão de 40h semanais com 1h de almoço (12h-13h) e sábados livres.",
+    diasSemana: "Segunda a Sexta",
+    cargaSemanalHoras: 40,
+    horario: {
+      entrada: "08:00",
+      almocoSaida: "12:00",
+      almocoRetorno: "13:00",
+      saida: "17:00",
+      sabadoAtivo: false,
+    },
+    toleranciaMinutos: 10,
+    cor: "sky",
+  },
+  {
+    id: "ESC_002",
+    nome: "Segurança do Trabalho (07h30 às 16h30)",
+    tipo: "5x2",
+    descricao: "Jornada antecipada para acompanhamento técnico de campo, 40h semanais.",
+    diasSemana: "Segunda a Sexta",
+    cargaSemanalHoras: 40,
+    horario: {
+      entrada: "07:30",
+      almocoSaida: "11:30",
+      almocoRetorno: "12:30",
+      saida: "16:30",
+      sabadoAtivo: false,
+    },
+    toleranciaMinutos: 10,
+    cor: "emerald",
+  },
+  {
+    id: "ESC_003",
+    nome: "Comercial & Atendimento (08h30 às 17h30)",
+    tipo: "5x2",
+    descricao: "Jornada de suporte comercial com início às 08h30 e término às 17h30.",
+    diasSemana: "Segunda a Sexta",
+    cargaSemanalHoras: 40,
+    horario: {
+      entrada: "08:30",
+      almocoSaida: "12:30",
+      almocoRetorno: "13:30",
+      saida: "17:30",
+      sabadoAtivo: false,
+    },
+    toleranciaMinutos: 10,
+    cor: "purple",
+  },
+  {
+    id: "ESC_004",
+    nome: "Operacional com Sábado (44h semanais)",
+    tipo: "6x1",
+    descricao: "Jornada integral de segunda a sexta (08h-17h) e sábados das 08h às 12h.",
+    diasSemana: "Segunda a Sábado",
+    cargaSemanalHoras: 44,
+    horario: {
+      entrada: "08:00",
+      almocoSaida: "12:00",
+      almocoRetorno: "13:00",
+      saida: "17:00",
+      sabadoAtivo: true,
+      sabadoEntrada: "08:00",
+      sabadoSaida: "12:00",
+    },
+    toleranciaMinutos: 10,
+    cor: "amber",
+  },
+  {
+    id: "ESC_005",
+    nome: "Plantão 12x36 Diurno (07h às 19h)",
+    tipo: "12x36",
+    descricao: "Plantão de 12 horas diurnas de trabalho por 36 horas de descanso.",
+    diasSemana: "12x36 (Dia Sim, Dia Não)",
+    cargaSemanalHoras: 36,
+    horario: {
+      entrada: "07:00",
+      almocoSaida: "12:00",
+      almocoRetorno: "13:00",
+      saida: "19:00",
+      sabadoAtivo: false,
+    },
+    toleranciaMinutos: 10,
+    cor: "teal",
+  },
+  {
+    id: "ESC_006",
+    nome: "Plantão 12x36 Noturno (19h às 07h)",
+    tipo: "12x36",
+    descricao: "Plantão noturno 12x36 com adicional noturno integral das 22h às 05h.",
+    diasSemana: "12x36 Noturno",
+    cargaSemanalHoras: 36,
+    horario: {
+      entrada: "19:00",
+      almocoSaida: "00:00",
+      almocoRetorno: "01:00",
+      saida: "07:00",
+      sabadoAtivo: false,
+    },
+    toleranciaMinutos: 10,
+    cor: "indigo",
+  },
+];
+
 interface Colaborador {
   id: string;
   nome: string;
@@ -78,6 +204,7 @@ interface Colaborador {
   observacaoSaldo?: string; // Observação explicativa do saldo inicial
   senha?: string; // Senha de acesso (padrão Aec2026@)
   primeiroAcesso?: boolean; // True se precisar alterar senha no primeiro acesso
+  escalaId?: string; // ID da EscalaTrabalho vinculada
   horarioTrabalho: HorarioTrabalhoColab;
 }
 
@@ -92,6 +219,7 @@ const COLABORADORES_INICIAIS: Colaborador[] = [
     dataInicioSaldo: "01/09/2026",
     senha: "Aec2026@",
     primeiroAcesso: true,
+    escalaId: "ESC_001",
     horarioTrabalho: {
       entrada: "08:00",
       almocoSaida: "12:00",
@@ -110,6 +238,7 @@ const COLABORADORES_INICIAIS: Colaborador[] = [
     dataInicioSaldo: "01/09/2026",
     senha: "Aec2026@",
     primeiroAcesso: true,
+    escalaId: "ESC_002",
     horarioTrabalho: {
       entrada: "07:30",
       almocoSaida: "11:30",
@@ -128,6 +257,7 @@ const COLABORADORES_INICIAIS: Colaborador[] = [
     dataInicioSaldo: "01/09/2026",
     senha: "Aec2026@",
     primeiroAcesso: true,
+    escalaId: "ESC_003",
     horarioTrabalho: {
       entrada: "08:30",
       almocoSaida: "12:30",
@@ -146,6 +276,7 @@ const COLABORADORES_INICIAIS: Colaborador[] = [
     dataInicioSaldo: "01/09/2026",
     senha: "Aec2026@",
     primeiroAcesso: true,
+    escalaId: "ESC_004",
     horarioTrabalho: {
       entrada: "08:00",
       almocoSaida: "12:00",
@@ -165,6 +296,24 @@ interface FechamentoArmazenado {
   fechamento: ResumoMensalFechamento;
 }
 
+const MESES_OPCOES = [
+  { valor: "01/2026", rotulo: "01/2026 - Janeiro" },
+  { valor: "02/2026", rotulo: "02/2026 - Fevereiro" },
+  { valor: "03/2026", rotulo: "03/2026 - Março" },
+  { valor: "04/2026", rotulo: "04/2026 - Abril" },
+  { valor: "05/2026", rotulo: "05/2026 - Maio" },
+  { valor: "06/2026", rotulo: "06/2026 - Junho" },
+  { valor: "07/2026", rotulo: "07/2026 - Julho" },
+  { valor: "08/2026", rotulo: "08/2026 - Agosto" },
+  { valor: "09/2026", rotulo: "09/2026 - Setembro" },
+  { valor: "10/2026", rotulo: "10/2026 - Outubro" },
+  { valor: "11/2026", rotulo: "11/2026 - Novembro" },
+  { valor: "12/2026", rotulo: "12/2026 - Dezembro" },
+  { valor: "11/2025", rotulo: "11/2025 - Novembro (2025)" },
+  { valor: "12/2025", rotulo: "12/2025 - Dezembro (2025)" },
+  { valor: "01/2027", rotulo: "01/2027 - Janeiro (2027)" },
+];
+
 export default function App() {
   const [userRole, setUserRole] = useState<"escolha" | "admin" | "funcionario">("escolha");
   const [adminSenhaInput, setAdminSenhaInput] = useState<string>("");
@@ -180,9 +329,49 @@ export default function App() {
   const [confirmaNovaSenhaInput, setConfirmaNovaSenhaInput] = useState<string>("");
   const [sidebarAbertaMobile, setSidebarAbertaMobile] = useState<boolean>(false);
 
-  const [abaAtiva, setAbaAtiva] = useState<"digitalizar" | "fechamento" | "historico" | "criterios" | "colaboradores" | "baterPonto">("baterPonto");
+  const [abaAtiva, setAbaAtiva] = useState<"digitalizar" | "fechamento" | "historico" | "criterios" | "escalas" | "colaboradores" | "baterPonto">("baterPonto");
   const [colaboradores, setColaboradores] = useState<Colaborador[]>(COLABORADORES_INICIAIS);
   const [criterios, setCriterios] = useState<CriteriosApuracao>(CRITERIOS_PADRAO);
+
+  // Gestão de Escalas & Horários
+  const [escalas, setEscalas] = useState<EscalaTrabalho[]>(() => {
+    const salvo = localStorage.getItem("ac_gestor_escalas");
+    if (salvo) {
+      try {
+        const parsed = JSON.parse(salvo);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {}
+    }
+    return ESCALAS_INICIAIS;
+  });
+  const [filtroEscalas, setFiltroEscalas] = useState<string>("");
+  const [filtroTipoEscala, setFiltroTipoEscala] = useState<string>("todas");
+  const [modalEscalaAberta, setModalEscalaAberta] = useState<boolean>(false);
+  const [escalaEditando, setEscalaEditando] = useState<EscalaTrabalho | null>(null);
+  const [formEscalaNome, setFormEscalaNome] = useState<string>("");
+  const [formEscalaTipo, setFormEscalaTipo] = useState<"5x2" | "6x1" | "12x36" | "personalizada">("5x2");
+  const [formEscalaDescricao, setFormEscalaDescricao] = useState<string>("");
+  const [formEscalaDiasSemana, setFormEscalaDiasSemana] = useState<string>("Segunda a Sexta");
+  const [formEscalaCargaHoras, setFormEscalaCargaHoras] = useState<number>(40);
+  const [formEscalaEntrada, setFormEscalaEntrada] = useState<string>("08:00");
+  const [formEscalaAlmocoSaida, setFormEscalaAlmocoSaida] = useState<string>("12:00");
+  const [formEscalaAlmocoRetorno, setFormEscalaAlmocoRetorno] = useState<string>("13:00");
+  const [formEscalaSaida, setFormEscalaSaida] = useState<string>("17:00");
+  const [formEscalaSabadoAtivo, setFormEscalaSabadoAtivo] = useState<boolean>(false);
+  const [formEscalaSabadoEntrada, setFormEscalaSabadoEntrada] = useState<string>("08:00");
+  const [formEscalaSabadoSaida, setFormEscalaSabadoSaida] = useState<string>("12:00");
+  const [formEscalaTolerancia, setFormEscalaTolerancia] = useState<number>(10);
+  const [formEscalaCor, setFormEscalaCor] = useState<string>("sky");
+  const [formEscalaAtualizarColabs, setFormEscalaAtualizarColabs] = useState<boolean>(true);
+
+  // Modal Vincular Colaboradores em Lote
+  const [modalVincularAberta, setModalVincularAberta] = useState<boolean>(false);
+  const [escalaParaVincular, setEscalaParaVincular] = useState<EscalaTrabalho | null>(null);
+  const [colaboradoresSelecionadosParaEscala, setColaboradoresSelecionadosParaEscala] = useState<string[]>([]);
+  const [filtroVincularColabs, setFiltroVincularColabs] = useState<string>("");
+
+  // No Form do Colaborador: Escala Vinculada
+  const [formEscalaVinculadaId, setFormEscalaVinculadaId] = useState<string>("ESC_001");
 
   // Portal do Funcionário (Bater Ponto)
   const [portalColaboradorId, setPortalColaboradorId] = useState<string>("FUNC_001");
@@ -254,6 +443,310 @@ export default function App() {
     setTimeout(() => setToast(null), 4500);
   };
 
+  // Selecionar escala no formulário do colaborador e preencher horários automaticamente
+  const handleSelecionarEscalaNoColaborador = (id: string) => {
+    setFormEscalaVinculadaId(id);
+    if (!id) return;
+    const esc = escalas.find((e) => e.id === id);
+    if (esc) {
+      setFormEntrada(esc.horario.entrada);
+      setFormAlmocoSaida(esc.horario.almocoSaida);
+      setFormAlmocoRetorno(esc.horario.almocoRetorno);
+      setFormSaida(esc.horario.saida);
+      setFormSabadoAtivo(Boolean(esc.horario.sabadoAtivo));
+      setFormSabadoEntrada(esc.horario.sabadoEntrada || "08:00");
+      setFormSabadoSaida(esc.horario.sabadoSaida || "12:00");
+      showToast("sucesso", "Escala Aplicada", `Horários preenchidos a partir da escala: ${esc.nome}`);
+    }
+  };
+
+  // Handlers para o Módulo de Escalas & Horários
+  const handleAbrirNovaEscala = () => {
+    setEscalaEditando(null);
+    setFormEscalaNome("");
+    setFormEscalaTipo("5x2");
+    setFormEscalaDescricao("");
+    setFormEscalaDiasSemana("Segunda a Sexta");
+    setFormEscalaCargaHoras(40);
+    setFormEscalaEntrada("08:00");
+    setFormEscalaAlmocoSaida("12:00");
+    setFormEscalaAlmocoRetorno("13:00");
+    setFormEscalaSaida("17:00");
+    setFormEscalaSabadoAtivo(false);
+    setFormEscalaSabadoEntrada("08:00");
+    setFormEscalaSabadoSaida("12:00");
+    setFormEscalaTolerancia(10);
+    setFormEscalaCor("sky");
+    setFormEscalaAtualizarColabs(true);
+    setModalEscalaAberta(true);
+  };
+
+  const handleAbrirEditarEscala = (escala: EscalaTrabalho) => {
+    setEscalaEditando(escala);
+    setFormEscalaNome(escala.nome);
+    setFormEscalaTipo(escala.tipo);
+    setFormEscalaDescricao(escala.descricao || "");
+    setFormEscalaDiasSemana(escala.diasSemana);
+    setFormEscalaCargaHoras(escala.cargaSemanalHoras);
+    setFormEscalaEntrada(escala.horario.entrada);
+    setFormEscalaAlmocoSaida(escala.horario.almocoSaida);
+    setFormEscalaAlmocoRetorno(escala.horario.almocoRetorno);
+    setFormEscalaSaida(escala.horario.saida);
+    setFormEscalaSabadoAtivo(Boolean(escala.horario.sabadoAtivo));
+    setFormEscalaSabadoEntrada(escala.horario.sabadoEntrada || "08:00");
+    setFormEscalaSabadoSaida(escala.horario.sabadoSaida || "12:00");
+    setFormEscalaTolerancia(escala.toleranciaMinutos || 10);
+    setFormEscalaCor(escala.cor || "sky");
+    setFormEscalaAtualizarColabs(true);
+    setModalEscalaAberta(true);
+  };
+
+  const handleSalvarEscala = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formEscalaNome.trim()) {
+      showToast("aviso", "Campo Obrigatório", "Informe o nome da escala de trabalho.");
+      return;
+    }
+
+    const horarioObj: HorarioTrabalhoColab = {
+      entrada: formEscalaEntrada,
+      almocoSaida: formEscalaAlmocoSaida,
+      almocoRetorno: formEscalaAlmocoRetorno,
+      saida: formEscalaSaida,
+      sabadoAtivo: formEscalaSabadoAtivo,
+      sabadoEntrada: formEscalaSabadoAtivo ? formEscalaSabadoEntrada : undefined,
+      sabadoSaida: formEscalaSabadoAtivo ? formEscalaSabadoSaida : undefined,
+    };
+
+    if (escalaEditando) {
+      const atualizadas = escalas.map((esc) => {
+        if (esc.id === escalaEditando.id) {
+          return {
+            ...esc,
+            nome: formEscalaNome.trim(),
+            tipo: formEscalaTipo,
+            descricao: formEscalaDescricao.trim(),
+            diasSemana: formEscalaDiasSemana.trim() || "Segunda a Sexta",
+            cargaSemanalHoras: formEscalaCargaHoras,
+            horario: horarioObj,
+            toleranciaMinutos: formEscalaTolerancia,
+            cor: formEscalaCor,
+          };
+        }
+        return esc;
+      });
+
+      setEscalas(atualizadas);
+      localStorage.setItem("ac_gestor_escalas", JSON.stringify(atualizadas));
+
+      fetch(`/api/escalas/${escalaEditando.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nome: formEscalaNome.trim(),
+          tipo: formEscalaTipo,
+          descricao: formEscalaDescricao.trim(),
+          diasSemana: formEscalaDiasSemana.trim(),
+          cargaSemanalHoras: formEscalaCargaHoras,
+          horario: horarioObj,
+          toleranciaMinutos: formEscalaTolerancia,
+          cor: formEscalaCor,
+        }),
+      }).catch(() => {});
+
+      if (formEscalaAtualizarColabs) {
+        const colabsAtualizados = colaboradores.map((c) => {
+          if (c.escalaId === escalaEditando.id) {
+            return {
+              ...c,
+              horarioTrabalho: horarioObj,
+            };
+          }
+          return c;
+        });
+        setColaboradores(colabsAtualizados);
+        localStorage.setItem("ac_gestor_colaboradores", JSON.stringify(colabsAtualizados));
+
+        colabsAtualizados.forEach((c) => {
+          if (c.escalaId === escalaEditando.id) {
+            fetch(`/api/colaboradores/${c.id}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ horarioTrabalho: horarioObj }),
+            }).catch(() => {});
+          }
+        });
+      }
+
+      showToast("sucesso", "Escala Atualizada!", `A escala "${formEscalaNome}" foi salva com sucesso.`);
+    } else {
+      const nova: EscalaTrabalho = {
+        id: `ESC_${Date.now()}`,
+        nome: formEscalaNome.trim(),
+        tipo: formEscalaTipo,
+        descricao: formEscalaDescricao.trim(),
+        diasSemana: formEscalaDiasSemana.trim() || "Segunda a Sexta",
+        cargaSemanalHoras: formEscalaCargaHoras,
+        horario: horarioObj,
+        toleranciaMinutos: formEscalaTolerancia,
+        cor: formEscalaCor,
+      };
+
+      const lista = [...escalas, nova];
+      setEscalas(lista);
+      localStorage.setItem("ac_gestor_escalas", JSON.stringify(lista));
+
+      fetch("/api/escalas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(nova),
+      }).catch(() => {});
+
+      showToast("sucesso", "Escala Cadastrada!", `A escala "${formEscalaNome}" foi criada com sucesso.`);
+    }
+
+    setModalEscalaAberta(false);
+    setEscalaEditando(null);
+  };
+
+  const handleDuplicarEscala = (escala: EscalaTrabalho) => {
+    const duplicada: EscalaTrabalho = {
+      ...escala,
+      id: `ESC_${Date.now()}`,
+      nome: `${escala.nome} (Cópia)`,
+    };
+    const lista = [...escalas, duplicada];
+    setEscalas(lista);
+    localStorage.setItem("ac_gestor_escalas", JSON.stringify(lista));
+    fetch("/api/escalas", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(duplicada),
+    }).catch(() => {});
+    showToast("sucesso", "Escala Duplicada", `Criada cópia: "${duplicada.nome}".`);
+  };
+
+  const handleExcluirEscala = (id: string, nome: string) => {
+    const vinculados = colaboradores.filter((c) => c.escalaId === id);
+    if (vinculados.length > 0) {
+      if (
+        !window.confirm(
+          `Existem ${vinculados.length} colaborador(es) vinculados à escala "${nome}". Deseja realmente excluir e desvincular esses colaboradores?`
+        )
+      ) {
+        return;
+      }
+    }
+
+    const atualizadas = escalas.filter((e) => e.id !== id);
+    setEscalas(atualizadas);
+    localStorage.setItem("ac_gestor_escalas", JSON.stringify(atualizadas));
+
+    const colabsAtualizados = colaboradores.map((c) => {
+      if (c.escalaId === id) {
+        return { ...c, escalaId: undefined };
+      }
+      return c;
+    });
+    setColaboradores(colabsAtualizados);
+    localStorage.setItem("ac_gestor_colaboradores", JSON.stringify(colabsAtualizados));
+
+    fetch(`/api/escalas/${id}`, { method: "DELETE" }).catch(() => {});
+    showToast("sucesso", "Escala Removida", `A escala "${nome}" foi excluída.`);
+  };
+
+  const handleAbrirVincularColaboradores = (escala: EscalaTrabalho) => {
+    setEscalaParaVincular(escala);
+    const ids = colaboradores.filter((c) => c.escalaId === escala.id).map((c) => c.id);
+    setColaboradoresSelecionadosParaEscala(ids);
+    setFiltroVincularColabs("");
+    setModalVincularAberta(true);
+  };
+
+  const handleToggleColaboradorVinculo = (colabId: string) => {
+    setColaboradoresSelecionadosParaEscala((prev) =>
+      prev.includes(colabId) ? prev.filter((id) => id !== colabId) : [...prev, colabId]
+    );
+  };
+
+  const handleSalvarVinculoColaboradores = () => {
+    if (!escalaParaVincular) return;
+
+    const colabsAtualizados = colaboradores.map((c) => {
+      const estaMarcado = colaboradoresSelecionadosParaEscala.includes(c.id);
+      if (estaMarcado) {
+        return {
+          ...c,
+          escalaId: escalaParaVincular.id,
+          horarioTrabalho: { ...escalaParaVincular.horario },
+        };
+      } else if (c.escalaId === escalaParaVincular.id) {
+        return {
+          ...c,
+          escalaId: undefined,
+        };
+      }
+      return c;
+    });
+
+    setColaboradores(colabsAtualizados);
+    localStorage.setItem("ac_gestor_colaboradores", JSON.stringify(colabsAtualizados));
+
+    colabsAtualizados.forEach((c) => {
+      fetch(`/api/colaboradores/${c.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          escalaId: c.escalaId,
+          horarioTrabalho: c.horarioTrabalho,
+        }),
+      }).catch(() => {});
+    });
+
+    setModalVincularAberta(false);
+    showToast(
+      "sucesso",
+      "Escala Vinculada com Sucesso!",
+      `${colaboradoresSelecionadosParaEscala.length} colaborador(es) vinculado(s) à escala "${escalaParaVincular.nome}".`
+    );
+  };
+
+  // Vínculo rápido de escala diretamente do card do colaborador
+  const handleVincularEscalaRapido = (colaboradorId: string, novaEscalaId: string) => {
+    const esc = escalas.find((e) => e.id === novaEscalaId);
+    const colabsAtualizados = colaboradores.map((c) => {
+      if (c.id === colaboradorId) {
+        return {
+          ...c,
+          escalaId: novaEscalaId || undefined,
+          horarioTrabalho: esc ? { ...esc.horario } : c.horarioTrabalho,
+        };
+      }
+      return c;
+    });
+
+    setColaboradores(colabsAtualizados);
+    localStorage.setItem("ac_gestor_colaboradores", JSON.stringify(colabsAtualizados));
+
+    const alvo = colabsAtualizados.find((c) => c.id === colaboradorId);
+    if (alvo) {
+      fetch(`/api/colaboradores/${colaboradorId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          escalaId: alvo.escalaId,
+          horarioTrabalho: alvo.horarioTrabalho,
+        }),
+      }).catch(() => {});
+
+      if (esc) {
+        showToast("sucesso", "Escala Vinculada!", `${alvo.nome} foi vinculado à escala: "${esc.nome}".`);
+      } else {
+        showToast("aviso", "Escala Removida", `${alvo.nome} foi desvinculado de escala padrão.`);
+      }
+    }
+  };
+
   // Abrir modal de novo colaborador
   const handleAbrirNovoColaborador = () => {
     setColaboradorEditando(null);
@@ -266,13 +759,29 @@ export default function App() {
     setFormMinutosBanco(0);
     setFormDataInicioSaldo("01/09/2026");
     setFormObsSaldo("Saldo acumulado prévio à implantação do sistema");
-    setFormEntrada("08:00");
-    setFormAlmocoSaida("12:00");
-    setFormAlmocoRetorno("13:00");
-    setFormSaida("17:00");
-    setFormSabadoAtivo(false);
-    setFormSabadoEntrada("08:00");
-    setFormSabadoSaida("12:00");
+
+    // Vincula escala padrão inicial
+    const escPadrao = escalas[0] || ESCALAS_INICIAIS[0];
+    if (escPadrao) {
+      setFormEscalaVinculadaId(escPadrao.id);
+      setFormEntrada(escPadrao.horario.entrada);
+      setFormAlmocoSaida(escPadrao.horario.almocoSaida);
+      setFormAlmocoRetorno(escPadrao.horario.almocoRetorno);
+      setFormSaida(escPadrao.horario.saida);
+      setFormSabadoAtivo(Boolean(escPadrao.horario.sabadoAtivo));
+      setFormSabadoEntrada(escPadrao.horario.sabadoEntrada || "08:00");
+      setFormSabadoSaida(escPadrao.horario.sabadoSaida || "12:00");
+    } else {
+      setFormEscalaVinculadaId("");
+      setFormEntrada("08:00");
+      setFormAlmocoSaida("12:00");
+      setFormAlmocoRetorno("13:00");
+      setFormSaida("17:00");
+      setFormSabadoAtivo(false);
+      setFormSabadoEntrada("08:00");
+      setFormSabadoSaida("12:00");
+    }
+
     setSubAbaColaborador("novo");
     setModalColaboradorAberta(true);
   };
@@ -293,6 +802,7 @@ export default function App() {
     setFormMinutosBanco(absMin % 60);
     setFormDataInicioSaldo(colab.dataInicioSaldo || "01/09/2026");
     setFormObsSaldo(colab.observacaoSaldo || "");
+    setFormEscalaVinculadaId(colab.escalaId || "");
 
     const h = colab.horarioTrabalho || {
       entrada: "08:00",
@@ -353,6 +863,7 @@ export default function App() {
             saldoAnteriorBancoMinutos: minutosTotaisBanco,
             dataInicioSaldo: formDataInicioSaldo.trim() || "01/09/2026",
             observacaoSaldo: formObsSaldo.trim(),
+            escalaId: formEscalaVinculadaId || undefined,
             horarioTrabalho: novoHorario,
           };
         }
@@ -374,6 +885,7 @@ export default function App() {
           saldoAnteriorBancoMinutos: minutosTotaisBanco,
           dataInicioSaldo: formDataInicioSaldo.trim(),
           observacaoSaldo: formObsSaldo.trim(),
+          escalaId: formEscalaVinculadaId || undefined,
           horarioTrabalho: novoHorario,
         }),
       }).catch(() => {});
@@ -392,7 +904,7 @@ export default function App() {
         setFechamentoAtual(recalculado);
       }
 
-      showToast("sucesso", "Colaborador Atualizado!", `Os dados, horários e banco de ${formNome} foram salvos com sucesso.`);
+      showToast("sucesso", "Colaborador Atualizado!", `Os dados, escala e horários de ${formNome} foram salvos com sucesso.`);
     } else {
       // Novo Colaborador
       const novoId = `FUNC_${Date.now()}`;
@@ -405,6 +917,9 @@ export default function App() {
         saldoAnteriorBancoMinutos: minutosTotaisBanco,
         dataInicioSaldo: formDataInicioSaldo.trim() || "01/09/2026",
         observacaoSaldo: formObsSaldo.trim(),
+        senha: "Aec2026@",
+        primeiroAcesso: true,
+        escalaId: formEscalaVinculadaId || undefined,
         horarioTrabalho: novoHorario,
       };
 
@@ -412,19 +927,17 @@ export default function App() {
       setColaboradores(lista);
       localStorage.setItem("ac_gestor_colaboradores", JSON.stringify(lista));
 
-      // Salvar na API
       fetch("/api/colaboradores", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(novoColab),
       }).catch(() => {});
 
-      // Selecionar o novo colaborador para agilizar
       setColaboradorSelecionadoId(novoId);
       showToast(
         "sucesso",
         "Novo Colaborador Cadastrado!",
-        `${novoColab.nome} cadastrado com horário (${novoHorario.entrada}-${novoHorario.saida}) e saldo inicial de ${minutosParaTextoExtenso(minutosTotaisBanco, true)}.`
+        `${novoColab.nome} cadastrado com sucesso e vinculado à escala.`
       );
     }
 
@@ -720,7 +1233,18 @@ export default function App() {
       })
       .catch(() => {});
 
-    // 3. Buscar fechamentos gravados
+    // 3. Buscar escalas cadastradas
+    fetch("/api/escalas")
+      .then((res) => res.json())
+      .then((data: EscalaTrabalho[]) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setEscalas(data);
+          localStorage.setItem("ac_gestor_escalas", JSON.stringify(data));
+        }
+      })
+      .catch(() => {});
+
+    // 4. Buscar fechamentos gravados
     fetch("/api/fechamentos")
       .then((res) => res.json())
       .then((data: FechamentoArmazenado[]) => {
@@ -914,6 +1438,80 @@ export default function App() {
     } catch (err) {
       // ignore
     }
+  };
+
+  const handleMudarMesFechamento = (novoMesAno: string) => {
+    if (!fechamentoAtual) return;
+    if (fechamentoAtual.mesAno === novoMesAno) return;
+
+    // 1. Verifica se já existe um fechamento salvo com esse mesmo colaborador e mês
+    const salvoExistente = fechamentosSalvos.find(
+      (f) =>
+        (f.fechamento.colaboradorId === fechamentoAtual.colaboradorId ||
+          f.fechamento.colaboradorNome === fechamentoAtual.colaboradorNome) &&
+        f.fechamento.mesAno === novoMesAno
+    );
+
+    if (salvoExistente) {
+      setFechamentoAtual(salvoExistente.fechamento);
+      setMesAnoInput(novoMesAno);
+      showToast("sucesso", "Competência Carregada", `Folha de ${novoMesAno} carregada do histórico.`);
+      return;
+    }
+
+    // 2. Caso contrário, gera os dias do novo mês mantendo a grade e horários nominais
+    const partes = novoMesAno.split("/");
+    const mesNum = parseInt(partes[0], 10) || 9;
+    const anoNum = parseInt(partes[1], 10) || 2026;
+
+    const colab = colaboradores.find((c) => c.id === fechamentoAtual.colaboradorId) || colaboradores[0];
+    const novosDias = gerarDiasMes(anoNum, mesNum, criterios.feriadosFixos, colab?.horarioTrabalho);
+
+    const recalculado = calcularFechamentoMensal(novosDias, criterios, {
+      colaboradorNome: fechamentoAtual.colaboradorNome,
+      colaboradorCargo: fechamentoAtual.colaboradorCargo,
+      colaboradorId: fechamentoAtual.colaboradorId,
+      mesAno: novoMesAno,
+      salarioBase: fechamentoAtual.salarioBase,
+      saldoAnteriorBancoMinutos: fechamentoAtual.saldoAnteriorBancoMinutos,
+      horarioNominal: colab?.horarioTrabalho,
+    });
+
+    setFechamentoAtual(recalculado);
+    setMesAnoInput(novoMesAno);
+    showToast("sucesso", "Mês Selecionado", `Visualizando competência ${novoMesAno}.`);
+  };
+
+  const handleMesAnterior = () => {
+    if (!fechamentoAtual) return;
+    const [mesStr, anoStr] = fechamentoAtual.mesAno.includes("/")
+      ? fechamentoAtual.mesAno.split("/")
+      : ["09", "2026"];
+    let mes = parseInt(mesStr, 10) || 9;
+    let ano = parseInt(anoStr, 10) || 2026;
+    mes -= 1;
+    if (mes < 1) {
+      mes = 12;
+      ano -= 1;
+    }
+    const novoMesAno = `${String(mes).padStart(2, "0")}/${ano}`;
+    handleMudarMesFechamento(novoMesAno);
+  };
+
+  const handleProximoMes = () => {
+    if (!fechamentoAtual) return;
+    const [mesStr, anoStr] = fechamentoAtual.mesAno.includes("/")
+      ? fechamentoAtual.mesAno.split("/")
+      : ["09", "2026"];
+    let mes = parseInt(mesStr, 10) || 9;
+    let ano = parseInt(anoStr, 10) || 2026;
+    mes += 1;
+    if (mes > 12) {
+      mes = 1;
+      ano += 1;
+    }
+    const novoMesAno = `${String(mes).padStart(2, "0")}/${ano}`;
+    handleMudarMesFechamento(novoMesAno);
   };
 
   const handleExportarPDF = () => {
@@ -1492,6 +2090,19 @@ export default function App() {
                   </button>
                   <button
                     onClick={() => {
+                      setAbaAtiva("escalas");
+                      setSidebarAbertaMobile(false);
+                    }}
+                    className={`w-full px-3.5 py-3 rounded-xl transition-all flex items-center gap-3 text-left ${
+                      abaAtiva === "escalas"
+                        ? "bg-sky-600 text-white font-bold shadow-md shadow-sky-600/30"
+                        : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                    }`}
+                  >
+                    <CalendarClock className="w-4 h-4 text-emerald-400" /> Escalas & Horários ({escalas.length})
+                  </button>
+                  <button
+                    onClick={() => {
                       setAbaAtiva("colaboradores");
                       setSubAbaColaborador("lista");
                       setSidebarAbertaMobile(false);
@@ -1602,6 +2213,16 @@ export default function App() {
                 <Sliders className="w-4 h-4 text-amber-400" /> Critérios da Empresa
               </button>
               <button
+                onClick={() => setAbaAtiva("escalas")}
+                className={`w-full px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-2.5 text-left ${
+                  abaAtiva === "escalas"
+                    ? "bg-sky-600 text-white shadow-lg shadow-sky-600/30 font-bold"
+                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
+                }`}
+              >
+                <CalendarClock className="w-4 h-4 text-emerald-400" /> Escalas & Horários ({escalas.length})
+              </button>
+              <button
                 onClick={() => {
                   setAbaAtiva("colaboradores");
                   setSubAbaColaborador("lista");
@@ -1698,6 +2319,7 @@ export default function App() {
                 {abaAtiva === "fechamento" && "Espelho de Ponto & Fechamento Mensal"}
                 {abaAtiva === "historico" && "Histórico de Fechamentos"}
                 {abaAtiva === "criterios" && "Critérios de Apuração da Empresa"}
+                {abaAtiva === "escalas" && "Gestão de Escalas & Horários de Trabalho"}
                 {abaAtiva === "colaboradores" && "Gestão de Colaboradores & Senhas"}
                 {abaAtiva === "baterPonto" && "Terminal de Ponto"}
               </h2>
@@ -1738,6 +2360,14 @@ export default function App() {
                 <Sliders className="w-3.5 h-3.5" /> 4. Critérios
               </button>
               <button
+                onClick={() => setAbaAtiva("escalas")}
+                className={`px-3 py-1.5 rounded-lg font-semibold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                  abaAtiva === "escalas" ? "bg-sky-600 text-white font-bold" : "bg-slate-900 text-slate-400 hover:text-white"
+                }`}
+              >
+                <CalendarClock className="w-3.5 h-3.5" /> 5. Escalas
+              </button>
+              <button
                 onClick={() => {
                   setAbaAtiva("colaboradores");
                   setSubAbaColaborador("lista");
@@ -1746,7 +2376,7 @@ export default function App() {
                   abaAtiva === "colaboradores" ? "bg-sky-600 text-white font-bold" : "bg-slate-900 text-slate-400 hover:text-white"
                 }`}
               >
-                <Users className="w-3.5 h-3.5" /> 5. Colaboradores
+                <Users className="w-3.5 h-3.5" /> 6. Colaboradores
               </button>
             </div>
           </div>
@@ -2361,27 +2991,66 @@ export default function App() {
               </div>
             </div>
 
-            {/* Totalizador Financeiro para o DP */}
+            {/* Seletor de Competência / Mês e Situação do Banco de Horas */}
             <div className="bg-gradient-to-r from-slate-900 via-slate-900 to-sky-950/40 border border-slate-800 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-xs">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 font-bold">
-                  R$
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400">
+                  <Calendar className="w-5 h-5" />
                 </div>
                 <div>
-                  <span className="text-slate-400 block">Total a Pagar de Proventos Extras em Folha:</span>
-                  <span className="text-base font-black text-white">
-                    R$ {fechamentoAtual.valorTotalProventosExtras.toFixed(2)}
+                  <span className="text-slate-400 block font-semibold text-xs mb-1.5">
+                    Mês de Competência da Folha:
                   </span>
-                  <span className="text-[11px] text-slate-400 ml-2">
-                    (HE 50%: R$ {fechamentoAtual.valorEstimadoHE50.toFixed(2)} + HE 100%: R$ {fechamentoAtual.valorEstimadoHE100.toFixed(2)} + Noturno: R$ {fechamentoAtual.valorEstimadoAdicNoturno.toFixed(2)})
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleMesAnterior}
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 hover:text-white transition-colors flex items-center justify-center"
+                      title="Mês Anterior"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+
+                    <select
+                      value={fechamentoAtual.mesAno}
+                      onChange={(e) => handleMudarMesFechamento(e.target.value)}
+                      className="bg-slate-950 border border-slate-700 hover:border-sky-500 text-white font-bold px-3 py-1.5 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 cursor-pointer shadow-inner"
+                    >
+                      {MESES_OPCOES.map((opt) => (
+                        <option key={opt.valor} value={opt.valor} className="bg-slate-900 text-white">
+                          {opt.rotulo}
+                        </option>
+                      ))}
+                      {!MESES_OPCOES.some((opt) => opt.valor === fechamentoAtual.mesAno) && (
+                        <option value={fechamentoAtual.mesAno} className="bg-slate-900 text-white">
+                          {fechamentoAtual.mesAno} (Personalizado)
+                        </option>
+                      )}
+                    </select>
+
+                    <button
+                      type="button"
+                      onClick={handleProximoMes}
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 hover:text-white transition-colors flex items-center justify-center"
+                      title="Próximo Mês"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+
+                    <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 bg-sky-500/10 border border-sky-500/30 text-sky-300 rounded-lg font-mono font-bold text-xs ml-1">
+                      {fechamentoAtual.mesAno}
+                    </span>
+                  </div>
                 </div>
               </div>
 
-              <div className="text-right">
-                <span className="text-slate-400 block">Situação do Banco de Horas:</span>
-                <span className={`font-bold ${fechamentoAtual.saldoAcumuladoFinalMinutos >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+              <div className="text-left sm:text-right">
+                <span className="text-slate-400 block text-xs">Situação do Banco de Horas:</span>
+                <span className={`font-bold text-xs sm:text-sm ${fechamentoAtual.saldoAcumuladoFinalMinutos >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
                   {fechamentoAtual.saldoAcumuladoFinalMinutos >= 0 ? "SALDO CREDOR A COMPENSAR" : "SALDO DEVEDOR / DESCONTO"}
+                </span>
+                <span className="text-[11px] text-slate-400 block font-mono">
+                  {minutosParaTextoExtenso(fechamentoAtual.saldoAcumuladoFinalMinutos, true)}
                 </span>
               </div>
             </div>
@@ -2976,7 +3645,296 @@ export default function App() {
           </div>
         )}
 
-        {/* ================= ABA 5: COLABORADORES & HORÁRIOS ================= */}
+        {/* ================= ABA 5: GESTÃO DE ESCALAS & HORÁRIOS ================= */}
+        {abaAtiva === "escalas" && (
+          <div className="space-y-6">
+            {/* Header da Aba de Escalas */}
+            <div className="bg-gradient-to-r from-slate-900 via-slate-900 to-emerald-950/40 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                      <CalendarClock className="w-5 h-5 text-emerald-400" /> Gestão de Escalas & Horários de Trabalho
+                    </h2>
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">
+                      {escalas.length} Cadastradas
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1 max-w-2xl leading-relaxed">
+                    Crie e personalize as escalas da empresa (5x2, 6x1, 12x36 ou personalizadas), estipule horários de entrada, almoço, saída e sábados, e vincule cada escala aos colaboradores individualmente ou em lote.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleAbrirNovaEscala}
+                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-emerald-600/30 flex items-center gap-2 transition-all shrink-0"
+                >
+                  <Plus className="w-4 h-4" /> Criar Nova Escala
+                </button>
+              </div>
+
+              {/* Barra de Filtros e Busca de Escalas */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-3 border-t border-slate-800">
+                <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
+                  <span className="text-xs text-slate-500 font-semibold mr-1 flex items-center gap-1">
+                    <Layers className="w-3.5 h-3.5" /> Filtrar:
+                  </span>
+                  {[
+                    { id: "todas", label: "Todas as Escalas" },
+                    { id: "5x2", label: "5x2 (Seg-Sex)" },
+                    { id: "6x1", label: "6x1 (Com Sáb)" },
+                    { id: "12x36", label: "12x36 (Plantão)" },
+                    { id: "personalizada", label: "Personalizada" },
+                  ].map((tipo) => (
+                    <button
+                      key={tipo.id}
+                      type="button"
+                      onClick={() => setFiltroTipoEscala(tipo.id)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+                        filtroTipoEscala === tipo.id
+                          ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/20"
+                          : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800"
+                      }`}
+                    >
+                      {tipo.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="relative w-full sm:w-64">
+                  <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Buscar por escala, horário ou cargo..."
+                    value={filtroEscalas}
+                    onChange={(e) => setFiltroEscalas(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Grid de Cards de Escalas */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {escalas
+                .filter((esc) => {
+                  if (filtroTipoEscala !== "todas" && esc.tipo !== filtroTipoEscala) return false;
+                  if (!filtroEscalas.trim()) return true;
+                  const q = filtroEscalas.toLowerCase();
+                  return (
+                    esc.nome.toLowerCase().includes(q) ||
+                    (esc.descricao && esc.descricao.toLowerCase().includes(q)) ||
+                    esc.diasSemana.toLowerCase().includes(q) ||
+                    esc.tipo.toLowerCase().includes(q)
+                  );
+                })
+                .map((esc) => {
+                  const vinculados = colaboradores.filter((c) => c.escalaId === esc.id);
+                  const durManha = calcularDuracaoMinutos(esc.horario.entrada, esc.horario.almocoSaida);
+                  const durAlmoco = calcularDuracaoMinutos(esc.horario.almocoSaida, esc.horario.almocoRetorno);
+                  const durTarde = calcularDuracaoMinutos(esc.horario.almocoRetorno, esc.horario.saida);
+                  const durDiaria = durManha + durTarde;
+
+                  const corBorda =
+                    esc.cor === "emerald"
+                      ? "border-emerald-500/30 hover:border-emerald-500/60"
+                      : esc.cor === "purple"
+                      ? "border-purple-500/30 hover:border-purple-500/60"
+                      : esc.cor === "amber"
+                      ? "border-amber-500/30 hover:border-amber-500/60"
+                      : esc.cor === "indigo"
+                      ? "border-indigo-500/30 hover:border-indigo-500/60"
+                      : "border-sky-500/30 hover:border-sky-500/60";
+
+                  const badgeCor =
+                    esc.cor === "emerald"
+                      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                      : esc.cor === "purple"
+                      ? "bg-purple-500/10 text-purple-400 border-purple-500/30"
+                      : esc.cor === "amber"
+                      ? "bg-amber-500/10 text-amber-400 border-amber-500/30"
+                      : esc.cor === "indigo"
+                      ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/30"
+                      : "bg-sky-500/10 text-sky-400 border-sky-500/30";
+
+                  return (
+                    <div
+                      key={esc.id}
+                      className={`bg-slate-900 border ${corBorda} rounded-3xl p-5 shadow-xl space-y-4 flex flex-col justify-between transition-all`}
+                    >
+                      <div className="space-y-3">
+                        {/* Tags e Ações Rápidas */}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${badgeCor}`}>
+                              {esc.tipo}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-slate-950 text-slate-300 border border-slate-800">
+                              {esc.cargaSemanalHoras}h/sem
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleDuplicarEscala(esc)}
+                              className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+                              title="Duplicar esta escala"
+                            >
+                              <Copy className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleAbrirEditarEscala(esc)}
+                              className="p-1.5 text-slate-400 hover:text-sky-300 hover:bg-slate-800 rounded-lg transition-colors"
+                              title="Editar escala"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleExcluirEscala(esc.id, esc.nome)}
+                              className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
+                              title="Excluir escala"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Título e Descrição */}
+                        <div>
+                          <h4 className="text-sm font-bold text-white leading-tight">{esc.nome}</h4>
+                          <span className="text-[11px] text-slate-400 block mt-0.5 font-medium">
+                            {esc.diasSemana}
+                          </span>
+                          {esc.descricao && (
+                            <p className="text-[11px] text-slate-500 mt-1 line-clamp-2 leading-relaxed">
+                              {esc.descricao}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Grade de Horários */}
+                        <div className="p-3 rounded-2xl bg-slate-950/90 border border-slate-800 space-y-2 text-xs">
+                          <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                            <span className="flex items-center gap-1 text-slate-300">
+                              <Clock className="w-3 h-3 text-sky-400" /> Horário Contratual
+                            </span>
+                            <span className="font-mono text-sky-400">
+                              {minutosParaTextoExtenso(durDiaria, false)}/dia
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
+                            <div className="bg-slate-900/80 p-2 rounded-xl border border-slate-800/80">
+                              <span className="text-[9px] text-slate-500 block uppercase">Entrada / Saída</span>
+                              <span className="text-white font-bold block">{esc.horario.entrada} às {esc.horario.saida}</span>
+                              <span className="text-slate-400 block text-[10px] mt-0.5">
+                                Almoço: {durAlmoco} min ({esc.horario.almocoSaida}-{esc.horario.almocoRetorno})
+                              </span>
+                            </div>
+
+                            <div className="bg-slate-900/80 p-2 rounded-xl border border-slate-800/80">
+                              <span className="text-[9px] text-slate-500 block uppercase">Sábado / Folga</span>
+                              {esc.horario.sabadoAtivo ? (
+                                <>
+                                  <span className="text-amber-300 font-bold block">
+                                    {esc.horario.sabadoEntrada || "08:00"} às {esc.horario.sabadoSaida || "12:00"}
+                                  </span>
+                                  <span className="text-[10px] text-indigo-300 block mt-0.5 font-sans">
+                                    Trabalho habitual
+                                  </span>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="text-slate-400 block font-sans">Folga</span>
+                                  <span className="text-[10px] text-slate-600 block mt-0.5 font-sans">
+                                    Sábado livre
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-800/60">
+                            <span>Tolerância de batida:</span>
+                            <span className="font-mono text-slate-300 font-semibold">±{esc.toleranciaMinutos || 10} min</span>
+                          </div>
+                        </div>
+
+                        {/* Colaboradores Vinculados */}
+                        <div className="p-2.5 rounded-2xl bg-slate-950/60 border border-slate-800/80 space-y-1.5">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="text-slate-400 flex items-center gap-1.5 font-semibold">
+                              <Users className="w-3.5 h-3.5 text-emerald-400" />
+                              Funcionários Vinculados:
+                            </span>
+                            <span className="font-bold text-white px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 font-mono text-[11px]">
+                              {vinculados.length}
+                            </span>
+                          </div>
+
+                          {vinculados.length > 0 ? (
+                            <div className="flex flex-wrap gap-1 max-h-16 overflow-y-auto pt-1">
+                              {vinculados.map((c) => (
+                                <span
+                                  key={c.id}
+                                  className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300"
+                                  title={`${c.nome} (${c.cargo})`}
+                                >
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                                  {c.nome.split(" ")[0]}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-[10px] text-slate-500 italic">
+                              Nenhum funcionário vinculado a esta escala ainda.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Botão de Vinculação em Lote */}
+                      <div className="pt-3 border-t border-slate-800 mt-2">
+                        <button
+                          type="button"
+                          onClick={() => handleAbrirVincularColaboradores(esc)}
+                          className="w-full py-2 bg-emerald-600/10 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/30 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5"
+                        >
+                          <Link2 className="w-3.5 h-3.5" />
+                          Vincular / Gerenciar Colaboradores ({vinculados.length})
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+
+            {escalas.length === 0 && (
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center space-y-4">
+                <CalendarClock className="w-12 h-12 text-slate-600 mx-auto" />
+                <div>
+                  <h4 className="font-bold text-white text-sm">Nenhuma escala cadastrada</h4>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Crie sua primeira escala de trabalho e depois vincule aos colaboradores.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAbrirNovaEscala}
+                  className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold shadow-lg shadow-emerald-600/30"
+                >
+                  + Criar Nova Escala
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ================= ABA 6: COLABORADORES & HORÁRIOS ================= */}
         {abaAtiva === "colaboradores" && (
           <div className="space-y-6">
             {/* Header da Aba de Colaboradores */}
@@ -3301,6 +4259,54 @@ export default function App() {
                     })()}
                   </div>
 
+                  {/* Seletor de Escala Cadastrada para Vinculação Rápida */}
+                  <div className="bg-slate-900/90 p-4 rounded-2xl border border-slate-800 space-y-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <label className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                        <CalendarClock className="w-4 h-4 text-emerald-400" />
+                        Escala de Trabalho Vinculada
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSubAbaColaborador("lista");
+                          setModalColaboradorAberta(false);
+                          setAbaAtiva("escalas");
+                        }}
+                        className="text-[11px] text-sky-400 hover:text-sky-300 underline font-semibold flex items-center gap-1 self-start sm:self-auto"
+                      >
+                        Abrir Gestão de Escalas & Horários <ArrowRight className="w-3 h-3" />
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <div className="sm:col-span-2">
+                        <select
+                          value={formEscalaVinculadaId}
+                          onChange={(e) => handleSelecionarEscalaNoColaborador(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-semibold"
+                        >
+                          <option value="">-- Personalizado (Sem escala fixa vinculada) --</option>
+                          {escalas.map((esc) => (
+                            <option key={esc.id} value={esc.id}>
+                              {esc.nome} ({esc.tipo} • {esc.diasSemana} • {esc.cargaSemanalHoras}h/sem)
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex items-center text-[11px] text-slate-400 bg-slate-950 px-3 py-2 rounded-xl border border-slate-800">
+                        {formEscalaVinculadaId ? (
+                          <span className="text-emerald-400 font-medium flex items-center gap-1.5">
+                            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                            Preenchimento automático ativo
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">Horários manuais customizados</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Grade de Segunda a Sexta */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                     <div>
@@ -3547,6 +4553,40 @@ export default function App() {
                                 Obs: {c.observacaoSaldo}
                               </p>
                             )}
+                          </div>
+
+                          {/* Seção Escala de Trabalho Vinculada */}
+                          <div className="p-3 rounded-2xl bg-slate-950/90 border border-slate-800 space-y-2">
+                            <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                              <span className="flex items-center gap-1.5 text-emerald-400">
+                                <CalendarClock className="w-3.5 h-3.5" /> Escala Vinculada
+                              </span>
+                              {(() => {
+                                const esc = escalas.find((e) => e.id === c.escalaId);
+                                if (!esc) return <span className="text-slate-500">Manual / Custom</span>;
+                                return (
+                                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-mono text-[10px] font-bold">
+                                    {esc.tipo} • {esc.cargaSemanalHoras}h/sem
+                                  </span>
+                                );
+                              })()}
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <select
+                                value={c.escalaId || ""}
+                                onChange={(e) => handleVincularEscalaRapido(c.id, e.target.value)}
+                                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500 font-medium"
+                                title="Alterar escala deste colaborador"
+                              >
+                                <option value="">-- Personalizado (Sem escala fixa vinculada) --</option>
+                                {escalas.map((esc) => (
+                                  <option key={esc.id} value={esc.id}>
+                                    {esc.nome} ({esc.tipo} • {esc.diasSemana})
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
                           </div>
 
                           {/* Seção 2: Horário Nominal de Trabalho */}
@@ -3820,6 +4860,455 @@ export default function App() {
                     </button>
                   </div>
                 </form>
+              </motion.div>
+            </div>
+          )}
+          {/* MODAL: CRIAR OU EDITAR ESCALA & HORÁRIOS */}
+          {modalEscalaAberta && (
+            <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl max-w-2xl w-full space-y-5 my-8"
+              >
+                <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                  <div>
+                    <h3 className="text-base font-bold text-white flex items-center gap-2">
+                      <CalendarClock className="w-5 h-5 text-emerald-400" />
+                      {escalaEditando ? `Editar Escala: ${escalaEditando.nome}` : "Criar Nova Escala de Trabalho"}
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Configure os parâmetros da jornada, horários nominais, intervalos de almoço e sábados.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setModalEscalaAberta(false);
+                      setEscalaEditando(null);
+                    }}
+                    className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleSalvarEscala} className="space-y-4 text-xs">
+                  {/* Bloco 1: Identificação da Escala */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="sm:col-span-2">
+                      <label className="block text-slate-300 font-semibold mb-1">Nome da Escala *</label>
+                      <input
+                        type="text"
+                        placeholder="Ex: Administrativo Geral (08h às 17h)"
+                        value={formEscalaNome}
+                        onChange={(e) => setFormEscalaNome(e.target.value)}
+                        required
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-semibold focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-300 font-semibold mb-1">Tipo de Jornada</label>
+                      <select
+                        value={formEscalaTipo}
+                        onChange={(e) => setFormEscalaTipo(e.target.value as any)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-semibold focus:outline-none focus:border-emerald-500"
+                      >
+                        <option value="5x2">5x2 (Seg a Sex)</option>
+                        <option value="6x1">6x1 (Com Sábado)</option>
+                        <option value="12x36">12x36 (Plantão)</option>
+                        <option value="personalizada">Personalizada</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Dias da semana e Carga Semanal */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-slate-300 font-semibold mb-1">Dias de Atuação</label>
+                      <input
+                        type="text"
+                        placeholder="Ex: Segunda a Sexta"
+                        value={formEscalaDiasSemana}
+                        onChange={(e) => setFormEscalaDiasSemana(e.target.value)}
+                        required
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-300 font-semibold mb-1">Carga Horária Semanal (horas)</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={60}
+                        value={formEscalaCargaHoras}
+                        onChange={(e) => setFormEscalaCargaHoras(Number(e.target.value) || 40)}
+                        required
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono text-center focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-300 font-semibold mb-1">Tolerância (minutos)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={30}
+                        value={formEscalaTolerancia}
+                        onChange={(e) => setFormEscalaTolerancia(Number(e.target.value) || 10)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono text-center focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Descrição e Cor */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="sm:col-span-2">
+                      <label className="block text-slate-300 font-semibold mb-1">Descrição / Finalidade</label>
+                      <input
+                        type="text"
+                        placeholder="Ex: Padrão administrativo com sábados livres e descanso semanal aos domingos"
+                        value={formEscalaDescricao}
+                        onChange={(e) => setFormEscalaDescricao(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-300 font-semibold mb-1">Cor de Identificação</label>
+                      <select
+                        value={formEscalaCor}
+                        onChange={(e) => setFormEscalaCor(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                      >
+                        <option value="sky">Azul (Sky)</option>
+                        <option value="emerald">Verde (Emerald)</option>
+                        <option value="purple">Roxo (Purple)</option>
+                        <option value="amber">Âmbar (Amber)</option>
+                        <option value="indigo">Índigo (Indigo)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Bloco 2: Horários Nominais (Segunda a Sexta) */}
+                  <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                        <Clock className="w-4 h-4 text-emerald-400" />
+                        Horários Nominais (Dias Úteis)
+                      </span>
+                      {(() => {
+                        const durManha = calcularDuracaoMinutos(formEscalaEntrada, formEscalaAlmocoSaida);
+                        const durAlmoco = calcularDuracaoMinutos(formEscalaAlmocoSaida, formEscalaAlmocoRetorno);
+                        const durTarde = calcularDuracaoMinutos(formEscalaAlmocoRetorno, formEscalaSaida);
+                        const total = durManha + durTarde;
+                        return (
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/30 text-emerald-300 font-mono text-[11px] font-bold">
+                              Jornada: {minutosParaTextoExtenso(total, false)}/dia
+                            </span>
+                            <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400 font-mono text-[11px]">
+                              Almoço: {durAlmoco}m
+                            </span>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div>
+                        <label className="block text-slate-400 font-medium mb-1">Entrada Manhã</label>
+                        <input
+                          type="time"
+                          value={formEscalaEntrada}
+                          onChange={(e) => setFormEscalaEntrada(e.target.value)}
+                          required
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 text-white font-mono text-center focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-400 font-medium mb-1">Saída Almoço</label>
+                        <input
+                          type="time"
+                          value={formEscalaAlmocoSaida}
+                          onChange={(e) => setFormEscalaAlmocoSaida(e.target.value)}
+                          required
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 text-white font-mono text-center focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-400 font-medium mb-1">Retorno Almoço</label>
+                        <input
+                          type="time"
+                          value={formEscalaAlmocoRetorno}
+                          onChange={(e) => setFormEscalaAlmocoRetorno(e.target.value)}
+                          required
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 text-white font-mono text-center focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-400 font-medium mb-1">Saída Tarde</label>
+                        <input
+                          type="time"
+                          value={formEscalaSaida}
+                          onChange={(e) => setFormEscalaSaida(e.target.value)}
+                          required
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 text-white font-mono text-center focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bloco 3: Horários de Sábado */}
+                  <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-200">
+                        <input
+                          type="checkbox"
+                          checked={formEscalaSabadoAtivo}
+                          onChange={(e) => setFormEscalaSabadoAtivo(e.target.checked)}
+                          className="w-4 h-4 rounded text-emerald-600 bg-slate-900 border-slate-700 focus:ring-emerald-500"
+                        />
+                        <span>Trabalho habitual aos Sábados</span>
+                      </label>
+
+                      {formEscalaSabadoAtivo && (
+                        <span className="text-[11px] text-amber-300 font-mono bg-amber-950/60 border border-amber-500/30 px-2 py-0.5 rounded">
+                          Sábado Ativo
+                        </span>
+                      )}
+                    </div>
+
+                    {formEscalaSabadoAtivo && (
+                      <div className="grid grid-cols-2 gap-3 pt-2">
+                        <div>
+                          <label className="block text-slate-400 font-medium mb-1">Entrada Sábado</label>
+                          <input
+                            type="time"
+                            value={formEscalaSabadoEntrada}
+                            onChange={(e) => setFormEscalaSabadoEntrada(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-white font-mono text-center focus:outline-none focus:border-emerald-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-slate-400 font-medium mb-1">Saída Sábado</label>
+                          <input
+                            type="time"
+                            value={formEscalaSabadoSaida}
+                            onChange={(e) => setFormEscalaSabadoSaida(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-white font-mono text-center focus:outline-none focus:border-emerald-500"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Opção de atualizar colaboradores vinculados */}
+                  {escalaEditando && (
+                    <div className="p-3 rounded-xl bg-slate-950 border border-emerald-500/20">
+                      <label className="flex items-center gap-2.5 cursor-pointer text-xs text-slate-300">
+                        <input
+                          type="checkbox"
+                          checked={formEscalaAtualizarColabs}
+                          onChange={(e) => setFormEscalaAtualizarColabs(e.target.checked)}
+                          className="w-4 h-4 rounded text-emerald-600 bg-slate-900 border-slate-700"
+                        />
+                        <span>
+                          Atualizar automaticamente os horários de trabalho de todos os colaboradores já vinculados a esta escala
+                        </span>
+                      </label>
+                    </div>
+                  )}
+
+                  {/* Botões do Modal */}
+                  <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setModalEscalaAberta(false);
+                        setEscalaEditando(null);
+                      }}
+                      className="px-4 py-2.5 rounded-xl border border-slate-700 text-slate-300 hover:bg-slate-800 text-xs font-semibold"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-600/30 flex items-center gap-2"
+                    >
+                      <Check className="w-4 h-4" />
+                      {escalaEditando ? "Salvar Alterações da Escala" : "Cadastrar Escala"}
+                    </button>
+                  </div>
+                </form>
+              </motion.div>
+            </div>
+          )}
+
+          {/* MODAL: VINCULAR COLABORADORES À ESCALA EM LOTE */}
+          {modalVincularAberta && escalaParaVincular && (
+            <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl max-w-2xl w-full space-y-5 my-8"
+              >
+                <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                  <div>
+                    <h3 className="text-base font-bold text-white flex items-center gap-2">
+                      <Link2 className="w-5 h-5 text-emerald-400" />
+                      Vincular Colaboradores à Escala
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Escala Selecionada: <strong className="text-emerald-400">{escalaParaVincular.nome}</strong> ({escalaParaVincular.tipo} • {escalaParaVincular.cargaSemanalHoras}h/sem)
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setModalVincularAberta(false);
+                      setEscalaParaVincular(null);
+                    }}
+                    className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  {/* Banner Explicativo */}
+                  <div className="p-3.5 rounded-2xl bg-emerald-950/40 border border-emerald-500/20 text-xs text-emerald-300 leading-relaxed">
+                    Marque os funcionários que devem seguir esta escala de trabalho. Ao salvar, os horários contratuais de entrada, saída, almoço e sábado serão atualizados automaticamente para os colaboradores selecionados.
+                  </div>
+
+                  {/* Controles de Busca e Seleção Rápida */}
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                    <div className="relative flex-1">
+                      <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        placeholder="Filtrar colaboradores por nome ou cargo..."
+                        value={filtroVincularColabs}
+                        onChange={(e) => setFiltroVincularColabs(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const todos = colaboradores.map((c) => c.id);
+                          setColaboradoresSelecionadosParaEscala(todos);
+                        }}
+                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                      >
+                        <CheckSquare className="w-3.5 h-3.5 text-emerald-400" /> Marcar Todos
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setColaboradoresSelecionadosParaEscala([])}
+                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                      >
+                        <Square className="w-3.5 h-3.5 text-slate-400" /> Desmarcar
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Lista com Checkbox para Cada Colaborador */}
+                  <div className="max-h-80 overflow-y-auto space-y-2 pr-1">
+                    {colaboradores
+                      .filter((c) => {
+                        if (!filtroVincularColabs.trim()) return true;
+                        const q = filtroVincularColabs.toLowerCase();
+                        return (
+                          c.nome.toLowerCase().includes(q) ||
+                          c.cargo.toLowerCase().includes(q) ||
+                          (c.departamento && c.departamento.toLowerCase().includes(q))
+                        );
+                      })
+                      .map((c) => {
+                        const estaMarcado = colaboradoresSelecionadosParaEscala.includes(c.id);
+                        const escalaAtual = escalas.find((e) => e.id === c.escalaId);
+
+                        return (
+                          <div
+                            key={c.id}
+                            onClick={() => handleToggleColaboradorVinculo(c.id)}
+                            className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                              estaMarcado
+                                ? "bg-emerald-950/40 border-emerald-500/50 shadow-md shadow-emerald-950/20"
+                                : "bg-slate-950/70 border-slate-800 hover:border-slate-700"
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div
+                                className={`w-5 h-5 rounded-md flex items-center justify-center border transition-colors ${
+                                  estaMarcado
+                                    ? "bg-emerald-500 border-emerald-400 text-slate-950 font-bold"
+                                    : "border-slate-700 bg-slate-900"
+                                }`}
+                              >
+                                {estaMarcado && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                              </div>
+
+                              <div>
+                                <h5 className="font-bold text-white text-xs leading-tight">{c.nome}</h5>
+                                <span className="text-[11px] text-slate-400 block">{c.cargo} • {c.departamento}</span>
+                              </div>
+                            </div>
+
+                            <div className="text-right shrink-0">
+                              {escalaAtual ? (
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold border font-mono ${
+                                    escalaAtual.id === escalaParaVincular.id
+                                      ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                                      : "bg-slate-900 text-slate-400 border-slate-800"
+                                  }`}
+                                >
+                                  {escalaAtual.nome}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-slate-500 italic">Sem escala fixa</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+
+                  {/* Rodapé com Contador e Botões */}
+                  <div className="flex items-center justify-between pt-4 border-t border-slate-800">
+                    <span className="text-xs font-mono text-slate-400">
+                      <strong className="text-emerald-400 font-bold">{colaboradoresSelecionadosParaEscala.length}</strong> de {colaboradores.length} selecionado(s)
+                    </span>
+
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setModalVincularAberta(false);
+                          setEscalaParaVincular(null);
+                        }}
+                        className="px-4 py-2 rounded-xl border border-slate-700 text-slate-300 hover:bg-slate-800 text-xs font-semibold"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSalvarVinculoColaboradores}
+                        className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-600/30 flex items-center gap-1.5"
+                      >
+                        <Check className="w-4 h-4" /> Salvar Vínculos
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </motion.div>
             </div>
           )}
