@@ -44,11 +44,15 @@ import {
   CheckSquare,
   Square,
   Layers,
+  Smartphone,
+  Apple,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import jsPDF from "jspdf";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
 import { Logo } from "./components/Logo";
+import { PWAInstallModal } from "./components/PWAInstallModal";
+import { usePWAInstall } from "./hooks/usePWAInstall";
 import {
   BatidaDia,
   CriteriosApuracao,
@@ -62,17 +66,20 @@ import {
   minutosParaHora,
   minutosParaDecimal,
   calcularDuracaoMinutos,
+  HorarioTrabalhoColab,
+  HorarioDiaSemana,
+  DiasSemanaChave,
 } from "./lib/calculosPonto";
 
-interface HorarioTrabalhoColab {
-  entrada: string; // Ex: "08:00"
-  almocoSaida: string; // Ex: "12:00"
-  almocoRetorno: string; // Ex: "13:00"
-  saida: string; // Ex: "17:00"
-  sabadoAtivo?: boolean;
-  sabadoEntrada?: string;
-  sabadoSaida?: string;
-}
+export const DIAS_SEMANA_ORDEM: { chave: DiasSemanaChave; rotulo: string; rotuloCurto: string }[] = [
+  { chave: "Seg", rotulo: "Segunda-feira", rotuloCurto: "Seg" },
+  { chave: "Ter", rotulo: "Terça-feira", rotuloCurto: "Ter" },
+  { chave: "Qua", rotulo: "Quarta-feira", rotuloCurto: "Qua" },
+  { chave: "Qui", rotulo: "Quinta-feira", rotuloCurto: "Qui" },
+  { chave: "Sex", rotulo: "Sexta-feira", rotuloCurto: "Sex" },
+  { chave: "Sáb", rotulo: "Sábado", rotuloCurto: "Sáb" },
+  { chave: "Dom", rotulo: "Domingo", rotuloCurto: "Dom" },
+];
 
 export interface EscalaTrabalho {
   id: string;
@@ -208,86 +215,8 @@ interface Colaborador {
   horarioTrabalho: HorarioTrabalhoColab;
 }
 
-const COLABORADORES_INICIAIS: Colaborador[] = [
-  {
-    id: "FUNC_001",
-    nome: "Thais Moreira de Souza",
-    cargo: "Assistente de coletas",
-    departamento: "Operações / Coletas",
-    salarioBase: 2450.0,
-    saldoAnteriorBancoMinutos: 270, // +04h 30m
-    dataInicioSaldo: "01/09/2026",
-    senha: "Aec2026@",
-    primeiroAcesso: true,
-    escalaId: "ESC_001",
-    horarioTrabalho: {
-      entrada: "08:00",
-      almocoSaida: "12:00",
-      almocoRetorno: "13:00",
-      saida: "17:00",
-      sabadoAtivo: false,
-    },
-  },
-  {
-    id: "FUNC_002",
-    nome: "Marcos Vinicius Ferreira Mendes",
-    cargo: "Assistente de segurança do Trabalho",
-    departamento: "Segurança do Trabalho",
-    salarioBase: 2650.0,
-    saldoAnteriorBancoMinutos: -120, // -02h 00m
-    dataInicioSaldo: "01/09/2026",
-    senha: "Aec2026@",
-    primeiroAcesso: true,
-    escalaId: "ESC_002",
-    horarioTrabalho: {
-      entrada: "07:30",
-      almocoSaida: "11:30",
-      almocoRetorno: "12:30",
-      saida: "16:30",
-      sabadoAtivo: false,
-    },
-  },
-  {
-    id: "FUNC_003",
-    nome: "Amanda Inácio Medeiros Silva",
-    cargo: "Assistente Administrativo",
-    departamento: "Administrativo",
-    salarioBase: 2300.0,
-    saldoAnteriorBancoMinutos: 0,
-    dataInicioSaldo: "01/09/2026",
-    senha: "Aec2026@",
-    primeiroAcesso: true,
-    escalaId: "ESC_003",
-    horarioTrabalho: {
-      entrada: "08:30",
-      almocoSaida: "12:30",
-      almocoRetorno: "13:30",
-      saida: "17:30",
-      sabadoAtivo: false,
-    },
-  },
-  {
-    id: "FUNC_004",
-    nome: "Denise Cristina Fernandes Costa Felip",
-    cargo: "Técnico em segurança do Trabalho JR",
-    departamento: "Segurança do Trabalho",
-    salarioBase: 3100.0,
-    saldoAnteriorBancoMinutos: 180, // +03h 00m
-    dataInicioSaldo: "01/09/2026",
-    senha: "Aec2026@",
-    primeiroAcesso: true,
-    escalaId: "ESC_004",
-    horarioTrabalho: {
-      entrada: "08:00",
-      almocoSaida: "12:00",
-      almocoRetorno: "13:00",
-      saida: "17:00",
-      sabadoAtivo: true,
-      sabadoEntrada: "08:00",
-      sabadoSaida: "12:00",
-    },
-  },
-];
+const COLABORADORES_INICIAIS: Colaborador[] = [];
+
 
 interface FechamentoArmazenado {
   id: string;
@@ -318,11 +247,11 @@ export default function App() {
   const [userRole, setUserRole] = useState<"escolha" | "admin" | "funcionario">("escolha");
   const [adminSenhaInput, setAdminSenhaInput] = useState<string>("");
   const [adminLoginErro, setAdminLoginErro] = useState<boolean>(false);
-  const [funcionarioLoginId, setFuncionarioLoginId] = useState<string>("FUNC_001");
+  const [funcionarioLoginId, setFuncionarioLoginId] = useState<string>("");
 
   // Estados para Login e Senhas de Funcionários
   const [modalLoginFuncionarioAberta, setModalLoginFuncionarioAberta] = useState<boolean>(false);
-  const [colabTentandoLogarId, setColabTentandoLogarId] = useState<string>("FUNC_001");
+  const [colabTentandoLogarId, setColabTentandoLogarId] = useState<string>("");
   const [senhaLoginFuncInput, setSenhaLoginFuncInput] = useState<string>("");
   const [modalAlterarSenhaAberta, setModalAlterarSenhaAberta] = useState<boolean>(false);
   const [novaSenhaInput, setNovaSenhaInput] = useState<string>("");
@@ -331,7 +260,21 @@ export default function App() {
 
   const [abaAtiva, setAbaAtiva] = useState<"digitalizar" | "fechamento" | "historico" | "criterios" | "escalas" | "colaboradores" | "baterPonto">("baterPonto");
   const [colaboradores, setColaboradores] = useState<Colaborador[]>(COLABORADORES_INICIAIS);
-  const [criterios, setCriterios] = useState<CriteriosApuracao>(CRITERIOS_PADRAO);
+  const [criterios, setCriterios] = useState<CriteriosApuracao>(() => {
+    const salvo = localStorage.getItem("ac_gestor_criterios");
+    if (salvo) {
+      try {
+        const parsed = JSON.parse(salvo);
+        return {
+          ...CRITERIOS_PADRAO,
+          ...parsed,
+          limiteSabadoBancoMinutos: 120,
+          percentualHESabadoExcedente: 50,
+        };
+      } catch (e) {}
+    }
+    return CRITERIOS_PADRAO;
+  });
 
   // Gestão de Escalas & Horários
   const [escalas, setEscalas] = useState<EscalaTrabalho[]>(() => {
@@ -363,6 +306,20 @@ export default function App() {
   const [formEscalaTolerancia, setFormEscalaTolerancia] = useState<number>(10);
   const [formEscalaCor, setFormEscalaCor] = useState<string>("sky");
   const [formEscalaAtualizarColabs, setFormEscalaAtualizarColabs] = useState<boolean>(true);
+  const [formEscalaDiferenciarPorDia, setFormEscalaDiferenciarPorDia] = useState<boolean>(false);
+  const [formEscalaDiasSemanaConfig, setFormEscalaDiasSemanaConfig] = useState<Record<DiasSemanaChave, HorarioDiaSemana>>({
+    Seg: { ativo: true, entrada: "08:00", almocoSaida: "12:00", almocoRetorno: "13:00", saida: "17:00" },
+    Ter: { ativo: true, entrada: "08:00", almocoSaida: "12:00", almocoRetorno: "13:00", saida: "17:00" },
+    Qua: { ativo: true, entrada: "08:00", almocoSaida: "12:00", almocoRetorno: "13:00", saida: "17:00" },
+    Qui: { ativo: true, entrada: "08:00", almocoSaida: "12:00", almocoRetorno: "13:00", saida: "17:00" },
+    Sex: { ativo: true, entrada: "08:00", almocoSaida: "12:00", almocoRetorno: "13:00", saida: "17:00" },
+    Sáb: { ativo: false, entrada: "08:00", almocoSaida: "12:00", almocoRetorno: "12:00", saida: "12:00" },
+    Dom: { ativo: false, entrada: "08:00", almocoSaida: "12:00", almocoRetorno: "12:00", saida: "12:00" },
+  });
+
+  // PWA Install Modal & Device Hook
+  const { isInstallable, isInstalled, isIOS, isAndroid, install: triggerPWAInstall } = usePWAInstall();
+  const [modalPWAInstalacaoAberta, setModalPWAInstalacaoAberta] = useState<boolean>(false);
 
   // Modal Vincular Colaboradores em Lote
   const [modalVincularAberta, setModalVincularAberta] = useState<boolean>(false);
@@ -374,13 +331,13 @@ export default function App() {
   const [formEscalaVinculadaId, setFormEscalaVinculadaId] = useState<string>("ESC_001");
 
   // Portal do Funcionário (Bater Ponto)
-  const [portalColaboradorId, setPortalColaboradorId] = useState<string>("FUNC_001");
+  const [portalColaboradorId, setPortalColaboradorId] = useState<string>("");
   const [portalDiaSelecionado, setPortalDiaSelecionado] = useState<number>(new Date().getDate());
   const [portalMesAno, setPortalMesAno] = useState<string>("09/2026");
   const [portalSucessoModal, setPortalSucessoModal] = useState<{ tipo: string; hora: string } | null>(null);
   
   // Seleção e parâmetros de upload
-  const [colaboradorSelecionadoId, setColaboradorSelecionadoId] = useState<string>("FUNC_001");
+  const [colaboradorSelecionadoId, setColaboradorSelecionadoId] = useState<string>("");
   const [mesAnoInput, setMesAnoInput] = useState<string>("09/2026");
   const [imagemBase64, setImagemBase64] = useState<string | null>(null);
   const [nomeArquivo, setNomeArquivo] = useState<string>("");
@@ -420,6 +377,16 @@ export default function App() {
   const [formSabadoAtivo, setFormSabadoAtivo] = useState<boolean>(false);
   const [formSabadoEntrada, setFormSabadoEntrada] = useState<string>("08:00");
   const [formSabadoSaida, setFormSabadoSaida] = useState<string>("12:00");
+  const [formColabDiferenciarPorDia, setFormColabDiferenciarPorDia] = useState<boolean>(false);
+  const [formColabDiasSemanaConfig, setFormColabDiasSemanaConfig] = useState<Record<DiasSemanaChave, HorarioDiaSemana>>({
+    Seg: { ativo: true, entrada: "08:00", almocoSaida: "12:00", almocoRetorno: "13:00", saida: "17:00" },
+    Ter: { ativo: true, entrada: "08:00", almocoSaida: "12:00", almocoRetorno: "13:00", saida: "17:00" },
+    Qua: { ativo: true, entrada: "08:00", almocoSaida: "12:00", almocoRetorno: "13:00", saida: "17:00" },
+    Qui: { ativo: true, entrada: "08:00", almocoSaida: "12:00", almocoRetorno: "13:00", saida: "17:00" },
+    Sex: { ativo: true, entrada: "08:00", almocoSaida: "12:00", almocoRetorno: "13:00", saida: "17:00" },
+    Sáb: { ativo: false, entrada: "08:00", almocoSaida: "12:00", almocoRetorno: "12:00", saida: "12:00" },
+    Dom: { ativo: false, entrada: "08:00", almocoSaida: "12:00", almocoRetorno: "12:00", saida: "12:00" },
+  });
 
   // Modal Rápida: Lançar / Ajustar Saldo Inicial de Banco de Horas
   const [modalAjustarBancoAberta, setModalAjustarBancoAberta] = useState<boolean>(false);
@@ -456,6 +423,12 @@ export default function App() {
       setFormSabadoAtivo(Boolean(esc.horario.sabadoAtivo));
       setFormSabadoEntrada(esc.horario.sabadoEntrada || "08:00");
       setFormSabadoSaida(esc.horario.sabadoSaida || "12:00");
+      if (esc.horario.diferenciarPorDia && esc.horario.diasSemanaConfig) {
+        setFormColabDiferenciarPorDia(true);
+        setFormColabDiasSemanaConfig({ ...esc.horario.diasSemanaConfig } as any);
+      } else {
+        setFormColabDiferenciarPorDia(false);
+      }
       showToast("sucesso", "Escala Aplicada", `Horários preenchidos a partir da escala: ${esc.nome}`);
     }
   };
@@ -478,6 +451,16 @@ export default function App() {
     setFormEscalaTolerancia(10);
     setFormEscalaCor("sky");
     setFormEscalaAtualizarColabs(true);
+    setFormEscalaDiferenciarPorDia(false);
+    setFormEscalaDiasSemanaConfig({
+      Seg: { ativo: true, entrada: "08:00", almocoSaida: "12:00", almocoRetorno: "13:00", saida: "17:00" },
+      Ter: { ativo: true, entrada: "08:00", almocoSaida: "12:00", almocoRetorno: "13:00", saida: "17:00" },
+      Qua: { ativo: true, entrada: "08:00", almocoSaida: "12:00", almocoRetorno: "13:00", saida: "17:00" },
+      Qui: { ativo: true, entrada: "08:00", almocoSaida: "12:00", almocoRetorno: "13:00", saida: "17:00" },
+      Sex: { ativo: true, entrada: "08:00", almocoSaida: "12:00", almocoRetorno: "13:00", saida: "17:00" },
+      Sáb: { ativo: false, entrada: "08:00", almocoSaida: "12:00", almocoRetorno: "12:00", saida: "12:00" },
+      Dom: { ativo: false, entrada: "08:00", almocoSaida: "12:00", almocoRetorno: "12:00", saida: "12:00" },
+    });
     setModalEscalaAberta(true);
   };
 
@@ -498,6 +481,31 @@ export default function App() {
     setFormEscalaTolerancia(escala.toleranciaMinutos || 10);
     setFormEscalaCor(escala.cor || "sky");
     setFormEscalaAtualizarColabs(true);
+
+    const isDiff = Boolean(escala.horario.diferenciarPorDia);
+    setFormEscalaDiferenciarPorDia(isDiff);
+    if (escala.horario.diasSemanaConfig) {
+      setFormEscalaDiasSemanaConfig({
+        Seg: escala.horario.diasSemanaConfig.Seg || { ativo: true, entrada: escala.horario.entrada, almocoSaida: escala.horario.almocoSaida, almocoRetorno: escala.horario.almocoRetorno, saida: escala.horario.saida },
+        Ter: escala.horario.diasSemanaConfig.Ter || { ativo: true, entrada: escala.horario.entrada, almocoSaida: escala.horario.almocoSaida, almocoRetorno: escala.horario.almocoRetorno, saida: escala.horario.saida },
+        Qua: escala.horario.diasSemanaConfig.Qua || { ativo: true, entrada: escala.horario.entrada, almocoSaida: escala.horario.almocoSaida, almocoRetorno: escala.horario.almocoRetorno, saida: escala.horario.saida },
+        Qui: escala.horario.diasSemanaConfig.Qui || { ativo: true, entrada: escala.horario.entrada, almocoSaida: escala.horario.almocoSaida, almocoRetorno: escala.horario.almocoRetorno, saida: escala.horario.saida },
+        Sex: escala.horario.diasSemanaConfig.Sex || { ativo: true, entrada: escala.horario.entrada, almocoSaida: escala.horario.almocoSaida, almocoRetorno: escala.horario.almocoRetorno, saida: escala.horario.saida },
+        Sáb: escala.horario.diasSemanaConfig.Sáb || { ativo: Boolean(escala.horario.sabadoAtivo), entrada: escala.horario.sabadoEntrada || "08:00", almocoSaida: "12:00", almocoRetorno: "12:00", saida: escala.horario.sabadoSaida || "12:00" },
+        Dom: escala.horario.diasSemanaConfig.Dom || { ativo: false, entrada: "08:00", almocoSaida: "12:00", almocoRetorno: "12:00", saida: "12:00" },
+      });
+    } else {
+      setFormEscalaDiasSemanaConfig({
+        Seg: { ativo: true, entrada: escala.horario.entrada, almocoSaida: escala.horario.almocoSaida, almocoRetorno: escala.horario.almocoRetorno, saida: escala.horario.saida },
+        Ter: { ativo: true, entrada: escala.horario.entrada, almocoSaida: escala.horario.almocoSaida, almocoRetorno: escala.horario.almocoRetorno, saida: escala.horario.saida },
+        Qua: { ativo: true, entrada: escala.horario.entrada, almocoSaida: escala.horario.almocoSaida, almocoRetorno: escala.horario.almocoRetorno, saida: escala.horario.saida },
+        Qui: { ativo: true, entrada: escala.horario.entrada, almocoSaida: escala.horario.almocoSaida, almocoRetorno: escala.horario.almocoRetorno, saida: escala.horario.saida },
+        Sex: { ativo: true, entrada: escala.horario.entrada, almocoSaida: escala.horario.almocoSaida, almocoRetorno: escala.horario.almocoRetorno, saida: escala.horario.saida },
+        Sáb: { ativo: Boolean(escala.horario.sabadoAtivo), entrada: escala.horario.sabadoEntrada || "08:00", almocoSaida: "12:00", almocoRetorno: "12:00", saida: escala.horario.sabadoSaida || "12:00" },
+        Dom: { ativo: false, entrada: "08:00", almocoSaida: "12:00", almocoRetorno: "12:00", saida: "12:00" },
+      });
+    }
+
     setModalEscalaAberta(true);
   };
 
@@ -508,6 +516,27 @@ export default function App() {
       return;
     }
 
+    let cargaFinal = formEscalaCargaHoras;
+    let diasDescricao = formEscalaDiasSemana.trim() || "Segunda a Sexta";
+
+    if (formEscalaDiferenciarPorDia) {
+      let minSemana = 0;
+      const ativos: string[] = [];
+      DIAS_SEMANA_ORDEM.forEach((d) => {
+        const cfg = formEscalaDiasSemanaConfig[d.chave];
+        if (cfg && cfg.ativo) {
+          ativos.push(d.rotuloCurto);
+          const durManha = calcularDuracaoMinutos(cfg.entrada, cfg.almocoSaida);
+          const durTarde = calcularDuracaoMinutos(cfg.almocoRetorno, cfg.saida);
+          minSemana += Math.max(0, durManha + durTarde);
+        }
+      });
+      cargaFinal = Math.round((minSemana / 60) * 10) / 10;
+      if (formEscalaDiasSemana.trim() === "" || formEscalaDiasSemana.trim() === "Segunda a Sexta") {
+        diasDescricao = ativos.length > 0 ? ativos.join(", ") : "Horários específicos por dia";
+      }
+    }
+
     const horarioObj: HorarioTrabalhoColab = {
       entrada: formEscalaEntrada,
       almocoSaida: formEscalaAlmocoSaida,
@@ -516,6 +545,8 @@ export default function App() {
       sabadoAtivo: formEscalaSabadoAtivo,
       sabadoEntrada: formEscalaSabadoAtivo ? formEscalaSabadoEntrada : undefined,
       sabadoSaida: formEscalaSabadoAtivo ? formEscalaSabadoSaida : undefined,
+      diferenciarPorDia: formEscalaDiferenciarPorDia,
+      diasSemanaConfig: formEscalaDiferenciarPorDia ? formEscalaDiasSemanaConfig : undefined,
     };
 
     if (escalaEditando) {
@@ -526,8 +557,8 @@ export default function App() {
             nome: formEscalaNome.trim(),
             tipo: formEscalaTipo,
             descricao: formEscalaDescricao.trim(),
-            diasSemana: formEscalaDiasSemana.trim() || "Segunda a Sexta",
-            cargaSemanalHoras: formEscalaCargaHoras,
+            diasSemana: diasDescricao,
+            cargaSemanalHoras: cargaFinal,
             horario: horarioObj,
             toleranciaMinutos: formEscalaTolerancia,
             cor: formEscalaCor,
@@ -546,8 +577,8 @@ export default function App() {
           nome: formEscalaNome.trim(),
           tipo: formEscalaTipo,
           descricao: formEscalaDescricao.trim(),
-          diasSemana: formEscalaDiasSemana.trim(),
-          cargaSemanalHoras: formEscalaCargaHoras,
+          diasSemana: diasDescricao,
+          cargaSemanalHoras: cargaFinal,
           horario: horarioObj,
           toleranciaMinutos: formEscalaTolerancia,
           cor: formEscalaCor,
@@ -585,8 +616,8 @@ export default function App() {
         nome: formEscalaNome.trim(),
         tipo: formEscalaTipo,
         descricao: formEscalaDescricao.trim(),
-        diasSemana: formEscalaDiasSemana.trim() || "Segunda a Sexta",
-        cargaSemanalHoras: formEscalaCargaHoras,
+        diasSemana: diasDescricao,
+        cargaSemanalHoras: cargaFinal,
         horario: horarioObj,
         toleranciaMinutos: formEscalaTolerancia,
         cor: formEscalaCor,
@@ -771,6 +802,12 @@ export default function App() {
       setFormSabadoAtivo(Boolean(escPadrao.horario.sabadoAtivo));
       setFormSabadoEntrada(escPadrao.horario.sabadoEntrada || "08:00");
       setFormSabadoSaida(escPadrao.horario.sabadoSaida || "12:00");
+      if (escPadrao.horario.diferenciarPorDia && escPadrao.horario.diasSemanaConfig) {
+        setFormColabDiferenciarPorDia(true);
+        setFormColabDiasSemanaConfig({ ...escPadrao.horario.diasSemanaConfig } as any);
+      } else {
+        setFormColabDiferenciarPorDia(false);
+      }
     } else {
       setFormEscalaVinculadaId("");
       setFormEntrada("08:00");
@@ -780,6 +817,7 @@ export default function App() {
       setFormSabadoAtivo(false);
       setFormSabadoEntrada("08:00");
       setFormSabadoSaida("12:00");
+      setFormColabDiferenciarPorDia(false);
     }
 
     setSubAbaColaborador("novo");
@@ -819,6 +857,13 @@ export default function App() {
     setFormSabadoEntrada(h.sabadoEntrada || "08:00");
     setFormSabadoSaida(h.sabadoSaida || "12:00");
 
+    if (h.diferenciarPorDia && h.diasSemanaConfig) {
+      setFormColabDiferenciarPorDia(true);
+      setFormColabDiasSemanaConfig({ ...h.diasSemanaConfig } as any);
+    } else {
+      setFormColabDiferenciarPorDia(false);
+    }
+
     setSubAbaColaborador("novo");
     setModalColaboradorAberta(true);
   };
@@ -848,6 +893,8 @@ export default function App() {
       sabadoAtivo: formSabadoAtivo,
       sabadoEntrada: formSabadoAtivo ? formSabadoEntrada : undefined,
       sabadoSaida: formSabadoAtivo ? formSabadoSaida : undefined,
+      diferenciarPorDia: formColabDiferenciarPorDia,
+      diasSemanaConfig: formColabDiferenciarPorDia ? formColabDiasSemanaConfig : undefined,
     };
 
     if (colaboradorEditando) {
@@ -1207,15 +1254,56 @@ export default function App() {
     showToast("sucesso", "Ponto Registrado com Sucesso!", `${colab.nome}: ${campo.toUpperCase()} marcada às ${horaStr}.`);
   };
 
+  // Zerar todos os dados para iniciar do zero
+  const handleZerarDadosApp = async () => {
+    if (
+      !window.confirm(
+        "Atenção: Deseja realmente zerar todos os colaboradores, batidas de ponto e fechamentos para iniciar o uso do app do zero? Esta ação é irreversível."
+      )
+    ) {
+      return;
+    }
+
+    try {
+      await fetch("/api/reset-dados", { method: "POST" });
+    } catch (e) {
+      // ignore
+    }
+
+    localStorage.removeItem("ac_gestor_colaboradores");
+    localStorage.removeItem("ac_gestor_fechamentos");
+    localStorage.removeItem("ac_gestor_pontos");
+
+    setColaboradores([]);
+    setFechamentosSalvos([]);
+    setFechamentoAtual(null);
+    setFuncionarioLoginId("");
+    setColabTentandoLogarId("");
+    setPortalColaboradorId("");
+    setColaboradorSelecionadoId("");
+
+    showToast("sucesso", "Dados Zerados com Sucesso!", "Todos os colaboradores e fechamentos foram limpos. O app está pronto para uso do zero.");
+  };
+
   // Carregar dados iniciais da API e LocalStorage
   useEffect(() => {
-    // 1. Tentar restaurar colaboradores do localStorage primeiro
+    // 1. Tentar restaurar colaboradores do localStorage primeiro (limpando mocks antigos se existirem)
     const localColabs = localStorage.getItem("ac_gestor_colaboradores");
     if (localColabs) {
       try {
         const parsed = JSON.parse(localColabs);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        const hasLegacyMock = Array.isArray(parsed) && parsed.some((c: any) => c.id === "FUNC_001" && (c.nome || "").includes("Thais"));
+        if (hasLegacyMock) {
+          localStorage.removeItem("ac_gestor_colaboradores");
+          localStorage.removeItem("ac_gestor_fechamentos");
+          setColaboradores([]);
+        } else if (Array.isArray(parsed)) {
           setColaboradores(parsed);
+          if (parsed.length > 0) {
+            setPortalColaboradorId((prev) => prev || parsed[0].id);
+            setColaboradorSelecionadoId((prev) => prev || parsed[0].id);
+            setFuncionarioLoginId((prev) => prev || parsed[0].id);
+          }
         }
       } catch (e) {
         // ignore
@@ -1226,9 +1314,14 @@ export default function App() {
     fetch("/api/colaboradores")
       .then((res) => res.json())
       .then((data: Colaborador[]) => {
-        if (Array.isArray(data) && data.length > 0) {
+        if (Array.isArray(data)) {
           setColaboradores(data);
           localStorage.setItem("ac_gestor_colaboradores", JSON.stringify(data));
+          if (data.length > 0) {
+            setPortalColaboradorId((prev) => prev || data[0].id);
+            setColaboradorSelecionadoId((prev) => prev || data[0].id);
+            setFuncionarioLoginId((prev) => prev || data[0].id);
+          }
         }
       })
       .catch(() => {});
@@ -1250,18 +1343,50 @@ export default function App() {
       .then((data: FechamentoArmazenado[]) => {
         if (Array.isArray(data) && data.length > 0) {
           setFechamentosSalvos(data);
-          setFechamentoAtual(data[0].fechamento);
+          const f = data[0].fechamento;
+          const recal = calcularFechamentoMensal(f.dias, criterios, {
+            colaboradorNome: f.colaboradorNome,
+            colaboradorCargo: f.colaboradorCargo,
+            colaboradorId: f.colaboradorId,
+            mesAno: f.mesAno,
+            salarioBase: f.salarioBase,
+            saldoAnteriorBancoMinutos: f.saldoAnteriorBancoMinutos,
+          });
+          setFechamentoAtual(recal);
         } else {
-          gerarFechamentoExemploInicial();
+          setFechamentosSalvos([]);
+          setFechamentoAtual(null);
         }
       })
       .catch(() => {
-        gerarFechamentoExemploInicial();
+        setFechamentosSalvos([]);
+        setFechamentoAtual(null);
       });
   }, []);
 
   const gerarFechamentoExemploInicial = () => {
-    const colab = colaboradores[0];
+    let colab = colaboradores[0];
+    if (!colab) {
+      colab = {
+        id: `FUNC_${Date.now()}`,
+        nome: "Exemplo Demonstração",
+        cargo: "Assistente Operacional",
+        departamento: "Operações",
+        salarioBase: 2450.0,
+        saldoAnteriorBancoMinutos: 120,
+        dataInicioSaldo: "01/09/2026",
+        horarioTrabalho: {
+          entrada: "08:00",
+          almocoSaida: "12:00",
+          almocoRetorno: "13:00",
+          saida: "17:00",
+          sabadoAtivo: false,
+        },
+      };
+      setColaboradores([colab]);
+      setColaboradorSelecionadoId(colab.id);
+      setPortalColaboradorId(colab.id);
+    }
     const diasMes = gerarDiasMes(2026, 9, criterios.feriadosFixos, colab.horarioTrabalho);
     // Aplicar batidas de exemplo que ativam todas as regras do critério
     diasMes[1].saida2 = "19:00"; // 2h extras no banco
@@ -1269,9 +1394,9 @@ export default function App() {
     diasMes[3].saida1 = "12:00";
     diasMes[3].entrada2 = "12:40"; // Almoço de 40min: 20min de supressão calculados a 50%
     diasMes[4].saida2 = "16:30"; // Saída 30min antes: desconta 30min do banco
-    diasMes[5].entrada1 = "08:00"; // Sábado trabalhado: 4h no banco (1:1)
+    diasMes[5].entrada1 = "08:00"; // Sábado trabalhado: 4h (2h no banco 1:1 + 2h HE 50%)
     diasMes[5].saida2 = "12:00";
-    diasMes[5].observacao = "Sábado trabalhado (Banco 1:1)";
+    diasMes[5].observacao = "Sábado trabalhado (2h Banco + 2h HE 50%)";
     diasMes[6].entrada1 = "08:00"; // Domingo trabalhado sem folga compensatória: 4h a 100%
     diasMes[6].saida2 = "12:00";
     diasMes[6].observacao = "Domingo trabalhado sem folga";
@@ -1326,7 +1451,7 @@ export default function App() {
 
     try {
       setTimeout(() => setEtapaProcessamento("Reconhecendo batidas de ponto, horários e observações manuscritas..."), 900);
-      setTimeout(() => setEtapaProcessamento("Aplicando critérios A&C (Banco máx 2h, Sábado 1:1, Almoço <1h HE 50%, Noturno 22h-05h)..."), 2200);
+      setTimeout(() => setEtapaProcessamento("Aplicando critérios A&C (Banco máx 2h, Sábado: 2h Banco + HE 50%, Almoço <1h HE 50%, Noturno 22h-05h)..."), 2200);
 
       const res = await fetch("/api/processar-folha-ponto", {
         method: "POST",
@@ -1698,6 +1823,38 @@ export default function App() {
             </p>
           </div>
 
+          {/* Banner de Instalação no Celular (Android & iOS) */}
+          <div className="bg-gradient-to-r from-sky-950/70 via-slate-900/90 to-emerald-950/70 border border-sky-500/30 rounded-3xl p-5 sm:p-6 shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-5 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-sky-500/5 rounded-full blur-3xl pointer-events-none"></div>
+            <div className="flex items-center gap-4 text-center sm:text-left">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-sky-500/20 to-emerald-500/20 border border-sky-500/30 flex items-center justify-center text-sky-400 shrink-0 shadow-inner">
+                <Smartphone className="w-7 h-7" />
+              </div>
+              <div>
+                <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
+                  <h3 className="text-base sm:text-lg font-bold text-white tracking-tight">
+                    Instalar App no Celular
+                  </h3>
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    Android & iPhone (iOS)
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 mt-1 max-w-xl leading-relaxed">
+                  Adicione o <strong>Ponto A&C</strong> diretamente à tela inicial do seu celular para bater ponto offline, receber lembretes e abrir em tela cheia como app nativo.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setModalPWAInstalacaoAberta(true)}
+              className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-gradient-to-r from-sky-600 to-emerald-600 hover:from-sky-500 hover:to-emerald-500 text-white font-bold text-xs sm:text-sm shadow-xl shadow-sky-600/30 flex items-center justify-center gap-2.5 shrink-0 transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+            >
+              <Smartphone className="w-4 h-4" />
+              {isInstalled ? "App Instalado • Instruções" : "Instalar no meu Celular"}
+            </button>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Card 1: Portal do Funcionário */}
             <div className="bg-slate-900/90 border border-slate-800 hover:border-sky-500/50 rounded-3xl p-6 sm:p-8 shadow-2xl transition-all duration-300 flex flex-col justify-between group">
@@ -1717,27 +1874,44 @@ export default function App() {
 
                 <div className="space-y-2 pt-2">
                   <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider">Selecione seu Nome:</label>
-                  <select
-                    value={funcionarioLoginId}
-                    onChange={(e) => setFuncionarioLoginId(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-medium focus:outline-none focus:border-sky-500 transition-colors"
-                  >
-                    {colaboradores.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.nome} — {c.cargo}
-                      </option>
-                    ))}
-                  </select>
+                  {colaboradores.length === 0 ? (
+                    <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-300 leading-relaxed">
+                      Nenhum colaborador cadastrado ainda. Acesse a <strong>Área Administrativa</strong> ao lado para cadastrar sua equipe e começar do zero.
+                    </div>
+                  ) : (
+                    <select
+                      value={funcionarioLoginId}
+                      onChange={(e) => setFuncionarioLoginId(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-medium focus:outline-none focus:border-sky-500 transition-colors"
+                    >
+                      <option value="">-- Selecione seu nome --</option>
+                      {colaboradores.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.nome} — {c.cargo}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
               </div>
 
               <button
+                disabled={colaboradores.length === 0}
                 onClick={() => {
-                  setColabTentandoLogarId(funcionarioLoginId);
+                  const idAlvo = funcionarioLoginId || colaboradores[0]?.id;
+                  if (!idAlvo) {
+                    showToast("aviso", "Selecione seu Nome", "Por favor, selecione seu nome na lista para acessar o portal.");
+                    return;
+                  }
+                  setColabTentandoLogarId(idAlvo);
                   setSenhaLoginFuncInput("");
                   setModalLoginFuncionarioAberta(true);
                 }}
-                className="mt-6 w-full py-3.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-sky-600/30 flex items-center justify-center gap-2 transition-all"
+                className={`mt-6 w-full py-3.5 rounded-xl text-sm font-bold shadow-lg flex items-center justify-center gap-2 transition-all ${
+                  colaboradores.length === 0
+                    ? "bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed"
+                    : "bg-sky-600 hover:bg-sky-500 text-white shadow-sky-600/30"
+                }`}
               >
                 Entrar no Portal de Ponto <ArrowRight className="w-4 h-4" />
               </button>
@@ -1770,7 +1944,7 @@ export default function App() {
                     }}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
-                        if (adminSenhaInput === "admin123" || adminSenhaInput === "1234" || adminSenhaInput === "") {
+                        if (adminSenhaInput === "admin123") {
                           setUserRole("admin");
                           setAbaAtiva("digitalizar");
                         } else {
@@ -1778,26 +1952,25 @@ export default function App() {
                         }
                       }
                     }}
-                    placeholder="Digite a senha (padrão: admin123)"
+                    placeholder="Digite a senha de administrador"
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-medium focus:outline-none focus:border-emerald-500 transition-colors font-mono"
                   />
                   {adminLoginErro && (
-                    <p className="text-xs text-rose-400 font-bold mt-1">Senha incorreta. Tente "admin123".</p>
+                    <p className="text-xs text-rose-400 font-bold mt-1">Senha de administrador incorreta. Acesso não autorizado.</p>
                   )}
-                  <p className="text-[11px] text-slate-500">Dica: Deixe em branco ou digite admin123 para entrar.</p>
                 </div>
               </div>
 
               <button
                 onClick={() => {
-                  if (adminSenhaInput === "admin123" || adminSenhaInput === "1234" || adminSenhaInput === "") {
+                  if (adminSenhaInput === "admin123") {
                     setUserRole("admin");
                     setAbaAtiva("digitalizar");
                   } else {
                     setAdminLoginErro(true);
                   }
                 }}
-                className="mt-6 w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all"
+                className="mt-6 w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all cursor-pointer"
               >
                 Acessar Painel Administrativo <ShieldAlert className="w-4 h-4" />
               </button>
@@ -1936,6 +2109,15 @@ export default function App() {
             </div>
           )}
         </AnimatePresence>
+
+        <PWAInstallModal
+          isOpen={modalPWAInstalacaoAberta}
+          onClose={() => setModalPWAInstalacaoAberta(false)}
+          isInstallable={isInstallable}
+          isIOS={isIOS}
+          isAndroid={isAndroid}
+          onInstall={triggerPWAInstall}
+        />
       </div>
     );
   }
@@ -2408,65 +2590,92 @@ export default function App() {
               </div>
             </div>
 
-            {/* Seleção de Funcionário, Mês e Dia */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl">
-              <div>
-                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">1. Selecionar Funcionário</label>
-                <select
-                  value={portalColaboradorId}
-                  onChange={(e) => setPortalColaboradorId(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-medium focus:outline-none focus:border-sky-500 transition-colors"
-                >
-                  {colaboradores.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.nome} — {c.cargo}
-                    </option>
-                  ))}
-                </select>
+            {colaboradores.length === 0 ? (
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center space-y-4 max-w-xl mx-auto shadow-2xl">
+                <div className="w-16 h-16 rounded-2xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 mx-auto">
+                  <Users className="w-8 h-8" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-white text-base">Nenhum Colaborador Cadastrado</h4>
+                  <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                    Para registrar pontos e batidas diárias, cadastre os colaboradores no painel administrativo.
+                  </p>
+                </div>
+                {userRole === "admin" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAbaAtiva("colaboradores");
+                      setSubAbaColaborador("novo");
+                    }}
+                    className="px-5 py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-sky-600/30 flex items-center gap-2 mx-auto transition-all"
+                  >
+                    <UserPlus className="w-4 h-4" /> + Cadastrar Primeiro Colaborador
+                  </button>
+                )}
               </div>
+            ) : (
+              <>
+                {/* Seleção de Funcionário, Mês e Dia */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">1. Selecionar Funcionário</label>
+                    <select
+                      value={portalColaboradorId}
+                      onChange={(e) => setPortalColaboradorId(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-medium focus:outline-none focus:border-sky-500 transition-colors"
+                    >
+                      {colaboradores.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.nome} — {c.cargo}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">2. Mês de Referência</label>
-                <input
-                  type="text"
-                  value={portalMesAno}
-                  onChange={(e) => setPortalMesAno(e.target.value)}
-                  placeholder="MM/AAAA"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-medium focus:outline-none focus:border-sky-500 transition-colors text-center font-mono"
-                />
-              </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">2. Mês de Referência</label>
+                    <input
+                      type="text"
+                      value={portalMesAno}
+                      onChange={(e) => setPortalMesAno(e.target.value)}
+                      placeholder="MM/AAAA"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-medium focus:outline-none focus:border-sky-500 transition-colors text-center font-mono"
+                    />
+                  </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">3. Dia do Mês (1 - 31)</label>
-                <select
-                  value={portalDiaSelecionado}
-                  onChange={(e) => setPortalDiaSelecionado(parseInt(e.target.value, 10))}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-medium focus:outline-none focus:border-sky-500 transition-colors text-center font-mono"
-                >
-                  {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
-                    <option key={d} value={d}>
-                      Dia {d < 10 ? `0${d}` : d}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">3. Dia do Mês (1 - 31)</label>
+                    <select
+                      value={portalDiaSelecionado}
+                      onChange={(e) => setPortalDiaSelecionado(parseInt(e.target.value, 10))}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-medium focus:outline-none focus:border-sky-500 transition-colors text-center font-mono"
+                    >
+                      {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                        <option key={d} value={d}>
+                          Dia {d < 10 ? `0${d}` : d}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
 
-            {/* Painel de Ações de Batida */}
-            {(() => {
-              const colabAtual = colaboradores.find((c) => c.id === portalColaboradorId) || colaboradores[0];
-              return (
-                <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
-                    <div>
-                      <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                        <Users className="w-5 h-5 text-sky-400" />
-                        Registrar Ponto para: <span className="text-sky-400">{colabAtual?.nome || "Colaborador"}</span>
-                      </h3>
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        Cargo: {colabAtual?.cargo} | Horário Padrão: {colabAtual?.horarioTrabalho.entrada} às {colabAtual?.horarioTrabalho.saida}
-                      </p>
-                    </div>
+                {/* Painel de Ações de Batida */}
+                {(() => {
+                  const colabAtual = colaboradores.find((c) => c.id === portalColaboradorId) || colaboradores[0];
+                  if (!colabAtual) return null;
+                  return (
+                    <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
+                        <div>
+                          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                            <Users className="w-5 h-5 text-sky-400" />
+                            Registrar Ponto para: <span className="text-sky-400">{colabAtual.nome}</span>
+                          </h3>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            Cargo: {colabAtual.cargo} | Horário Padrão: {colabAtual.horarioTrabalho?.entrada || "08:00"} às {colabAtual.horarioTrabalho?.saida || "17:00"}
+                          </p>
+                        </div>
                     {portalSucessoModal && (
                       <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 animate-pulse">
                         <CheckCircle2 className="w-4 h-4" /> {portalSucessoModal.tipo.toUpperCase()} registrada às {portalSucessoModal.hora}!
@@ -2557,6 +2766,8 @@ export default function App() {
                 </div>
               );
             })()}
+              </>
+            )}
           </div>
         )}
 
@@ -2574,8 +2785,8 @@ export default function App() {
                   <p className="text-xs text-slate-300 max-w-3xl leading-relaxed">
                     Basta enviar a foto ou arquivo escaneado do cartão de ponto. O sistema lê as batidas diárias com IA e calcula: 
                     <strong className="text-white"> Adicional Noturno (22h-05h)</strong>, 
-                    <strong className="text-white"> Banco de Horas (máx 2h/dia e sábados 1:1)</strong>, 
-                    <strong className="text-white"> Horas Extras 50% (excedentes &gt; 2h e almoço &lt; 1h)</strong> e 
+                    <strong className="text-white"> Banco de Horas (máx 2h/dia e sábados até 2h)</strong>, 
+                    <strong className="text-white"> Horas Extras 50% (excedentes &gt; 2h, sábados acima de 2h e almoço &lt; 1h)</strong> e 
                     <strong className="text-white"> Horas Extras 100% (domingos e feriados sem folga)</strong>.
                   </p>
                 </div>
@@ -2650,18 +2861,37 @@ export default function App() {
                   {/* Parâmetros do Lançamento */}
                   <div className="space-y-4 pt-2 border-t border-slate-800 text-xs">
                     <div>
-                      <label className="block text-slate-300 font-semibold mb-1">Colaborador da Folha</label>
-                      <select
-                        value={colaboradorSelecionadoId}
-                        onChange={(e) => setColaboradorSelecionadoId(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white font-medium focus:outline-none focus:border-sky-500"
-                      >
-                        {colaboradores.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.nome} — {c.cargo} (R$ {c.salarioBase.toFixed(2)})
-                          </option>
-                        ))}
-                      </select>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-slate-300 font-semibold">Colaborador da Folha</label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAbaAtiva("colaboradores");
+                            setSubAbaColaborador("novo");
+                          }}
+                          className="text-[10px] text-sky-400 hover:text-sky-300 underline font-sans"
+                        >
+                          + Cadastrar Colaborador
+                        </button>
+                      </div>
+                      {colaboradores.length === 0 ? (
+                        <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[11px] text-amber-300">
+                          Nenhum colaborador cadastrado ainda. Cadastre o colaborador primeiro.
+                        </div>
+                      ) : (
+                        <select
+                          value={colaboradorSelecionadoId}
+                          onChange={(e) => setColaboradorSelecionadoId(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white font-medium focus:outline-none focus:border-sky-500"
+                        >
+                          <option value="">-- Selecione o colaborador --</option>
+                          {colaboradores.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.nome} — {c.cargo} (R$ {c.salarioBase.toFixed(2)})
+                            </option>
+                          ))}
+                        </select>
+                      )}
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
@@ -2728,7 +2958,7 @@ export default function App() {
                           <div className="text-white font-mono flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
                             <span>Seg-Sex: {h.entrada} às {h.almocoSaida} / {h.almocoRetorno} às {h.saida}</span>
                             {h.sabadoAtivo && (
-                              <span className="text-amber-300">Sáb: {h.sabadoEntrada || "08:00"} às {h.sabadoSaida || "12:00"} (Banco 1:1)</span>
+                              <span className="text-amber-300">Sáb: {h.sabadoEntrada || "08:00"} às {h.sabadoSaida || "12:00"} (2h Banco + HE 50%)</span>
                             )}
                           </div>
                         </div>
@@ -2808,10 +3038,10 @@ export default function App() {
 
                     <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800/80 space-y-1">
                       <div className="flex items-center gap-2 text-indigo-400 font-bold">
-                        <Calendar className="w-3.5 h-3.5" /> Sábados no Banco
+                        <Calendar className="w-3.5 h-3.5" /> Sábados (2h Banco + HE 50%)
                       </div>
                       <p className="text-[11px] text-slate-400 leading-relaxed">
-                        Trabalho aos sábados entra como crédito de banco de horas com horário exato (1:1, sem acréscimo).
+                        Trabalho aos sábados mantém até <strong className="text-white">2 horas para o banco</strong> (1:1) e as demais são pagas com <strong className="text-white">+50% de acréscimo</strong>.
                       </p>
                     </div>
 
@@ -3163,7 +3393,7 @@ export default function App() {
                           </td>
                           <td className="py-2 px-3 text-center">
                             {d.minutosHE50 ? (
-                              <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-sky-500/10 text-sky-300" title={d.minutosAlmocoSuprimido ? `Inclui ${d.minutosAlmocoSuprimido}m de supressão de almoço` : "Excedente > 2h"}>
+                              <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-sky-500/10 text-sky-300" title={d.minutosAlmocoSuprimido ? `Inclui ${d.minutosAlmocoSuprimido}m de supressão de almoço` : d.diaSemana === "Sáb" ? "Horas de sábado excedentes a 2h (+50%)" : "Excedente > 2h (+50%)"}>
                                 +{minutosParaHora(d.minutosHE50)}
                               </span>
                             ) : (
@@ -3211,6 +3441,39 @@ export default function App() {
                   </tbody>
                 </table>
               </div>
+            </div>
+          </div>
+        )}
+
+        {abaAtiva === "fechamento" && !fechamentoAtual && (
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center space-y-4 max-w-xl mx-auto my-8 shadow-2xl">
+            <div className="w-16 h-16 rounded-2xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 mx-auto">
+              <FileText className="w-8 h-8" />
+            </div>
+            <div>
+              <h4 className="font-bold text-white text-base">Nenhum Espelho de Ponto em Apuração</h4>
+              <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                Você ainda não gerou ou digitalizou um espelho de ponto. Digitalize a folha de ponto ou registre batidas diárias para visualizar a apuração mensal com banco de horas e horas extras.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setAbaAtiva("digitalizar")}
+                className="px-4 py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-sky-600/30 flex items-center gap-2 transition-all"
+              >
+                <Upload className="w-4 h-4" /> Digitalizar Folha (IA)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAbaAtiva("colaboradores");
+                  setSubAbaColaborador("novo");
+                }}
+                className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold border border-slate-700 flex items-center gap-2 transition-all"
+              >
+                <UserPlus className="w-4 h-4" /> Cadastrar Colaborador
+              </button>
             </div>
           </div>
         )}
@@ -3402,19 +3665,24 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* 4 & 5. Sábado no Banco exato 1:1 */}
+                {/* 4. Sábado: 2h no Banco de Horas e excedente com HE 50% */}
                 <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 flex items-start gap-3.5">
                   <div className="w-8 h-8 rounded-xl bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-400 shrink-0">
                     <Calendar className="w-4 h-4" />
                   </div>
                   <div className="space-y-1">
-                    <strong className="text-white text-sm block">4 & 5. Sábado no Banco de Horas (Fator Exato 1:1)</strong>
+                    <strong className="text-white text-sm block">4. Sábado: 2h para o Banco de Horas (1:1) e Demais como HE 50%</strong>
                     <p className="text-slate-400 leading-relaxed font-sans">
-                      "Sábado entra como banco de horas" / "Como a gente usa o banco, o horário do banco tem que ser exato, não pode ser acrescido de nada"
+                      "Altere o critério de sábado e mantenha 2 horas para banco e as demais para pagamento com 50% de acréscimo."
                     </p>
-                    <span className="inline-block text-[11px] text-sky-300 font-mono bg-sky-500/10 px-2 py-0.5 rounded">
-                      Trabalho aos sábados entra como crédito integral no banco sem multiplicador
-                    </span>
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <span className="inline-block text-[11px] text-sky-300 font-mono bg-sky-500/10 border border-sky-500/20 px-2 py-0.5 rounded">
+                        Até {criterios.limiteSabadoBancoMinutos / 60} horas mantidas no Banco (1:1 exato)
+                      </span>
+                      <span className="inline-block text-[11px] text-emerald-300 font-mono bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded">
+                        Horas excedentes pagas em Folha com +{criterios.percentualHESabadoExcedente}%
+                      </span>
+                    </div>
                   </div>
                 </div>
 
@@ -3954,7 +4222,16 @@ export default function App() {
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2.5 w-full sm:w-auto">
+                <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={handleZerarDadosApp}
+                    className="px-3.5 py-2.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/20 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all"
+                    title="Zerar todos os colaboradores e registros do app para iniciar do zero"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> Zerar / Iniciar do Zero
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => {
@@ -3965,7 +4242,7 @@ export default function App() {
                         handleAbrirNovoColaborador();
                       }
                     }}
-                    className="w-full sm:w-auto px-4 py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-sky-600/30 flex items-center justify-center gap-2 transition-all"
+                    className="px-4 py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-sky-600/30 flex items-center justify-center gap-2 transition-all"
                   >
                     {subAbaColaborador === "novo" ? (
                       <>
@@ -4307,111 +4584,227 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Grade de Segunda a Sexta */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                    <div>
-                      <label className="block text-slate-300 font-semibold mb-1">Entrada Manhã</label>
+                  {/* Toggle: Diferenciar por dia da semana no Colaborador */}
+                  <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800">
+                    <label className="flex items-center gap-2.5 cursor-pointer text-xs font-semibold text-slate-200">
                       <input
-                        type="time"
-                        value={formEntrada}
-                        onChange={(e) => setFormEntrada(e.target.value)}
-                        required
-                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono text-center focus:outline-none focus:border-sky-500"
+                        type="checkbox"
+                        checked={formColabDiferenciarPorDia}
+                        onChange={(e) => setFormColabDiferenciarPorDia(e.target.checked)}
+                        className="w-4 h-4 rounded text-sky-600 bg-slate-900 border-slate-700 focus:ring-sky-500"
                       />
-                      <span className="text-[10px] text-slate-500 block mt-0.5 text-center">Início do dia</span>
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-300 font-semibold mb-1">Saída Almoço</label>
-                      <input
-                        type="time"
-                        value={formAlmocoSaida}
-                        onChange={(e) => setFormAlmocoSaida(e.target.value)}
-                        required
-                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono text-center focus:outline-none focus:border-sky-500"
-                      />
-                      <span className="text-[10px] text-slate-500 block mt-0.5 text-center">Início do intervalo</span>
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-300 font-semibold mb-1">Retorno Almoço</label>
-                      <input
-                        type="time"
-                        value={formAlmocoRetorno}
-                        onChange={(e) => setFormAlmocoRetorno(e.target.value)}
-                        required
-                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono text-center focus:outline-none focus:border-sky-500"
-                      />
-                      <span className="text-[10px] text-slate-500 block mt-0.5 text-center">Fim do intervalo</span>
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-300 font-semibold mb-1">Saída Tarde / Fim</label>
-                      <input
-                        type="time"
-                        value={formSaida}
-                        onChange={(e) => setFormSaida(e.target.value)}
-                        required
-                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono text-center focus:outline-none focus:border-sky-500"
-                      />
-                      <span className="text-[10px] text-slate-500 block mt-0.5 text-center">Término da jornada</span>
-                    </div>
+                      <span className="text-sky-400 font-bold">Definir horários diferentes para cada dia da semana (Segunda a Domingo)</span>
+                    </label>
                   </div>
 
-                  {/* Alerta inteligente se o almoço for menor que 1h */}
-                  {calcularDuracaoMinutos(formAlmocoSaida, formAlmocoRetorno) < 60 && (
-                    <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-500/30 text-amber-300 text-xs flex items-center gap-2">
-                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-                      <span>
-                        <strong>Aviso do Critério A&C:</strong> O intervalo configurado é de{" "}
-                        {minutosParaTextoExtenso(calcularDuracaoMinutos(formAlmocoSaida, formAlmocoRetorno), false)}. A empresa determina que qualquer almoço inferior a 1 hora terá a diferença suprimida paga como <strong>Hora Extra com 50%</strong>.
-                      </span>
+                  {formColabDiferenciarPorDia ? (
+                    <div className="space-y-3">
+                      {DIAS_SEMANA_ORDEM.map((d) => {
+                        const diaCfg = formColabDiasSemanaConfig[d.chave] || { ativo: true, entrada: "08:00", almocoSaida: "12:00", almocoRetorno: "13:00", saida: "17:00" };
+                        return (
+                          <div key={d.chave} className={`p-3 rounded-2xl border transition-all ${diaCfg.ativo ? "bg-slate-950 border-slate-800" : "bg-slate-950/40 border-slate-900 opacity-60"}`}>
+                            <div className="flex items-center justify-between mb-2">
+                              <label className="flex items-center gap-2 cursor-pointer font-bold text-white text-xs">
+                                <input
+                                  type="checkbox"
+                                  checked={diaCfg.ativo}
+                                  onChange={(e) => {
+                                    const ativo = e.target.checked;
+                                    setFormColabDiasSemanaConfig(prev => ({
+                                      ...prev,
+                                      [d.chave]: { ...diaCfg, ativo }
+                                    }));
+                                  }}
+                                  className="w-4 h-4 rounded text-sky-600 bg-slate-900 border-slate-700"
+                                />
+                                <span>{d.rotulo}</span>
+                              </label>
+                              {diaCfg.ativo ? (
+                                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-sky-950/80 text-sky-300 border border-sky-500/30 font-bold">
+                                  Jornada: {minutosParaTextoExtenso(calcularDuracaoMinutos(diaCfg.entrada, diaCfg.almocoSaida) + calcularDuracaoMinutos(diaCfg.almocoRetorno, diaCfg.saida), false)}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-slate-500 italic">Folga / Descanso</span>
+                              )}
+                            </div>
+
+                            {diaCfg.ativo && (
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs pt-1">
+                                <div>
+                                  <label className="block text-[10px] text-slate-400 mb-1">Entrada</label>
+                                  <input
+                                    type="time"
+                                    value={diaCfg.entrada}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setFormColabDiasSemanaConfig(prev => ({
+                                        ...prev,
+                                        [d.chave]: { ...diaCfg, entrada: val }
+                                      }));
+                                    }}
+                                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2 py-1 text-white font-mono text-center focus:outline-none focus:border-sky-500 text-xs"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] text-slate-400 mb-1">Saída Almoço</label>
+                                  <input
+                                    type="time"
+                                    value={diaCfg.almocoSaida}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setFormColabDiasSemanaConfig(prev => ({
+                                        ...prev,
+                                        [d.chave]: { ...diaCfg, almocoSaida: val }
+                                      }));
+                                    }}
+                                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2 py-1 text-white font-mono text-center focus:outline-none focus:border-sky-500 text-xs"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] text-slate-400 mb-1">Retorno Almoço</label>
+                                  <input
+                                    type="time"
+                                    value={diaCfg.almocoRetorno}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setFormColabDiasSemanaConfig(prev => ({
+                                        ...prev,
+                                        [d.chave]: { ...diaCfg, almocoRetorno: val }
+                                      }));
+                                    }}
+                                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2 py-1 text-white font-mono text-center focus:outline-none focus:border-sky-500 text-xs"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] text-slate-400 mb-1">Saída Tarde</label>
+                                  <input
+                                    type="time"
+                                    value={diaCfg.saida}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setFormColabDiasSemanaConfig(prev => ({
+                                        ...prev,
+                                        [d.chave]: { ...diaCfg, saida: val }
+                                      }));
+                                    }}
+                                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2 py-1 text-white font-mono text-center focus:outline-none focus:border-sky-500 text-xs"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
-                  )}
-
-                  {/* Configuração de Sábado */}
-                  <div className="pt-3 border-t border-slate-800/80 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <label className="flex items-center gap-2.5 cursor-pointer text-xs font-semibold text-slate-200">
-                        <input
-                          type="checkbox"
-                          checked={formSabadoAtivo}
-                          onChange={(e) => setFormSabadoAtivo(e.target.checked)}
-                          className="w-4 h-4 rounded text-sky-600 bg-slate-900 border-slate-700 focus:ring-sky-500"
-                        />
-                        <span>Este colaborador trabalha aos sábados habitualmente</span>
-                      </label>
-
-                      {formSabadoAtivo && (
-                        <span className="text-[11px] text-indigo-300 font-mono bg-indigo-950/60 border border-indigo-500/30 px-2 py-0.5 rounded">
-                          Sábado: Banco de Horas (1:1 exato)
-                        </span>
-                      )}
-                    </div>
-
-                    {formSabadoAtivo && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-slate-900/60 p-3 rounded-xl border border-slate-800">
+                  ) : (
+                    <>
+                      {/* Grade de Segunda a Sexta */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                         <div>
-                          <label className="block text-slate-300 font-semibold mb-1">Horário Entrada Sábado</label>
+                          <label className="block text-slate-300 font-semibold mb-1">Entrada Manhã</label>
                           <input
                             type="time"
-                            value={formSabadoEntrada}
-                            onChange={(e) => setFormSabadoEntrada(e.target.value)}
-                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono text-center focus:outline-none focus:border-sky-500"
+                            value={formEntrada}
+                            onChange={(e) => setFormEntrada(e.target.value)}
+                            required
+                            className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono text-center focus:outline-none focus:border-sky-500"
                           />
+                          <span className="text-[10px] text-slate-500 block mt-0.5 text-center">Início do dia</span>
                         </div>
+
                         <div>
-                          <label className="block text-slate-300 font-semibold mb-1">Horário Saída Sábado</label>
+                          <label className="block text-slate-300 font-semibold mb-1">Saída Almoço</label>
                           <input
                             type="time"
-                            value={formSabadoSaida}
-                            onChange={(e) => setFormSabadoSaida(e.target.value)}
-                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono text-center focus:outline-none focus:border-sky-500"
+                            value={formAlmocoSaida}
+                            onChange={(e) => setFormAlmocoSaida(e.target.value)}
+                            required
+                            className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono text-center focus:outline-none focus:border-sky-500"
                           />
+                          <span className="text-[10px] text-slate-500 block mt-0.5 text-center">Início do intervalo</span>
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-300 font-semibold mb-1">Retorno Almoço</label>
+                          <input
+                            type="time"
+                            value={formAlmocoRetorno}
+                            onChange={(e) => setFormAlmocoRetorno(e.target.value)}
+                            required
+                            className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono text-center focus:outline-none focus:border-sky-500"
+                          />
+                          <span className="text-[10px] text-slate-500 block mt-0.5 text-center">Fim do intervalo</span>
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-300 font-semibold mb-1">Saída Tarde / Fim</label>
+                          <input
+                            type="time"
+                            value={formSaida}
+                            onChange={(e) => setFormSaida(e.target.value)}
+                            required
+                            className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono text-center focus:outline-none focus:border-sky-500"
+                          />
+                          <span className="text-[10px] text-slate-500 block mt-0.5 text-center">Término da jornada</span>
                         </div>
                       </div>
-                    )}
-                  </div>
+
+                      {/* Alerta inteligente se o almoço for menor que 1h */}
+                      {calcularDuracaoMinutos(formAlmocoSaida, formAlmocoRetorno) < 60 && (
+                        <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-500/30 text-amber-300 text-xs flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                          <span>
+                            <strong>Aviso do Critério A&C:</strong> O intervalo configurado é de{" "}
+                            {minutosParaTextoExtenso(calcularDuracaoMinutos(formAlmocoSaida, formAlmocoRetorno), false)}. A empresa determina que qualquer almoço inferior a 1 hora terá a diferença suprimida paga como <strong>Hora Extra com 50%</strong>.
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Configuração de Sábado */}
+                      <div className="pt-3 border-t border-slate-800/80 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <label className="flex items-center gap-2.5 cursor-pointer text-xs font-semibold text-slate-200">
+                            <input
+                              type="checkbox"
+                              checked={formSabadoAtivo}
+                              onChange={(e) => setFormSabadoAtivo(e.target.checked)}
+                              className="w-4 h-4 rounded text-sky-600 bg-slate-900 border-slate-700 focus:ring-sky-500"
+                            />
+                            <span>Este colaborador trabalha aos sábados habitualmente</span>
+                          </label>
+
+                          {formSabadoAtivo && (
+                            <span className="text-[11px] text-indigo-300 font-mono bg-indigo-950/60 border border-indigo-500/30 px-2 py-0.5 rounded">
+                              Sábado: 2h no Banco (1:1) + Excedente HE 50%
+                            </span>
+                          )}
+                        </div>
+
+                        {formSabadoAtivo && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-slate-900/60 p-3 rounded-xl border border-slate-800">
+                            <div>
+                              <label className="block text-slate-300 font-semibold mb-1">Horário Entrada Sábado</label>
+                              <input
+                                type="time"
+                                value={formSabadoEntrada}
+                                onChange={(e) => setFormSabadoEntrada(e.target.value)}
+                                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono text-center focus:outline-none focus:border-sky-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-slate-300 font-semibold mb-1">Horário Saída Sábado</label>
+                              <input
+                                type="time"
+                                value={formSabadoSaida}
+                                onChange={(e) => setFormSabadoSaida(e.target.value)}
+                                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono text-center focus:outline-none focus:border-sky-500"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 {/* Botões do Formulário */}
@@ -4614,7 +5007,7 @@ export default function App() {
                                   <>
                                     <span className="text-amber-300 font-bold block">{h.sabadoEntrada || "08:00"} às {h.sabadoSaida || "12:00"}</span>
                                     <span className="text-[10px] text-indigo-300 block mt-1 font-sans">
-                                      Crédito no Banco (1:1 exato)
+                                      Até 2h no Banco (1:1) + HE 50%
                                     </span>
                                   </>
                                 ) : (
@@ -4993,118 +5386,234 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Bloco 2: Horários Nominais (Segunda a Sexta) */}
-                  <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
-                        <Clock className="w-4 h-4 text-emerald-400" />
-                        Horários Nominais (Dias Úteis)
-                      </span>
-                      {(() => {
-                        const durManha = calcularDuracaoMinutos(formEscalaEntrada, formEscalaAlmocoSaida);
-                        const durAlmoco = calcularDuracaoMinutos(formEscalaAlmocoSaida, formEscalaAlmocoRetorno);
-                        const durTarde = calcularDuracaoMinutos(formEscalaAlmocoRetorno, formEscalaSaida);
-                        const total = durManha + durTarde;
+                  {/* Toggle: Diferenciar por dia da semana */}
+                  <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800">
+                    <label className="flex items-center gap-2.5 cursor-pointer text-xs font-semibold text-slate-200">
+                      <input
+                        type="checkbox"
+                        checked={formEscalaDiferenciarPorDia}
+                        onChange={(e) => setFormEscalaDiferenciarPorDia(e.target.checked)}
+                        className="w-4 h-4 rounded text-emerald-600 bg-slate-900 border-slate-700 focus:ring-emerald-500"
+                      />
+                      <span className="text-emerald-400 font-bold">Definir horários diferentes para cada dia da semana (Segunda a Domingo)</span>
+                    </label>
+                  </div>
+
+                  {formEscalaDiferenciarPorDia ? (
+                    <div className="space-y-3">
+                      {DIAS_SEMANA_ORDEM.map((d) => {
+                        const diaCfg = formEscalaDiasSemanaConfig[d.chave] || { ativo: true, entrada: "08:00", almocoSaida: "12:00", almocoRetorno: "13:00", saida: "17:00" };
                         return (
-                          <div className="flex items-center gap-2">
-                            <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/30 text-emerald-300 font-mono text-[11px] font-bold">
-                              Jornada: {minutosParaTextoExtenso(total, false)}/dia
-                            </span>
-                            <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400 font-mono text-[11px]">
-                              Almoço: {durAlmoco}m
-                            </span>
+                          <div key={d.chave} className={`p-3 rounded-2xl border transition-all ${diaCfg.ativo ? "bg-slate-950 border-slate-800" : "bg-slate-950/40 border-slate-900 opacity-60"}`}>
+                            <div className="flex items-center justify-between mb-2">
+                              <label className="flex items-center gap-2 cursor-pointer font-bold text-white text-xs">
+                                <input
+                                  type="checkbox"
+                                  checked={diaCfg.ativo}
+                                  onChange={(e) => {
+                                    const ativo = e.target.checked;
+                                    setFormEscalaDiasSemanaConfig(prev => ({
+                                      ...prev,
+                                      [d.chave]: { ...diaCfg, ativo }
+                                    }));
+                                  }}
+                                  className="w-4 h-4 rounded text-emerald-600 bg-slate-900 border-slate-700"
+                                />
+                                <span>{d.rotulo}</span>
+                              </label>
+                              {diaCfg.ativo ? (
+                                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-500/30 font-bold">
+                                  Jornada: {minutosParaTextoExtenso(calcularDuracaoMinutos(diaCfg.entrada, diaCfg.almocoSaida) + calcularDuracaoMinutos(diaCfg.almocoRetorno, diaCfg.saida), false)}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-slate-500 italic">Folga / Descanso</span>
+                              )}
+                            </div>
+
+                            {diaCfg.ativo && (
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs pt-1">
+                                <div>
+                                  <label className="block text-[10px] text-slate-400 mb-1">Entrada</label>
+                                  <input
+                                    type="time"
+                                    value={diaCfg.entrada}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setFormEscalaDiasSemanaConfig(prev => ({
+                                        ...prev,
+                                        [d.chave]: { ...diaCfg, entrada: val }
+                                      }));
+                                    }}
+                                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2 py-1 text-white font-mono text-center focus:outline-none focus:border-emerald-500 text-xs"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] text-slate-400 mb-1">Saída Almoço</label>
+                                  <input
+                                    type="time"
+                                    value={diaCfg.almocoSaida}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setFormEscalaDiasSemanaConfig(prev => ({
+                                        ...prev,
+                                        [d.chave]: { ...diaCfg, almocoSaida: val }
+                                      }));
+                                    }}
+                                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2 py-1 text-white font-mono text-center focus:outline-none focus:border-emerald-500 text-xs"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] text-slate-400 mb-1">Retorno Almoço</label>
+                                  <input
+                                    type="time"
+                                    value={diaCfg.almocoRetorno}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setFormEscalaDiasSemanaConfig(prev => ({
+                                        ...prev,
+                                        [d.chave]: { ...diaCfg, almocoRetorno: val }
+                                      }));
+                                    }}
+                                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2 py-1 text-white font-mono text-center focus:outline-none focus:border-emerald-500 text-xs"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] text-slate-400 mb-1">Saída Tarde</label>
+                                  <input
+                                    type="time"
+                                    value={diaCfg.saida}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setFormEscalaDiasSemanaConfig(prev => ({
+                                        ...prev,
+                                        [d.chave]: { ...diaCfg, saida: val }
+                                      }));
+                                    }}
+                                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2 py-1 text-white font-mono text-center focus:outline-none focus:border-emerald-500 text-xs"
+                                  />
+                                </div>
+                              </div>
+                            )}
                           </div>
                         );
-                      })()}
+                      })}
                     </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      <div>
-                        <label className="block text-slate-400 font-medium mb-1">Entrada Manhã</label>
-                        <input
-                          type="time"
-                          value={formEscalaEntrada}
-                          onChange={(e) => setFormEscalaEntrada(e.target.value)}
-                          required
-                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 text-white font-mono text-center focus:outline-none focus:border-emerald-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-slate-400 font-medium mb-1">Saída Almoço</label>
-                        <input
-                          type="time"
-                          value={formEscalaAlmocoSaida}
-                          onChange={(e) => setFormEscalaAlmocoSaida(e.target.value)}
-                          required
-                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 text-white font-mono text-center focus:outline-none focus:border-emerald-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-slate-400 font-medium mb-1">Retorno Almoço</label>
-                        <input
-                          type="time"
-                          value={formEscalaAlmocoRetorno}
-                          onChange={(e) => setFormEscalaAlmocoRetorno(e.target.value)}
-                          required
-                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 text-white font-mono text-center focus:outline-none focus:border-emerald-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-slate-400 font-medium mb-1">Saída Tarde</label>
-                        <input
-                          type="time"
-                          value={formEscalaSaida}
-                          onChange={(e) => setFormEscalaSaida(e.target.value)}
-                          required
-                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 text-white font-mono text-center focus:outline-none focus:border-emerald-500"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Bloco 3: Horários de Sábado */}
-                  <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-200">
-                        <input
-                          type="checkbox"
-                          checked={formEscalaSabadoAtivo}
-                          onChange={(e) => setFormEscalaSabadoAtivo(e.target.checked)}
-                          className="w-4 h-4 rounded text-emerald-600 bg-slate-900 border-slate-700 focus:ring-emerald-500"
-                        />
-                        <span>Trabalho habitual aos Sábados</span>
-                      </label>
-
-                      {formEscalaSabadoAtivo && (
-                        <span className="text-[11px] text-amber-300 font-mono bg-amber-950/60 border border-amber-500/30 px-2 py-0.5 rounded">
-                          Sábado Ativo
-                        </span>
-                      )}
-                    </div>
-
-                    {formEscalaSabadoAtivo && (
-                      <div className="grid grid-cols-2 gap-3 pt-2">
-                        <div>
-                          <label className="block text-slate-400 font-medium mb-1">Entrada Sábado</label>
-                          <input
-                            type="time"
-                            value={formEscalaSabadoEntrada}
-                            onChange={(e) => setFormEscalaSabadoEntrada(e.target.value)}
-                            className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-white font-mono text-center focus:outline-none focus:border-emerald-500"
-                          />
+                  ) : (
+                    <>
+                      {/* Bloco 2: Horários Nominais (Dias Úteis) */}
+                      <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                            <Clock className="w-4 h-4 text-emerald-400" />
+                            Horários Nominais (Dias Úteis)
+                          </span>
+                          {(() => {
+                            const durManha = calcularDuracaoMinutos(formEscalaEntrada, formEscalaAlmocoSaida);
+                            const durAlmoco = calcularDuracaoMinutos(formEscalaAlmocoSaida, formEscalaAlmocoRetorno);
+                            const durTarde = calcularDuracaoMinutos(formEscalaAlmocoRetorno, formEscalaSaida);
+                            const total = durManha + durTarde;
+                            return (
+                              <div className="flex items-center gap-2">
+                                <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/30 text-emerald-300 font-mono text-[11px] font-bold">
+                                  Jornada: {minutosParaTextoExtenso(total, false)}/dia
+                                </span>
+                                <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400 font-mono text-[11px]">
+                                  Almoço: {durAlmoco}m
+                                </span>
+                              </div>
+                            );
+                          })()}
                         </div>
-                        <div>
-                          <label className="block text-slate-400 font-medium mb-1">Saída Sábado</label>
-                          <input
-                            type="time"
-                            value={formEscalaSabadoSaida}
-                            onChange={(e) => setFormEscalaSabadoSaida(e.target.value)}
-                            className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-white font-mono text-center focus:outline-none focus:border-emerald-500"
-                          />
+
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                          <div>
+                            <label className="block text-slate-400 font-medium mb-1">Entrada Manhã</label>
+                            <input
+                              type="time"
+                              value={formEscalaEntrada}
+                              onChange={(e) => setFormEscalaEntrada(e.target.value)}
+                              required
+                              className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 text-white font-mono text-center focus:outline-none focus:border-emerald-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-slate-400 font-medium mb-1">Saída Almoço</label>
+                            <input
+                              type="time"
+                              value={formEscalaAlmocoSaida}
+                              onChange={(e) => setFormEscalaAlmocoSaida(e.target.value)}
+                              required
+                              className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 text-white font-mono text-center focus:outline-none focus:border-emerald-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-slate-400 font-medium mb-1">Retorno Almoço</label>
+                            <input
+                              type="time"
+                              value={formEscalaAlmocoRetorno}
+                              onChange={(e) => setFormEscalaAlmocoRetorno(e.target.value)}
+                              required
+                              className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 text-white font-mono text-center focus:outline-none focus:border-emerald-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-slate-400 font-medium mb-1">Saída Tarde</label>
+                            <input
+                              type="time"
+                              value={formEscalaSaida}
+                              onChange={(e) => setFormEscalaSaida(e.target.value)}
+                              required
+                              className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 text-white font-mono text-center focus:outline-none focus:border-emerald-500"
+                            />
+                          </div>
                         </div>
                       </div>
-                    )}
-                  </div>
+
+                      {/* Bloco 3: Horários de Sábado */}
+                      <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-200">
+                            <input
+                              type="checkbox"
+                              checked={formEscalaSabadoAtivo}
+                              onChange={(e) => setFormEscalaSabadoAtivo(e.target.checked)}
+                              className="w-4 h-4 rounded text-emerald-600 bg-slate-900 border-slate-700 focus:ring-emerald-500"
+                            />
+                            <span>Trabalho habitual aos Sábados</span>
+                          </label>
+
+                          {formEscalaSabadoAtivo && (
+                            <span className="text-[11px] text-amber-300 font-mono bg-amber-950/60 border border-amber-500/30 px-2 py-0.5 rounded">
+                              Sábado Ativo
+                            </span>
+                          )}
+                        </div>
+
+                        {formEscalaSabadoAtivo && (
+                          <div className="grid grid-cols-2 gap-3 pt-2">
+                            <div>
+                              <label className="block text-slate-400 font-medium mb-1">Entrada Sábado</label>
+                              <input
+                                type="time"
+                                value={formEscalaSabadoEntrada}
+                                onChange={(e) => setFormEscalaSabadoEntrada(e.target.value)}
+                                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-white font-mono text-center focus:outline-none focus:border-emerald-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-slate-400 font-medium mb-1">Saída Sábado</label>
+                              <input
+                                type="time"
+                                value={formEscalaSabadoSaida}
+                                onChange={(e) => setFormEscalaSabadoSaida(e.target.value)}
+                                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-white font-mono text-center focus:outline-none focus:border-emerald-500"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
 
                   {/* Opção de atualizar colaboradores vinculados */}
                   {escalaEditando && (

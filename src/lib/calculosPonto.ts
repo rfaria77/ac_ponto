@@ -21,6 +21,28 @@ export interface BatidaDia {
   minutosNoturnos?: number;
 }
 
+export type DiasSemanaChave = "Seg" | "Ter" | "Qua" | "Qui" | "Sex" | "Sáb" | "Dom";
+
+export interface HorarioDiaSemana {
+  ativo: boolean; // se trabalha neste dia ou é folga/DSR
+  entrada: string;
+  almocoSaida: string;
+  almocoRetorno: string;
+  saida: string;
+}
+
+export interface HorarioTrabalhoColab {
+  entrada: string; // Ex: "08:00"
+  almocoSaida: string; // Ex: "12:00"
+  almocoRetorno: string; // Ex: "13:00"
+  saida: string; // Ex: "17:00"
+  sabadoAtivo?: boolean;
+  sabadoEntrada?: string;
+  sabadoSaida?: string;
+  diferenciarPorDia?: boolean; // Se true, utiliza a grade diária abaixo
+  diasSemanaConfig?: Partial<Record<DiasSemanaChave, HorarioDiaSemana>>;
+}
+
 export interface FeriadoFixo {
   id: string;
   dia: number; // 1 a 31
@@ -45,6 +67,8 @@ export interface CriteriosApuracao {
   limiteDiarioBancoMinutos: number; // 120 min (2h)
   fatorBancoHoras: number; // 1.0 (exato, sem acréscimo)
   sabadoNoBanco: boolean; // true
+  limiteSabadoBancoMinutos: number; // 120 min (2 horas mantidas no banco de horas)
+  percentualHESabadoExcedente: number; // 50% (demais horas pagas com acréscimo de 50%)
   minimoIntervaloAlmocoMinutos: number; // 60 min (1h)
   percentualAlmocoSuprimido: number; // 50%
   percentualHEAcima2h: number; // 50%
@@ -59,6 +83,8 @@ export const CRITERIOS_PADRAO: CriteriosApuracao = {
   limiteDiarioBancoMinutos: 120, // 2 horas
   fatorBancoHoras: 1.0, // exato 1:1
   sabadoNoBanco: true,
+  limiteSabadoBancoMinutos: 120, // 2 horas para o banco de horas
+  percentualHESabadoExcedente: 50, // demais horas extras no sábado pagas a +50%
   minimoIntervaloAlmocoMinutos: 60, // 1 hora
   percentualAlmocoSuprimido: 50,
   percentualHEAcima2h: 50,
@@ -186,15 +212,7 @@ export function calcularFechamentoMensal(
     salarioBase?: number;
     saldoAnteriorBancoMinutos?: number;
     jornadaDiariaMinutos?: number;
-    horarioNominal?: {
-      entrada: string;
-      almocoSaida: string;
-      almocoRetorno: string;
-      saida: string;
-      sabadoAtivo?: boolean;
-      sabadoEntrada?: string;
-      sabadoSaida?: string;
-    };
+    horarioNominal?: HorarioTrabalhoColab;
   }
 ): ResumoMensalFechamento {
   let totalTrabalhadas = 0;
@@ -250,15 +268,31 @@ export function calcularFechamentoMensal(
 
     // 5. Determinar jornada nominal do dia (Feriados têm jornada nominal = 0)
     let jornadaNominal = 0;
-    if (d.diaSemana !== "Sáb" && d.diaSemana !== "Dom" && !d.ehFeriado && !ehFolgaOuDSR && !ehAtestado) {
-      if (dadosGerais.jornadaDiariaMinutos) {
-        jornadaNominal = dadosGerais.jornadaDiariaMinutos;
-      } else if (dadosGerais.horarioNominal?.entrada && dadosGerais.horarioNominal?.saida) {
-        const manha = calcularDuracaoMinutos(dadosGerais.horarioNominal.entrada, dadosGerais.horarioNominal.almocoSaida || "12:00");
-        const tarde = calcularDuracaoMinutos(dadosGerais.horarioNominal.almocoRetorno || "13:00", dadosGerais.horarioNominal.saida);
-        jornadaNominal = manha + tarde;
-      } else {
-        jornadaNominal = criterios.jornadaPadraoMinutos; // Ex: 480 min (8h)
+    const cfgDia = dadosGerais.horarioNominal?.diferenciarPorDia
+      ? dadosGerais.horarioNominal.diasSemanaConfig?.[d.diaSemana]
+      : null;
+
+    if (!d.ehFeriado && !ehAtestado) {
+      if (cfgDia) {
+        if (cfgDia.ativo) {
+          const manha = calcularDuracaoMinutos(cfgDia.entrada, cfgDia.almocoSaida || cfgDia.saida);
+          const tarde = (cfgDia.almocoRetorno && cfgDia.saida && cfgDia.almocoSaida !== cfgDia.saida)
+            ? calcularDuracaoMinutos(cfgDia.almocoRetorno, cfgDia.saida)
+            : 0;
+          jornadaNominal = manha + tarde;
+        } else {
+          jornadaNominal = 0;
+        }
+      } else if (d.diaSemana !== "Sáb" && d.diaSemana !== "Dom" && !ehFolgaOuDSR) {
+        if (dadosGerais.jornadaDiariaMinutos) {
+          jornadaNominal = dadosGerais.jornadaDiariaMinutos;
+        } else if (dadosGerais.horarioNominal?.entrada && dadosGerais.horarioNominal?.saida) {
+          const manha = calcularDuracaoMinutos(dadosGerais.horarioNominal.entrada, dadosGerais.horarioNominal.almocoSaida || "12:00");
+          const tarde = calcularDuracaoMinutos(dadosGerais.horarioNominal.almocoRetorno || "13:00", dadosGerais.horarioNominal.saida);
+          jornadaNominal = manha + tarde;
+        } else {
+          jornadaNominal = criterios.jornadaPadraoMinutos; // Ex: 480 min (8h)
+        }
       }
     }
     d.minutosJornadaNominal = jornadaNominal;
@@ -295,11 +329,16 @@ export function calcularFechamentoMensal(
         }
       }
     }
-    // CRITÉRIO: Sábado entra como banco de horas (1:1 exato)
-    // "Sábado entra como banco de horas" / "horário do banco tem que ser exato, não pode ser acrescido de nada"
+    // CRITÉRIO: Sábado com até 2h para o Banco de Horas (1:1) e as demais para pagamento com 50% de acréscimo
+    // "altere o critério de sábado e mantenha 2 horas para banco e as demais para pagamento com 50% de acrescimo"
     else if (d.diaSemana === "Sáb") {
       if (tempoTrabalhado > 0) {
-        bancoCredito += tempoTrabalhado;
+        const limiteSabado = criterios.limiteSabadoBancoMinutos !== undefined ? criterios.limiteSabadoBancoMinutos : 120;
+        const paraBanco = Math.min(tempoTrabalhado, limiteSabado);
+        const excedenteHE50 = Math.max(0, tempoTrabalhado - limiteSabado);
+
+        bancoCredito += paraBanco;
+        he50 += excedenteHE50;
       }
     }
     // CRITÉRIO: Segunda a Sexta (Dias Úteis Normais)
@@ -394,15 +433,7 @@ export function gerarDiasMes(
   ano: number,
   mes: number,
   feriadosFixos: FeriadoFixo[] = FERIADOS_FIXOS_PADRAO,
-  horarioPadrao?: {
-    entrada?: string;
-    almocoSaida?: string;
-    almocoRetorno?: string;
-    saida?: string;
-    sabadoAtivo?: boolean;
-    sabadoEntrada?: string;
-    sabadoSaida?: string;
-  }
+  horarioPadrao?: HorarioTrabalhoColab
 ): BatidaDia[] {
   const totalDias = new Date(ano, mes, 0).getDate();
   const nomesDias: ("Dom" | "Seg" | "Ter" | "Qua" | "Qui" | "Sex" | "Sáb")[] = [
@@ -428,6 +459,17 @@ export function gerarDiasMes(
 
     if (ehFeriado) {
       obs = `Feriado: ${feriado?.descricao}`;
+    } else if (horarioPadrao?.diferenciarPorDia && horarioPadrao.diasSemanaConfig?.[diaSemana]) {
+      const cfg = horarioPadrao.diasSemanaConfig[diaSemana]!;
+      if (!cfg.ativo) {
+        obs = ehDomingo ? "DSR" : "Folga";
+      } else {
+        ent1 = cfg.entrada || "";
+        sai1 = cfg.almocoSaida || "";
+        ent2 = cfg.almocoRetorno || "";
+        sai2 = cfg.saida || "";
+        obs = ehSabado ? "Sábado trabalhado (Banco 1:1)" : "Normal";
+      }
     } else if (ehDomingo) {
       obs = "DSR";
     } else if (ehSabado) {

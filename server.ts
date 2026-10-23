@@ -69,110 +69,7 @@ let colaboradores: Array<{
     lon: number;
     raio: number;
   };
-}> = [
-  {
-    id: "FUNC_001",
-    nome: "Thais Moreira de Souza",
-    cargo: "Assistente de coletas",
-    departamento: "Operações / Coletas",
-    salarioBase: 2450.0,
-    saldoAnteriorBancoMinutos: 270, // +04h 30m
-    dataInicioSaldo: "01/09/2026",
-    observacaoSaldo: "Saldo apurado em folha anterior",
-    escalaId: "ESC_001",
-    fotoCadastro: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400&auto=format&fit=crop&q=80",
-    horarioTrabalho: {
-      entrada: "08:00",
-      almocoSaida: "12:00",
-      almocoRetorno: "13:00",
-      saida: "17:00",
-      sabadoAtivo: false,
-    },
-    localPermitido: {
-      nome: sedeConfig.nome,
-      lat: sedeConfig.lat,
-      lon: sedeConfig.lon,
-      raio: sedeConfig.raioMaximoMetros,
-    },
-  },
-  {
-    id: "FUNC_002",
-    nome: "Marcos Vinicius Ferreira Mendes",
-    cargo: "Assistente de segurança do Trabalho",
-    departamento: "Segurança do Trabalho",
-    salarioBase: 2650.0,
-    saldoAnteriorBancoMinutos: -120, // -02h 00m
-    dataInicioSaldo: "01/09/2026",
-    observacaoSaldo: "Saldo devedor anterior",
-    escalaId: "ESC_002",
-    fotoCadastro: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80",
-    horarioTrabalho: {
-      entrada: "07:30",
-      almocoSaida: "11:30",
-      almocoRetorno: "12:30",
-      saida: "16:30",
-      sabadoAtivo: false,
-    },
-    localPermitido: {
-      nome: sedeConfig.nome,
-      lat: sedeConfig.lat,
-      lon: sedeConfig.lon,
-      raio: sedeConfig.raioMaximoMetros,
-    },
-  },
-  {
-    id: "FUNC_003",
-    nome: "Amanda Inácio Medeiros Silva",
-    cargo: "Assistente Administrativo",
-    departamento: "Administrativo",
-    salarioBase: 2300.0,
-    saldoAnteriorBancoMinutos: 0,
-    dataInicioSaldo: "01/09/2026",
-    observacaoSaldo: "Sem saldo inicial",
-    escalaId: "ESC_003",
-    fotoCadastro: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80",
-    horarioTrabalho: {
-      entrada: "08:30",
-      almocoSaida: "12:30",
-      almocoRetorno: "13:30",
-      saida: "17:30",
-      sabadoAtivo: false,
-    },
-    localPermitido: {
-      nome: sedeConfig.nome,
-      lat: sedeConfig.lat,
-      lon: sedeConfig.lon,
-      raio: sedeConfig.raioMaximoMetros,
-    },
-  },
-  {
-    id: "FUNC_004",
-    nome: "Denise Cristina Fernandes Costa Felip",
-    cargo: "Técnico em segurança do Trabalho JR",
-    departamento: "Segurança do Trabalho",
-    salarioBase: 3100.0,
-    saldoAnteriorBancoMinutos: 180, // +03h 00m
-    dataInicioSaldo: "01/09/2026",
-    observacaoSaldo: "Saldo positivo anterior",
-    escalaId: "ESC_004",
-    fotoCadastro: "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=400&auto=format&fit=crop&q=80",
-    horarioTrabalho: {
-      entrada: "08:00",
-      almocoSaida: "12:00",
-      almocoRetorno: "13:00",
-      saida: "17:00",
-      sabadoAtivo: true,
-      sabadoEntrada: "08:00",
-      sabadoSaida: "12:00",
-    },
-    localPermitido: {
-      nome: sedeConfig.nome,
-      lat: sedeConfig.lat,
-      lon: sedeConfig.lon,
-      raio: sedeConfig.raioMaximoMetros,
-    },
-  },
-];
+}> = [];
 
 let escalas: Array<{
   id: string;
@@ -311,21 +208,7 @@ let registrosPonto: Array<{
   ehFotoAoVivo: boolean;
   justificativa: string;
   selfieUrl: string;
-}> = [
-  {
-    id: "REG_101",
-    colaboradorId: "FUNC_001",
-    colaboradorNome: "Ana Beatriz Souza",
-    timestamp: new Date(Date.now() - 3600000 * 4).toISOString(),
-    tipo: "ENTRADA",
-    status: "AProvado",
-    distanciaMetros: 12.4,
-    confiancaBiometrica: 0.96,
-    ehFotoAoVivo: true,
-    justificativa: "Alta correspondência facial com traços anatômicos e teste de vivacidade positivo.",
-    selfieUrl: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400&auto=format&fit=crop&q=80",
-  },
-];
+}> = [];
 
 // API Routes
 app.get("/api/sede", (req, res) => {
@@ -683,41 +566,15 @@ interface FechamentoArmazenado {
   fechamento: ResumoMensalFechamento;
 }
 
-let fechamentosSalvos: FechamentoArmazenado[] = [
-  {
-    id: "FECH_001",
-    dataCriacao: "2026-10-01 10:30",
-    imagemUrl: "https://images.unsplash.com/photo-1586281380349-632531db7ed4?w=600&auto=format&fit=crop&q=80",
-    fechamento: (() => {
-      const diasMes = gerarDiasMes(2026, 9);
-      // Aplicar algumas batidas realistas de exemplo
-      diasMes[1].saida2 = "19:00"; // 2h extras no banco
-      diasMes[2].saida2 = "20:00"; // 3h extras: 2h no banco + 1h HE 50%
-      diasMes[3].saida1 = "12:00";
-      diasMes[3].entrada2 = "12:40"; // Almoço de 40min: 20min de supressão calculados a 50%
-      diasMes[4].saida2 = "16:30"; // Saída 30min antes: desconta 30min do banco de horas
-      diasMes[5].entrada1 = "08:00"; // Sábado trabalhado: 4h no banco (1:1)
-      diasMes[5].saida2 = "12:00";
-      diasMes[5].observacao = "Sábado trabalhado (Banco de horas 1:1)";
-      diasMes[6].entrada1 = "08:00"; // Domingo trabalhado sem folga compensatória: 4h a 100%
-      diasMes[6].saida2 = "12:00";
-      diasMes[6].observacao = "Domingo trabalhado sem folga";
-      diasMes[6].folgaCompensatoria = false;
-      diasMes[7].entrada1 = "04:30"; // Entrada 04:30: 30min de adicional noturno (antes das 05h)
-      diasMes[7].saida2 = "17:00";
-      diasMes[8].saida2 = "23:00"; // Saída 23:00: 1h de adicional noturno (após 22h)
+let fechamentosSalvos: FechamentoArmazenado[] = [];
 
-      return calcularFechamentoMensal(diasMes, CRITERIOS_PADRAO, {
-        colaboradorNome: "Thais Moreira de Souza",
-        colaboradorCargo: "Assistente de coletas",
-        colaboradorId: "FUNC_001",
-        mesAno: "09/2026",
-        salarioBase: 2450.0,
-        saldoAnteriorBancoMinutos: 270, // +04h 30m anterior
-      });
-    })(),
-  },
-];
+// Endpoint para zerar todos os dados pré-cadastrados (início do zero)
+app.post("/api/reset-dados", (req, res) => {
+  colaboradores = [];
+  registrosPonto = [];
+  fechamentosSalvos = [];
+  res.json({ success: true, message: "Todos os dados foram zerados com sucesso." });
+});
 
 app.get("/api/criterios", (req, res) => {
   res.json(criteriosArmazenados);
