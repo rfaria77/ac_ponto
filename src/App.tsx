@@ -287,6 +287,64 @@ export function normalizarColaborador(raw: any): Colaborador {
   };
 }
 
+export function normalizarEscala(raw: any): EscalaTrabalho {
+  const padraoHorario: HorarioTrabalhoColab = {
+    entrada: "08:00",
+    almocoSaida: "12:00",
+    almocoRetorno: "13:00",
+    saida: "17:00",
+    sabadoAtivo: false,
+    sabadoEntrada: "08:00",
+    sabadoSaida: "12:00",
+    diferenciarPorDia: false,
+  };
+
+  let hor: HorarioTrabalhoColab = padraoHorario;
+  if (raw?.horario && typeof raw.horario === "object") {
+    hor = {
+      entrada: raw.horario.entrada || "08:00",
+      almocoSaida: raw.horario.almocoSaida || "12:00",
+      almocoRetorno: raw.horario.almocoRetorno || "13:00",
+      saida: raw.horario.saida || "17:00",
+      sabadoAtivo: Boolean(raw.horario.sabadoAtivo),
+      sabadoEntrada: raw.horario.sabadoEntrada || "08:00",
+      sabadoSaida: raw.horario.sabadoSaida || "12:00",
+      diferenciarPorDia: Boolean(raw.horario.diferenciarPorDia),
+      diasSemanaConfig: raw.horario.diasSemanaConfig,
+    };
+  } else if (raw?.dias && typeof raw.dias === "object") {
+    const seg = raw.dias.segunda || raw.dias.Seg || {};
+    hor = {
+      entrada: seg.entrada || "08:00",
+      almocoSaida: seg.intervaloInicio || "12:00",
+      almocoRetorno: seg.intervaloFim || "13:00",
+      saida: seg.saida || "17:00",
+      sabadoAtivo: Boolean(raw.dias.sabado?.ativo),
+      sabadoEntrada: raw.dias.sabado?.entrada || "08:00",
+      sabadoSaida: raw.dias.sabado?.saida || "12:00",
+      diferenciarPorDia: true,
+    };
+  }
+
+  const nomeEscala = raw?.nome
+    ? raw.nome
+    : raw?.colaboradorId
+    ? `Escala ${raw.colaboradorId}`
+    : "Escala Padrão";
+
+  return {
+    id: raw?.id || `ESC_${Math.random().toString(36).substr(2, 6)}`,
+    nome: nomeEscala,
+    tipo: raw?.tipo || "5x2",
+    descricao: raw?.descricao || "Escala de trabalho contratual cadastrada",
+    diasSemana: raw?.diasSemana || "Segunda a Sexta",
+    cargaSemanalHoras: typeof raw?.cargaSemanalHoras === "number" ? raw.cargaSemanalHoras : 40,
+    toleranciaMinutos: typeof raw?.toleranciaMinutos === "number" ? raw.toleranciaMinutos : 10,
+    cor: raw?.cor || "sky",
+    horario: hor,
+  };
+}
+
 const COLABORADORES_INICIAIS: Colaborador[] = [];
 
 
@@ -369,10 +427,10 @@ export default function App() {
     if (salvo) {
       try {
         const parsed = JSON.parse(salvo);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed.map(normalizarEscala);
       } catch (e) {}
     }
-    return ESCALAS_INICIAIS;
+    return ESCALAS_INICIAIS.map(normalizarEscala);
   });
 
   // Sincronização em tempo real com Firestore (Sincroniza entre celulares e computadores)
@@ -394,13 +452,16 @@ export default function App() {
     const unsubEscalas = onSnapshot(collection(db, "escalas"), (snapshot) => {
       const lista: EscalaTrabalho[] = [];
       snapshot.forEach((docSnap) => {
-        lista.push(docSnap.data() as EscalaTrabalho);
+        const d = docSnap.data();
+        lista.push(normalizarEscala({ ...d, id: docSnap.id }));
       });
       if (lista.length > 0) {
         setEscalas(lista);
         localStorage.setItem("ac_gestor_escalas", JSON.stringify(lista));
       }
-    }, () => {});
+    }, (err) => {
+      console.warn("Firestore snapshot escalas error:", err);
+    });
 
     return () => {
       unsubColabs();
@@ -472,6 +533,7 @@ export default function App() {
   const [toast, setToast] = useState<{ tipo: "sucesso" | "erro" | "aviso"; titulo: string; msg: string } | null>(null);
 
   // Sub-visão dentro da aba Colaboradores
+  const colabPortalAtual = colaboradores.find((c) => c.id === portalColaboradorId) || colaboradores[0];
   const [subAbaColaborador, setSubAbaColaborador] = useState<"lista" | "novo">("lista");
   const [modalColaboradorAberta, setModalColaboradorAberta] = useState<boolean>(false);
   const [colaboradorEditando, setColaboradorEditando] = useState<Colaborador | null>(null);
@@ -575,8 +637,17 @@ export default function App() {
 
     monitorarTurno();
     const interval = setInterval(monitorarTurno, 30000); // Executa a cada 30 segundos
-    return () => clearInterval(interval);
   }, [userRole, portalColaboradorId, colaboradores]);
+
+  // Console log de monitoramento de rotas, estado de exibição e dados das views
+  useEffect(() => {
+    console.log(`[App Route Handler] UserRole: "${userRole}" | AbaAtiva: "${abaAtiva}"`, {
+      colaboradoresCount: colaboradores.length,
+      escalasCount: escalas.length,
+      fechamentosSalvosCount: fechamentosSalvos.length,
+      hasFechamentoAtual: Boolean(fechamentoAtual),
+    });
+  }, [userRole, abaAtiva, colaboradores, escalas, fechamentosSalvos, fechamentoAtual]);
 
 
   // Selecionar escala no formulário do colaborador e preencher horários automaticamente
@@ -2494,6 +2565,8 @@ export default function App() {
     );
   }
 
+  console.log("[App Main Return]", { userRole, abaAtiva, colabsCount: colaboradores.length, escalasCount: escalas.length, fechamentoAtual: fechamentoAtual?.colaboradorNome });
+
   return (
     <div className={`min-h-screen bg-slate-950 text-slate-100 flex ${userRole === "admin" ? "flex-col md:flex-row" : "flex-col"} font-sans selection:bg-sky-500 selection:text-white`}>
       {/* Toast de Notificação */}
@@ -3044,6 +3117,15 @@ export default function App() {
           const folgaColabs = statusColabsHoje.filter((c) => c.status === "folga");
           const ativosHojeCount = statusColabsHoje.filter((c) => c.ativoHoje).length;
           const taxaPresenca = ativosHojeCount > 0 ? Math.round(((emTurnoColabs.length + emAlmocoColabs.length + concluidosColabs.length) / ativosHojeCount) * 100) : 0;
+
+          console.log("[Route Dashboard]", {
+            totalColabs,
+            ativosHojeCount,
+            emTurnoCount: emTurnoColabs.length,
+            emAlmocoCount: emAlmocoColabs.length,
+            concluidosCount: concluidosColabs.length,
+            taxaPresenca,
+          });
 
           // Dados para o gráfico de fluxo de presença por hora (06h às 20h)
           const dadosFluxo = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map((h) => {
@@ -3617,8 +3699,7 @@ export default function App() {
                 )}
               </div>
             </div>
-          );
-        })()}
+        ); })()}
 
         {/* ================= ABA: PORTAL DE PONTO (FUNCIONÁRIOS) ================= */}
         {abaAtiva === "baterPonto" && (
@@ -3718,125 +3799,117 @@ export default function App() {
                 </div>
 
                 {/* Painel de Notificações Push & Alertas de Turno PWA */}
-                {(() => {
-                  const colabAtual = colaboradores.find((c) => c.id === portalColaboradorId) || colaboradores[0];
-                  if (!colabAtual) return null;
-                  return (
-                    <PainelNotificacoesTurno
-                      colaboradorId={colabAtual.id}
-                      colaboradorNome={colabAtual.nome}
-                      horarioTrabalho={colabAtual.horarioTrabalho}
-                      onNotificacaoEnviada={(tit, msg) => showToast("sucesso", tit, msg)}
-                    />
-                  );
-                })()}
+                {colabPortalAtual && (
+                  <PainelNotificacoesTurno
+                    colaboradorId={colabPortalAtual.id}
+                    colaboradorNome={colabPortalAtual.nome}
+                    horarioTrabalho={colabPortalAtual.horarioTrabalho}
+                    onNotificacaoEnviada={(tit, msg) => showToast("sucesso", tit, msg)}
+                  />
+                )}
 
                 {/* Painel de Ações de Batida */}
-                {(() => {
-                  const colabAtual = colaboradores.find((c) => c.id === portalColaboradorId) || colaboradores[0];
-                  if (!colabAtual) return null;
-                  return (
-                    <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
-                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
-                        <div>
-                          <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                            <Users className="w-5 h-5 text-sky-400" />
-                            Registrar Ponto para: <span className="text-sky-400">{colabAtual.nome}</span>
-                          </h3>
-                          <p className="text-xs text-slate-400 mt-0.5">
-                            Cargo: {colabAtual.cargo} | Horário Padrão: {colabAtual.horarioTrabalho?.entrada || "08:00"} às {colabAtual.horarioTrabalho?.saida || "17:00"}
-                          </p>
+                {colabPortalAtual && (
+                  <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
+                      <div>
+                        <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                          <Users className="w-5 h-5 text-sky-400" />
+                          Registrar Ponto para: <span className="text-sky-400">{colabPortalAtual.nome}</span>
+                        </h3>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          Cargo: {colabPortalAtual.cargo} | Horário Padrão: {colabPortalAtual.horarioTrabalho?.entrada || "08:00"} às {colabPortalAtual.horarioTrabalho?.saida || "17:00"}
+                        </p>
+                      </div>
+                      {portalSucessoModal && (
+                        <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 animate-pulse">
+                          <CheckCircle2 className="w-4 h-4" /> {portalSucessoModal.tipo.toUpperCase()} registrada às {portalSucessoModal.hora}!
                         </div>
-                    {portalSucessoModal && (
-                      <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 animate-pulse">
-                        <CheckCircle2 className="w-4 h-4" /> {portalSucessoModal.tipo.toUpperCase()} registrada às {portalSucessoModal.hora}!
-                      </div>
-                    )}
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <button
+                        onClick={() => handlePortalBaterPonto("entrada1")}
+                        className="group bg-gradient-to-b from-slate-950 to-slate-900 hover:from-sky-950/40 hover:to-slate-900 border border-slate-800 hover:border-sky-500/50 rounded-2xl p-6 text-center transition-all duration-300 shadow-lg hover:shadow-sky-500/10 flex flex-col items-center justify-center gap-3"
+                      >
+                        <div className="w-14 h-14 rounded-2xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 group-hover:scale-110 transition-transform shadow-inner">
+                          <Clock className="w-7 h-7" />
+                        </div>
+                        <div>
+                          <div className="text-xs text-slate-400 uppercase font-bold tracking-wider">1º Horário</div>
+                          <div className="text-xl font-extrabold text-white mt-0.5">Entrada 1</div>
+                        </div>
+                        <span className="px-3 py-1.5 rounded-xl bg-sky-600/20 text-sky-300 text-xs font-bold group-hover:bg-sky-600 group-hover:text-white transition-colors w-full">
+                          Bater Entrada Agora
+                        </span>
+                      </button>
+
+                      <button
+                        onClick={() => handlePortalBaterPonto("saida1")}
+                        className="group bg-gradient-to-b from-slate-950 to-slate-900 hover:from-amber-950/40 hover:to-slate-900 border border-slate-800 hover:border-amber-500/50 rounded-2xl p-6 text-center transition-all duration-300 shadow-lg hover:shadow-amber-500/10 flex flex-col items-center justify-center gap-3"
+                      >
+                        <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 group-hover:scale-110 transition-transform shadow-inner">
+                          <Clock className="w-7 h-7" />
+                        </div>
+                        <div>
+                          <div className="text-xs text-slate-400 uppercase font-bold tracking-wider">Almoço</div>
+                          <div className="text-xl font-extrabold text-white mt-0.5">Saída Almoço</div>
+                        </div>
+                        <span className="px-3 py-1.5 rounded-xl bg-amber-600/20 text-amber-300 text-xs font-bold group-hover:bg-amber-600 group-hover:text-white transition-colors w-full">
+                          Bater Saída Almoço
+                        </span>
+                      </button>
+
+                      <button
+                        onClick={() => handlePortalBaterPonto("entrada2")}
+                        className="group bg-gradient-to-b from-slate-950 to-slate-900 hover:from-emerald-950/40 hover:to-slate-900 border border-slate-800 hover:border-emerald-500/50 rounded-2xl p-6 text-center transition-all duration-300 shadow-lg hover:shadow-emerald-500/10 flex flex-col items-center justify-center gap-3"
+                      >
+                        <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform shadow-inner">
+                          <Clock className="w-7 h-7" />
+                        </div>
+                        <div>
+                          <div className="text-xs text-slate-400 uppercase font-bold tracking-wider">Retorno</div>
+                          <div className="text-xl font-extrabold text-white mt-0.5">Retorno Almoço</div>
+                        </div>
+                        <span className="px-3 py-1.5 rounded-xl bg-emerald-600/20 text-emerald-300 text-xs font-bold group-hover:bg-emerald-600 group-hover:text-white transition-colors w-full">
+                          Bater Retorno
+                        </span>
+                      </button>
+
+                      <button
+                        onClick={() => handlePortalBaterPonto("saida2")}
+                        className="group bg-gradient-to-b from-slate-950 to-slate-900 hover:from-purple-950/40 hover:to-slate-900 border border-slate-800 hover:border-purple-500/50 rounded-2xl p-6 text-center transition-all duration-300 shadow-lg hover:shadow-purple-500/10 flex flex-col items-center justify-center gap-3"
+                      >
+                        <div className="w-14 h-14 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 group-hover:scale-110 transition-transform shadow-inner">
+                          <Clock className="w-7 h-7" />
+                        </div>
+                        <div>
+                          <div className="text-xs text-slate-400 uppercase font-bold tracking-wider">Fim do Dia</div>
+                          <div className="text-xl font-extrabold text-white mt-0.5">Saída Expediente</div>
+                        </div>
+                        <span className="px-3 py-1.5 rounded-xl bg-purple-600/20 text-purple-300 text-xs font-bold group-hover:bg-purple-600 group-hover:text-white transition-colors w-full">
+                          Bater Saída
+                        </span>
+                      </button>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-slate-800">
+                      <p className="text-xs text-slate-400">
+                        Após registrar os pontos, acesse o <strong>Espelho & Fechamento</strong> para calcular o saldo de banco de horas e horas extras do mês.
+                      </p>
+                      <button
+                        onClick={() => {
+                          setColaboradorSelecionadoId(colabPortalAtual.id);
+                          setAbaAtiva("fechamento");
+                        }}
+                        className="px-5 py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-sky-600/30 flex items-center gap-2 transition-all"
+                      >
+                        Ver Fechamento & Espelho <ArrowRight className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <button
-                      onClick={() => handlePortalBaterPonto("entrada1")}
-                      className="group bg-gradient-to-b from-slate-950 to-slate-900 hover:from-sky-950/40 hover:to-slate-900 border border-slate-800 hover:border-sky-500/50 rounded-2xl p-6 text-center transition-all duration-300 shadow-lg hover:shadow-sky-500/10 flex flex-col items-center justify-center gap-3"
-                    >
-                      <div className="w-14 h-14 rounded-2xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 group-hover:scale-110 transition-transform shadow-inner">
-                        <Clock className="w-7 h-7" />
-                      </div>
-                      <div>
-                        <div className="text-xs text-slate-400 uppercase font-bold tracking-wider">1º Horário</div>
-                        <div className="text-xl font-extrabold text-white mt-0.5">Entrada 1</div>
-                      </div>
-                      <span className="px-3 py-1.5 rounded-xl bg-sky-600/20 text-sky-300 text-xs font-bold group-hover:bg-sky-600 group-hover:text-white transition-colors w-full">
-                        Bater Entrada Agora
-                      </span>
-                    </button>
-
-                    <button
-                      onClick={() => handlePortalBaterPonto("saida1")}
-                      className="group bg-gradient-to-b from-slate-950 to-slate-900 hover:from-amber-950/40 hover:to-slate-900 border border-slate-800 hover:border-amber-500/50 rounded-2xl p-6 text-center transition-all duration-300 shadow-lg hover:shadow-amber-500/10 flex flex-col items-center justify-center gap-3"
-                    >
-                      <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 group-hover:scale-110 transition-transform shadow-inner">
-                        <Clock className="w-7 h-7" />
-                      </div>
-                      <div>
-                        <div className="text-xs text-slate-400 uppercase font-bold tracking-wider">Almoço</div>
-                        <div className="text-xl font-extrabold text-white mt-0.5">Saída Almoço</div>
-                      </div>
-                      <span className="px-3 py-1.5 rounded-xl bg-amber-600/20 text-amber-300 text-xs font-bold group-hover:bg-amber-600 group-hover:text-white transition-colors w-full">
-                        Bater Saída Almoço
-                      </span>
-                    </button>
-
-                    <button
-                      onClick={() => handlePortalBaterPonto("entrada2")}
-                      className="group bg-gradient-to-b from-slate-950 to-slate-900 hover:from-emerald-950/40 hover:to-slate-900 border border-slate-800 hover:border-emerald-500/50 rounded-2xl p-6 text-center transition-all duration-300 shadow-lg hover:shadow-emerald-500/10 flex flex-col items-center justify-center gap-3"
-                    >
-                      <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform shadow-inner">
-                        <Clock className="w-7 h-7" />
-                      </div>
-                      <div>
-                        <div className="text-xs text-slate-400 uppercase font-bold tracking-wider">Retorno</div>
-                        <div className="text-xl font-extrabold text-white mt-0.5">Retorno Almoço</div>
-                      </div>
-                      <span className="px-3 py-1.5 rounded-xl bg-emerald-600/20 text-emerald-300 text-xs font-bold group-hover:bg-emerald-600 group-hover:text-white transition-colors w-full">
-                        Bater Retorno
-                      </span>
-                    </button>
-
-                    <button
-                      onClick={() => handlePortalBaterPonto("saida2")}
-                      className="group bg-gradient-to-b from-slate-950 to-slate-900 hover:from-purple-950/40 hover:to-slate-900 border border-slate-800 hover:border-purple-500/50 rounded-2xl p-6 text-center transition-all duration-300 shadow-lg hover:shadow-purple-500/10 flex flex-col items-center justify-center gap-3"
-                    >
-                      <div className="w-14 h-14 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 group-hover:scale-110 transition-transform shadow-inner">
-                        <Clock className="w-7 h-7" />
-                      </div>
-                      <div>
-                        <div className="text-xs text-slate-400 uppercase font-bold tracking-wider">Fim do Dia</div>
-                        <div className="text-xl font-extrabold text-white mt-0.5">Saída Expediente</div>
-                      </div>
-                      <span className="px-3 py-1.5 rounded-xl bg-purple-600/20 text-purple-300 text-xs font-bold group-hover:bg-purple-600 group-hover:text-white transition-colors w-full">
-                        Bater Saída
-                      </span>
-                    </button>
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-slate-800">
-                    <p className="text-xs text-slate-400">
-                      Após registrar os pontos, acesse o <strong>Espelho & Fechamento</strong> para calcular o saldo de banco de horas e horas extras do mês.
-                    </p>
-                    <button
-                      onClick={() => {
-                        setColaboradorSelecionadoId(colabAtual.id);
-                        setAbaAtiva("fechamento");
-                      }}
-                      className="px-5 py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-sky-600/30 flex items-center gap-2 transition-all"
-                    >
-                      Ver Fechamento & Espelho <ArrowRight className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })()}
+                )}
               </>
             )}
           </div>
@@ -3931,7 +4004,7 @@ export default function App() {
               </div>
             )}
           </div>
-        )}
+        )()}
 
         {/* ================= ABA 1: DIGITALIZAR FOLHA ================= */}
         {abaAtiva === "digitalizar" && (
