@@ -53,6 +53,8 @@ import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Toolti
 import { Logo } from "./components/Logo";
 import { PWAInstallModal } from "./components/PWAInstallModal";
 import { usePWAInstall } from "./hooks/usePWAInstall";
+import { db } from "./lib/firebaseClient";
+import { collection, doc, setDoc, deleteDoc, onSnapshot } from "firebase/firestore";
 import {
   BatidaDia,
   CriteriosApuracao,
@@ -287,6 +289,36 @@ export default function App() {
     }
     return ESCALAS_INICIAIS;
   });
+
+  // Sincronização em tempo real com Firestore (Sincroniza entre celulares e computadores)
+  useEffect(() => {
+    const unsubColabs = onSnapshot(collection(db, "colaboradores"), (snapshot) => {
+      const lista: Colaborador[] = [];
+      snapshot.forEach((docSnap) => {
+        lista.push(docSnap.data() as Colaborador);
+      });
+      if (lista.length > 0) {
+        setColaboradores(lista);
+        localStorage.setItem("ac_gestor_colaboradores", JSON.stringify(lista));
+      }
+    }, () => {});
+
+    const unsubEscalas = onSnapshot(collection(db, "escalas"), (snapshot) => {
+      const lista: EscalaTrabalho[] = [];
+      snapshot.forEach((docSnap) => {
+        lista.push(docSnap.data() as EscalaTrabalho);
+      });
+      if (lista.length > 0) {
+        setEscalas(lista);
+        localStorage.setItem("ac_gestor_escalas", JSON.stringify(lista));
+      }
+    }, () => {});
+
+    return () => {
+      unsubColabs();
+      unsubEscalas();
+    };
+  }, []);
   const [filtroEscalas, setFiltroEscalas] = useState<string>("");
   const [filtroTipoEscala, setFiltroTipoEscala] = useState<string>("todas");
   const [modalEscalaAberta, setModalEscalaAberta] = useState<boolean>(false);
@@ -569,6 +601,9 @@ export default function App() {
 
       setEscalas(atualizadas);
       localStorage.setItem("ac_gestor_escalas", JSON.stringify(atualizadas));
+      atualizadas.forEach((esc) => {
+        setDoc(doc(db, "escalas", esc.id), esc).catch(() => {});
+      });
 
       fetch(`/api/escalas/${escalaEditando.id}`, {
         method: "PUT",
@@ -600,6 +635,7 @@ export default function App() {
 
         colabsAtualizados.forEach((c) => {
           if (c.escalaId === escalaEditando.id) {
+            setDoc(doc(db, "colaboradores", c.id), c).catch(() => {});
             fetch(`/api/colaboradores/${c.id}`, {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
@@ -626,6 +662,7 @@ export default function App() {
       const lista = [...escalas, nova];
       setEscalas(lista);
       localStorage.setItem("ac_gestor_escalas", JSON.stringify(lista));
+      setDoc(doc(db, "escalas", nova.id), nova).catch(() => {});
 
       fetch("/api/escalas", {
         method: "POST",
@@ -649,6 +686,7 @@ export default function App() {
     const lista = [...escalas, duplicada];
     setEscalas(lista);
     localStorage.setItem("ac_gestor_escalas", JSON.stringify(lista));
+    setDoc(doc(db, "escalas", duplicada.id), duplicada).catch(() => {});
     fetch("/api/escalas", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -672,6 +710,7 @@ export default function App() {
     const atualizadas = escalas.filter((e) => e.id !== id);
     setEscalas(atualizadas);
     localStorage.setItem("ac_gestor_escalas", JSON.stringify(atualizadas));
+    deleteDoc(doc(db, "escalas", id)).catch(() => {});
 
     const colabsAtualizados = colaboradores.map((c) => {
       if (c.escalaId === id) {
@@ -681,6 +720,11 @@ export default function App() {
     });
     setColaboradores(colabsAtualizados);
     localStorage.setItem("ac_gestor_colaboradores", JSON.stringify(colabsAtualizados));
+    colabsAtualizados.forEach((c) => {
+      if (!c.escalaId) {
+        setDoc(doc(db, "colaboradores", c.id), c).catch(() => {});
+      }
+    });
 
     fetch(`/api/escalas/${id}`, { method: "DELETE" }).catch(() => {});
     showToast("sucesso", "Escala Removida", `A escala "${nome}" foi excluída.`);
@@ -724,6 +768,7 @@ export default function App() {
     localStorage.setItem("ac_gestor_colaboradores", JSON.stringify(colabsAtualizados));
 
     colabsAtualizados.forEach((c) => {
+      setDoc(doc(db, "colaboradores", c.id), c).catch(() => {});
       fetch(`/api/colaboradores/${c.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -761,6 +806,7 @@ export default function App() {
 
     const alvo = colabsAtualizados.find((c) => c.id === colaboradorId);
     if (alvo) {
+      setDoc(doc(db, "colaboradores", alvo.id), alvo).catch(() => {});
       fetch(`/api/colaboradores/${colaboradorId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -919,6 +965,10 @@ export default function App() {
 
       setColaboradores(atualizados);
       localStorage.setItem("ac_gestor_colaboradores", JSON.stringify(atualizados));
+      const alvoMod = atualizados.find((c) => c.id === colaboradorEditando.id);
+      if (alvoMod) {
+        setDoc(doc(db, "colaboradores", alvoMod.id), alvoMod).catch(() => {});
+      }
 
       // Salvar na API
       fetch(`/api/colaboradores/${colaboradorEditando.id}`, {
@@ -973,6 +1023,7 @@ export default function App() {
       const lista = [...colaboradores, novoColab];
       setColaboradores(lista);
       localStorage.setItem("ac_gestor_colaboradores", JSON.stringify(lista));
+      setDoc(doc(db, "colaboradores", novoColab.id), novoColab).catch(() => {});
 
       fetch("/api/colaboradores", {
         method: "POST",
@@ -1028,6 +1079,10 @@ export default function App() {
 
     setColaboradores(atualizados);
     localStorage.setItem("ac_gestor_colaboradores", JSON.stringify(atualizados));
+    const alvoAjuste = atualizados.find(c => c.id === colabAjustandoBanco.id);
+    if (alvoAjuste) {
+      setDoc(doc(db, "colaboradores", alvoAjuste.id), alvoAjuste).catch(() => {});
+    }
 
     // Salvar na API
     fetch(`/api/colaboradores/${colabAjustandoBanco.id}`, {
@@ -1070,6 +1125,7 @@ export default function App() {
     const filtrados = colaboradores.filter((c) => c.id !== id);
     setColaboradores(filtrados);
     localStorage.setItem("ac_gestor_colaboradores", JSON.stringify(filtrados));
+    deleteDoc(doc(db, "colaboradores", id)).catch(() => {});
 
     fetch(`/api/colaboradores/${id}`, { method: "DELETE" }).catch(() => {});
 
