@@ -61,6 +61,7 @@ import { motion, AnimatePresence } from "motion/react";
 import jsPDF from "jspdf";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
 import { Logo } from "./components/Logo";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { PWAInstallModal } from "./components/PWAInstallModal";
 import { PainelNotificacoesTurno } from "./components/PainelNotificacoesTurno";
 import { usePWAInstall } from "./hooks/usePWAInstall";
@@ -234,6 +235,58 @@ interface Colaborador {
   horarioTrabalho: HorarioTrabalhoColab;
 }
 
+export function normalizarColaborador(raw: any): Colaborador {
+  const padraoHorario: HorarioTrabalhoColab = {
+    entrada: "08:00",
+    almocoSaida: "12:00",
+    almocoRetorno: "13:00",
+    saida: "17:00",
+    sabadoAtivo: false,
+    sabadoEntrada: "08:00",
+    sabadoSaida: "12:00",
+    diferenciarPorDia: false,
+  };
+
+  const salarioNum =
+    typeof raw?.salarioBase === "number" && !isNaN(raw.salarioBase)
+      ? raw.salarioBase
+      : typeof raw?.salarioBase === "string"
+      ? parseFloat(raw.salarioBase.replace(",", ".")) || 2450.0
+      : 2450.0;
+
+  const saldoNum =
+    typeof raw?.saldoAnteriorBancoMinutos === "number" && !isNaN(raw.saldoAnteriorBancoMinutos)
+      ? raw.saldoAnteriorBancoMinutos
+      : parseInt(raw?.saldoAnteriorBancoMinutos, 10) || 0;
+
+  return {
+    id: raw?.id || `FUNC_${Date.now()}`,
+    nome: raw?.nome || "Colaborador",
+    cargo: raw?.cargo || "Função Geral",
+    departamento: raw?.departamento || "Geral",
+    salarioBase: salarioNum,
+    saldoAnteriorBancoMinutos: saldoNum,
+    dataInicioSaldo: raw?.dataInicioSaldo || "01/09/2026",
+    observacaoSaldo: raw?.observacaoSaldo || "",
+    senha: raw?.senha || "Aec2026@",
+    primeiroAcesso: raw?.primeiroAcesso ?? (raw?.mustChangePassword ?? false),
+    escalaId: raw?.escalaId || "ESC_001",
+    horarioTrabalho: raw?.horarioTrabalho
+      ? {
+          entrada: raw.horarioTrabalho.entrada || "08:00",
+          almocoSaida: raw.horarioTrabalho.almocoSaida || "12:00",
+          almocoRetorno: raw.horarioTrabalho.almocoRetorno || "13:00",
+          saida: raw.horarioTrabalho.saida || "17:00",
+          sabadoAtivo: Boolean(raw.horarioTrabalho.sabadoAtivo),
+          sabadoEntrada: raw.horarioTrabalho.sabadoEntrada || "08:00",
+          sabadoSaida: raw.horarioTrabalho.sabadoSaida || "12:00",
+          diferenciarPorDia: Boolean(raw.horarioTrabalho.diferenciarPorDia),
+          diasSemanaConfig: raw.horarioTrabalho.diasSemanaConfig,
+        }
+      : padraoHorario,
+  };
+}
+
 const COLABORADORES_INICIAIS: Colaborador[] = [];
 
 
@@ -281,7 +334,18 @@ export default function App() {
   const [filtroStatusDashboard, setFiltroStatusDashboard] = useState<"todos" | "emTurno" | "almoco" | "concluido" | "aguardando">("todos");
   const [filtroBuscaDashboard, setFiltroBuscaDashboard] = useState<string>("");
   const [filtroDeptoDashboard, setFiltroDeptoDashboard] = useState<string>("todos");
-  const [colaboradores, setColaboradores] = useState<Colaborador[]>(COLABORADORES_INICIAIS);
+  const [colaboradores, setColaboradores] = useState<Colaborador[]>(() => {
+    const salvo = localStorage.getItem("ac_gestor_colaboradores");
+    if (salvo) {
+      try {
+        const parsed = JSON.parse(salvo);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map(normalizarColaborador);
+        }
+      } catch (e) {}
+    }
+    return COLABORADORES_INICIAIS;
+  });
   const [criterios, setCriterios] = useState<CriteriosApuracao>(() => {
     const salvo = localStorage.getItem("ac_gestor_criterios");
     if (salvo) {
@@ -290,6 +354,7 @@ export default function App() {
         return {
           ...CRITERIOS_PADRAO,
           ...parsed,
+          feriadosFixos: Array.isArray(parsed.feriadosFixos) && parsed.feriadosFixos.length > 0 ? parsed.feriadosFixos : FERIADOS_FIXOS_PADRAO,
           limiteSabadoBancoMinutos: 120,
           percentualHESabadoExcedente: 50,
         };
@@ -315,13 +380,16 @@ export default function App() {
     const unsubColabs = onSnapshot(collection(db, "colaboradores"), (snapshot) => {
       const lista: Colaborador[] = [];
       snapshot.forEach((docSnap) => {
-        lista.push(docSnap.data() as Colaborador);
+        const d = docSnap.data();
+        lista.push(normalizarColaborador({ ...d, id: docSnap.id }));
       });
       if (lista.length > 0) {
         setColaboradores(lista);
         localStorage.setItem("ac_gestor_colaboradores", JSON.stringify(lista));
       }
-    }, () => {});
+    }, (err) => {
+      console.warn("Firestore snapshot colaboradores error:", err);
+    });
 
     const unsubEscalas = onSnapshot(collection(db, "escalas"), (snapshot) => {
       const lista: EscalaTrabalho[] = [];
@@ -1450,51 +1518,60 @@ export default function App() {
 
   // Calcular inconsistências em tempo real para todos os colaboradores no mês atual
   const calcularInconsistenciasGerais = () => {
-    const listaInconsistencias: {
-      colaboradorId: string;
-      colaboradorNome: string;
-      dia: number;
-      dataStr: string;
-      tipo: "Batida Incompleta (Ímpar)" | "Falta Injustificada";
-      descricao: string;
-    }[] = [];
+    try {
+      const listaInconsistencias: {
+        colaboradorId: string;
+        colaboradorNome: string;
+        dia: number;
+        dataStr: string;
+        tipo: "Batida Incompleta (Ímpar)" | "Falta Injustificada";
+        descricao: string;
+      }[] = [];
 
-    colaboradores.forEach((colab) => {
-      const diasMes = gerarDiasMes(2026, 9, criterios.feriadosFixos, colab.horarioTrabalho);
-      diasMes.forEach((d) => {
-        const eDiaUtil = d.diaSemana !== "Sáb" && d.diaSemana !== "Dom" && d.observacao !== "Feriado" && d.observacao !== "Férias";
-        const temEntrada1 = Boolean(d.entrada1);
-        const temSaida1 = Boolean(d.saida1);
-        const temEntrada2 = Boolean(d.entrada2);
-        const temSaida2 = Boolean(d.saida2);
+      (colaboradores || []).forEach((colab) => {
+        if (!colab) return;
+        const feriados = Array.isArray(criterios?.feriadosFixos) ? criterios.feriadosFixos : FERIADOS_FIXOS_PADRAO;
+        const diasMes = gerarDiasMes(2026, 9, feriados, colab.horarioTrabalho);
+        if (!Array.isArray(diasMes)) return;
 
-        const qtdBatidas = [temEntrada1, temSaida1, temEntrada2, temSaida2].filter(Boolean).length;
+        diasMes.forEach((d) => {
+          const eDiaUtil = d.diaSemana !== "Sáb" && d.diaSemana !== "Dom" && d.observacao !== "Feriado" && d.observacao !== "Férias";
+          const temEntrada1 = Boolean(d.entrada1);
+          const temSaida1 = Boolean(d.saida1);
+          const temEntrada2 = Boolean(d.entrada2);
+          const temSaida2 = Boolean(d.saida2);
 
-        if (qtdBatidas > 0 && qtdBatidas % 2 !== 0) {
-          listaInconsistencias.push({
-            colaboradorId: colab.id,
-            colaboradorNome: colab.nome,
-            dia: d.dia,
-            dataStr: `${String(d.dia).padStart(2, "0")}/09/2026`,
-            tipo: "Batida Incompleta (Ímpar)",
-            descricao: `Registrou apenas ${qtdBatidas} batida(s) no dia. Possível esquecimento de saída ou retorno do almoço.`,
-          });
-        }
+          const qtdBatidas = [temEntrada1, temSaida1, temEntrada2, temSaida2].filter(Boolean).length;
 
-        if (eDiaUtil && qtdBatidas === 0 && d.dia <= 25) {
-          listaInconsistencias.push({
-            colaboradorId: colab.id,
-            colaboradorNome: colab.nome,
-            dia: d.dia,
-            dataStr: `${String(d.dia).padStart(2, "0")}/09/2026`,
-            tipo: "Falta Injustificada",
-            descricao: `Nenhum registro de ponto encontrado em dia útil de expediente.`,
-          });
-        }
+          if (qtdBatidas > 0 && qtdBatidas % 2 !== 0) {
+            listaInconsistencias.push({
+              colaboradorId: colab.id,
+              colaboradorNome: colab.nome,
+              dia: d.dia,
+              dataStr: `${String(d.dia).padStart(2, "0")}/09/2026`,
+              tipo: "Batida Incompleta (Ímpar)",
+              descricao: `Registrou apenas ${qtdBatidas} batida(s) no dia. Possível esquecimento de saída ou retorno do almoço.`,
+            });
+          }
+
+          if (eDiaUtil && qtdBatidas === 0 && d.dia <= 25) {
+            listaInconsistencias.push({
+              colaboradorId: colab.id,
+              colaboradorNome: colab.nome,
+              dia: d.dia,
+              dataStr: `${String(d.dia).padStart(2, "0")}/09/2026`,
+              tipo: "Falta Injustificada",
+              descricao: `Nenhum registro de ponto encontrado em dia útil de expediente.`,
+            });
+          }
+        });
       });
-    });
 
-    return listaInconsistencias;
+      return listaInconsistencias;
+    } catch (e) {
+      console.warn("Erro ao calcular inconsistências gerais:", e);
+      return [];
+    }
   };
 
   const handlePortalBaterPonto = (campo: "entrada1" | "saida1" | "entrada2" | "saida2") => {
@@ -1964,7 +2041,7 @@ export default function App() {
     doc.text(`Colaborador: ${fechamentoAtual.colaboradorNome}`, 14, 34);
     doc.setFont("helvetica", "normal");
     doc.text(`Cargo: ${fechamentoAtual.colaboradorCargo}`, 14, 40);
-    doc.text(`Salário Base: R$ ${fechamentoAtual.salarioBase.toFixed(2)} (Valor Hora: R$ ${fechamentoAtual.valorHora.toFixed(2)})`, pageWidth - 14, 34, { align: "right" });
+    doc.text(`Salário Base: R$ ${(Number(fechamentoAtual.salarioBase) || 2450).toFixed(2)} (Valor Hora: R$ ${(Number(fechamentoAtual.valorHora) || 11.14).toFixed(2)})`, pageWidth - 14, 34, { align: "right" });
     doc.text(`Jornada Nominal: 08:00 às 17:00 (1h Almoço)`, pageWidth - 14, 40, { align: "right" });
 
     // Linha divisória
@@ -2862,6 +2939,7 @@ export default function App() {
 
       {/* Conteúdo Principal (Fluido, lado a lado com a sidebar e sem sobreposição) */}
       <main className="flex-1 min-w-0 w-full p-4 sm:p-6 lg:p-8 space-y-6 overflow-y-auto">
+        <ErrorBoundary fallbackTitle="Módulo do Painel Administrativo">
         {/* Banner Superior no modo Admin com atalhos rápidos dos módulos */}
         {userRole === "admin" && (
           <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-800/80 bg-slate-950/50">
@@ -2974,10 +3052,14 @@ export default function App() {
             let emAlmoco = 0;
             statusColabsHoje.forEach((item) => {
               if (!item.ativoHoje) return;
-              const ent = (parseInt(item.entrada.split(":")[0], 10) || 8) * 60 + (parseInt(item.entrada.split(":")[1], 10) || 0);
-              const almS = (parseInt(item.almocoSaida.split(":")[0], 10) || 12) * 60 + (parseInt(item.almocoSaida.split(":")[1], 10) || 0);
-              const almR = (parseInt(item.almocoRetorno.split(":")[0], 10) || 13) * 60 + (parseInt(item.almocoRetorno.split(":")[1], 10) || 0);
-              const sai = (parseInt(item.saida.split(":")[0], 10) || 17) * 60 + (parseInt(item.saida.split(":")[1], 10) || 0);
+              const entStr = item.entrada || "08:00";
+              const almSStr = item.almocoSaida || "12:00";
+              const almRStr = item.almocoRetorno || "13:00";
+              const saiStr = item.saida || "17:00";
+              const ent = (parseInt(entStr.split(":")[0], 10) || 8) * 60 + (parseInt(entStr.split(":")[1], 10) || 0);
+              const almS = (parseInt(almSStr.split(":")[0], 10) || 12) * 60 + (parseInt(almSStr.split(":")[1], 10) || 0);
+              const almR = (parseInt(almRStr.split(":")[0], 10) || 13) * 60 + (parseInt(almRStr.split(":")[1], 10) || 0);
+              const sai = (parseInt(saiStr.split(":")[0], 10) || 17) * 60 + (parseInt(saiStr.split(":")[1], 10) || 0);
 
               if ((minCheck >= ent && minCheck < almS) || (minCheck >= almR && minCheck < sai)) {
                 emTrabalho++;
@@ -3967,7 +4049,7 @@ export default function App() {
                           <option value="">-- Selecione o colaborador --</option>
                           {colaboradores.map((c) => (
                             <option key={c.id} value={c.id}>
-                              {c.nome} — {c.cargo} (R$ {c.salarioBase.toFixed(2)})
+                              {c.nome} — {c.cargo} (R$ {(Number(c.salarioBase) || 2450).toFixed(2)})
                             </option>
                           ))}
                         </select>
@@ -4176,7 +4258,7 @@ export default function App() {
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 mt-1">
-                  Cargo: {fechamentoAtual.colaboradorCargo} • Salário Base: R$ {fechamentoAtual.salarioBase.toFixed(2)} (Valor Hora: R$ {fechamentoAtual.valorHora.toFixed(2)})
+                  Cargo: {fechamentoAtual.colaboradorCargo} • Salário Base: R$ {(Number(fechamentoAtual.salarioBase) || 2450).toFixed(2)} (Valor Hora: R$ {(Number(fechamentoAtual.valorHora) || 11.14).toFixed(2)})
                 </p>
               </div>
 
@@ -4274,7 +4356,7 @@ export default function App() {
                   {minutosParaTextoExtenso(fechamentoAtual.totalHE50Minutos, false)}
                 </div>
                 <span className="text-[10px] text-sky-400/80 font-bold block">
-                  R$ {fechamentoAtual.valorEstimadoHE50.toFixed(2)}
+                  R$ {(fechamentoAtual.valorEstimadoHE50 || 0).toFixed(2)}
                 </span>
               </div>
 
@@ -4285,7 +4367,7 @@ export default function App() {
                   {minutosParaTextoExtenso(fechamentoAtual.totalHE100Minutos, false)}
                 </div>
                 <span className="text-[10px] text-amber-400/80 font-bold block">
-                  R$ {fechamentoAtual.valorEstimadoHE100.toFixed(2)}
+                  R$ {(fechamentoAtual.valorEstimadoHE100 || 0).toFixed(2)}
                 </span>
               </div>
 
@@ -4296,7 +4378,7 @@ export default function App() {
                   {minutosParaTextoExtenso(fechamentoAtual.totalAdicionalNoturnoMinutos, false)}
                 </div>
                 <span className="text-[10px] text-indigo-400/80 font-bold block">
-                  R$ {fechamentoAtual.valorEstimadoAdicNoturno.toFixed(2)}
+                  R$ {(fechamentoAtual.valorEstimadoAdicNoturno || 0).toFixed(2)}
                 </span>
               </div>
             </div>
@@ -4630,7 +4712,7 @@ export default function App() {
                       </div>
                       <div className="flex justify-between pt-1 border-t border-slate-900 text-white font-bold">
                         <span>Total Extras:</span>
-                        <span>R$ {item.fechamento.valorTotalProventosExtras.toFixed(2)}</span>
+                        <span>R$ {(item.fechamento.valorTotalProventosExtras || 0).toFixed(2)}</span>
                       </div>
                     </div>
 
@@ -6123,10 +6205,10 @@ export default function App() {
                             <div className="font-mono">
                               <span className="text-[10px] text-slate-500 block">Salário Base</span>
                               <span className="font-bold text-white text-xs">
-                                R$ {c.salarioBase.toFixed(2)}
+                                R$ {(Number(c.salarioBase) || 2450).toFixed(2)}
                               </span>
                               <span className="text-[10px] text-slate-400 ml-1">
-                                (R$ {(c.salarioBase / 220).toFixed(2)}/h)
+                                (R$ {((Number(c.salarioBase) || 2450) / 220).toFixed(2)}/h)
                               </span>
                             </div>
 
@@ -6902,6 +6984,7 @@ export default function App() {
             </div>
           )}
         </AnimatePresence>
+        </ErrorBoundary>
       </main>
     </div>
   );
