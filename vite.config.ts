@@ -11,7 +11,10 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['icon.svg', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png'],
+        includeAssets: ['icon.svg', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'sw-notifications.js'],
+        workbox: {
+          importScripts: ['/sw-notifications.js'],
+        },
         manifest: {
           id: '/',
           name: 'Ponto A&C - Gestão e Apuração de Ponto',

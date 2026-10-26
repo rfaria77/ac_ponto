@@ -46,15 +46,32 @@ import {
   Layers,
   Smartphone,
   Apple,
+  LayoutDashboard,
+  UserCheck,
+  UserX,
+  Coffee,
+  Activity,
+  Briefcase,
+  PieChart as PieChartIcon,
+  BarChart3,
+  Bell,
+  BellRing,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import jsPDF from "jspdf";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
 import { Logo } from "./components/Logo";
 import { PWAInstallModal } from "./components/PWAInstallModal";
+import { PainelNotificacoesTurno } from "./components/PainelNotificacoesTurno";
 import { usePWAInstall } from "./hooks/usePWAInstall";
 import { db } from "./lib/firebaseClient";
 import { collection, doc, setDoc, deleteDoc, onSnapshot } from "firebase/firestore";
+import {
+  verificarEAlertarTurno,
+  obterPermissaoNotificacao,
+  solicitarPermissaoNotificacao,
+  enviarNotificacaoTeste,
+} from "./utils/notificacoesPWA";
 import {
   BatidaDia,
   CriteriosApuracao,
@@ -260,7 +277,10 @@ export default function App() {
   const [confirmaNovaSenhaInput, setConfirmaNovaSenhaInput] = useState<string>("");
   const [sidebarAbertaMobile, setSidebarAbertaMobile] = useState<boolean>(false);
 
-  const [abaAtiva, setAbaAtiva] = useState<"digitalizar" | "fechamento" | "historico" | "criterios" | "escalas" | "colaboradores" | "baterPonto">("baterPonto");
+  const [abaAtiva, setAbaAtiva] = useState<"dashboard" | "digitalizar" | "fechamento" | "historico" | "criterios" | "escalas" | "colaboradores" | "baterPonto" | "inconsistencias">("dashboard");
+  const [filtroStatusDashboard, setFiltroStatusDashboard] = useState<"todos" | "emTurno" | "almoco" | "concluido" | "aguardando">("todos");
+  const [filtroBuscaDashboard, setFiltroBuscaDashboard] = useState<string>("");
+  const [filtroDeptoDashboard, setFiltroDeptoDashboard] = useState<string>("todos");
   const [colaboradores, setColaboradores] = useState<Colaborador[]>(COLABORADORES_INICIAIS);
   const [criterios, setCriterios] = useState<CriteriosApuracao>(() => {
     const salvo = localStorage.getItem("ac_gestor_criterios");
@@ -441,6 +461,55 @@ export default function App() {
     setToast({ tipo, titulo, msg });
     setTimeout(() => setToast(null), 4500);
   };
+
+  // Ouvinte de mensagens do Service Worker (ex: quando o usuário clica na notificação do sistema)
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
+
+    const handleSwMessage = (event: MessageEvent) => {
+      if (event.data && event.data.type === "NOTIFICATION_CLICKED") {
+        setAbaAtiva("baterPonto");
+        showToast(
+          "aviso",
+          "⏰ Lembrete de Ponto",
+          "Você abriu a notificação de horário. Registre sua marcação de ponto!"
+        );
+      }
+    };
+
+    navigator.serviceWorker.addEventListener("message", handleSwMessage);
+    return () => {
+      navigator.serviceWorker.removeEventListener("message", handleSwMessage);
+    };
+  }, []);
+
+  // Monitor em segundo plano para disparar alertas de entrada e saída
+  useEffect(() => {
+    const monitorarTurno = async () => {
+      const colabAlvoId =
+        userRole === "funcionario"
+          ? portalColaboradorId
+          : portalColaboradorId || colaboradores[0]?.id;
+      if (!colabAlvoId) return;
+
+      const colab = colaboradores.find((c) => c.id === colabAlvoId);
+      if (!colab) return;
+
+      try {
+        const alerta = await verificarEAlertarTurno(colab.id, colab.nome, colab.horarioTrabalho);
+        if (alerta) {
+          showToast("aviso", `⏰ ${alerta.titulo}`, `${colab.nome}: ${alerta.mensagem}`);
+        }
+      } catch (e) {
+        console.warn("Erro ao monitorar alertas de turno:", e);
+      }
+    };
+
+    monitorarTurno();
+    const interval = setInterval(monitorarTurno, 30000); // Executa a cada 30 segundos
+    return () => clearInterval(interval);
+  }, [userRole, portalColaboradorId, colaboradores]);
+
 
   // Selecionar escala no formulário do colaborador e preencher horários automaticamente
   const handleSelecionarEscalaNoColaborador = (id: string) => {
@@ -1256,6 +1325,176 @@ export default function App() {
     }
 
     showToast("sucesso", "Feriado Removido", "Feriado removido da lista anual.");
+  };
+
+  // Cálculos em tempo real para o Dashboard de Presença & Turnos Ativos
+  const obterStatusColaboradoresHoje = () => {
+    const agora = new Date();
+    const horaAtualMin = agora.getHours() * 60 + agora.getMinutes();
+    const diasSemanaMap: DiasSemanaChave[] = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+    const diaSemanaHoje = diasSemanaMap[agora.getDay()];
+
+    return colaboradores.map((colab) => {
+      let entrada = "08:00";
+      let almocoSaida = "12:00";
+      let almocoRetorno = "13:00";
+      let saida = "17:00";
+      let ativoHoje = true;
+
+      const h = colab.horarioTrabalho || {
+        entrada: "08:00",
+        almocoSaida: "12:00",
+        almocoRetorno: "13:00",
+        saida: "17:00",
+        sabadoAtivo: false,
+      };
+
+      if (h.diferenciarPorDia && h.diasSemanaConfig && h.diasSemanaConfig[diaSemanaHoje]) {
+        const cfg = h.diasSemanaConfig[diaSemanaHoje];
+        ativoHoje = Boolean(cfg.ativo);
+        entrada = cfg.entrada || "08:00";
+        almocoSaida = cfg.almocoSaida || "12:00";
+        almocoRetorno = cfg.almocoRetorno || "13:00";
+        saida = cfg.saida || "17:00";
+      } else {
+        if (diaSemanaHoje === "Dom") {
+          ativoHoje = false;
+        } else if (diaSemanaHoje === "Sáb") {
+          ativoHoje = Boolean(h.sabadoAtivo);
+          entrada = h.sabadoEntrada || "08:00";
+          almocoSaida = "12:00";
+          almocoRetorno = "12:00";
+          saida = h.sabadoSaida || "12:00";
+        } else {
+          entrada = h.entrada || "08:00";
+          almocoSaida = h.almocoSaida || "12:00";
+          almocoRetorno = h.almocoRetorno || "13:00";
+          saida = h.saida || "17:00";
+        }
+      }
+
+      const entMin = (parseInt(entrada.split(":")[0], 10) || 8) * 60 + (parseInt(entrada.split(":")[1], 10) || 0);
+      const almSaidaMin = (parseInt(almocoSaida.split(":")[0], 10) || 12) * 60 + (parseInt(almocoSaida.split(":")[1], 10) || 0);
+      const almRetMin = (parseInt(almocoRetorno.split(":")[0], 10) || 13) * 60 + (parseInt(almocoRetorno.split(":")[1], 10) || 0);
+      const saiMin = (parseInt(saida.split(":")[0], 10) || 17) * 60 + (parseInt(saida.split(":")[1], 10) || 0);
+
+      const durManha = Math.max(0, almSaidaMin - entMin);
+      const durTarde = Math.max(0, saiMin - almRetMin);
+      const jornadaTotalMin = durManha + durTarde;
+
+      let status: "emTurno" | "almoco" | "concluido" | "aguardando" | "folga" = "aguardando";
+      let statusRotulo = "Aguardando Início";
+      let statusDesc = `Expediente previsto às ${entrada}`;
+      let statusCor: "emerald" | "amber" | "sky" | "slate" | "rose" = "slate";
+      let minutosTrabalhados = 0;
+
+      if (!ativoHoje) {
+        status = "folga";
+        statusRotulo = "Folga / DSR";
+        statusDesc = "Descanso semanal remunerado";
+        statusCor = "slate";
+      } else if (horaAtualMin < entMin) {
+        status = "aguardando";
+        statusRotulo = "Aguardando Início";
+        const faltaMin = entMin - horaAtualMin;
+        statusDesc = `Inicia às ${entrada} (${faltaMin >= 60 ? `${Math.floor(faltaMin / 60)}h ${faltaMin % 60}m` : `${faltaMin}m`} restantes)`;
+        statusCor = "slate";
+      } else if (horaAtualMin >= entMin && horaAtualMin < almSaidaMin) {
+        status = "emTurno";
+        statusRotulo = "Em Turno (Manhã)";
+        statusDesc = `Trabalhando até saída almoço às ${almocoSaida}`;
+        statusCor = "emerald";
+        minutosTrabalhados = horaAtualMin - entMin;
+      } else if (horaAtualMin >= almSaidaMin && horaAtualMin < almRetMin) {
+        status = "almoco";
+        statusRotulo = "Em Intervalo de Almoço";
+        statusDesc = `Retorno previsto às ${almocoRetorno}`;
+        statusCor = "amber";
+        minutosTrabalhados = durManha;
+      } else if (horaAtualMin >= almRetMin && horaAtualMin < saiMin) {
+        status = "emTurno";
+        statusRotulo = "Em Turno (Tarde)";
+        statusDesc = `Trabalhando até encerramento às ${saida}`;
+        statusCor = "emerald";
+        minutosTrabalhados = durManha + (horaAtualMin - almRetMin);
+      } else {
+        status = "concluido";
+        statusRotulo = "Jornada Concluída";
+        statusDesc = `Expediente encerrado às ${saida}`;
+        statusCor = "sky";
+        minutosTrabalhados = jornadaTotalMin;
+      }
+
+      const progressoPct = jornadaTotalMin > 0 ? Math.min(100, Math.round((minutosTrabalhados / jornadaTotalMin) * 100)) : 0;
+      const escalaObj = escalas.find((e) => e.id === colab.escalaId);
+
+      return {
+        colab,
+        ativoHoje,
+        status,
+        statusRotulo,
+        statusDesc,
+        statusCor,
+        entrada,
+        almocoSaida,
+        almocoRetorno,
+        saida,
+        jornadaTotalMin,
+        minutosTrabalhados,
+        progressoPct,
+        escalaNome: escalaObj ? escalaObj.nome : "Personalizada",
+        departamento: colab.departamento || "Operações",
+      };
+    });
+  };
+
+  // Calcular inconsistências em tempo real para todos os colaboradores no mês atual
+  const calcularInconsistenciasGerais = () => {
+    const listaInconsistencias: {
+      colaboradorId: string;
+      colaboradorNome: string;
+      dia: number;
+      dataStr: string;
+      tipo: "Batida Incompleta (Ímpar)" | "Falta Injustificada";
+      descricao: string;
+    }[] = [];
+
+    colaboradores.forEach((colab) => {
+      const diasMes = gerarDiasMes(2026, 9, criterios.feriadosFixos, colab.horarioTrabalho);
+      diasMes.forEach((d) => {
+        const eDiaUtil = d.diaSemana !== "Sáb" && d.diaSemana !== "Dom" && d.observacao !== "Feriado" && d.observacao !== "Férias";
+        const temEntrada1 = Boolean(d.entrada1);
+        const temSaida1 = Boolean(d.saida1);
+        const temEntrada2 = Boolean(d.entrada2);
+        const temSaida2 = Boolean(d.saida2);
+
+        const qtdBatidas = [temEntrada1, temSaida1, temEntrada2, temSaida2].filter(Boolean).length;
+
+        if (qtdBatidas > 0 && qtdBatidas % 2 !== 0) {
+          listaInconsistencias.push({
+            colaboradorId: colab.id,
+            colaboradorNome: colab.nome,
+            dia: d.dia,
+            dataStr: `${String(d.dia).padStart(2, "0")}/09/2026`,
+            tipo: "Batida Incompleta (Ímpar)",
+            descricao: `Registrou apenas ${qtdBatidas} batida(s) no dia. Possível esquecimento de saída ou retorno do almoço.`,
+          });
+        }
+
+        if (eDiaUtil && qtdBatidas === 0 && d.dia <= 25) {
+          listaInconsistencias.push({
+            colaboradorId: colab.id,
+            colaboradorNome: colab.nome,
+            dia: d.dia,
+            dataStr: `${String(d.dia).padStart(2, "0")}/09/2026`,
+            tipo: "Falta Injustificada",
+            descricao: `Nenhum registro de ponto encontrado em dia útil de expediente.`,
+          });
+        }
+      });
+    });
+
+    return listaInconsistencias;
   };
 
   const handlePortalBaterPonto = (campo: "entrada1" | "saida1" | "entrada2" | "saida2") => {
@@ -2218,12 +2457,15 @@ export default function App() {
             <div>
               <div className="text-xs font-bold text-white uppercase tracking-wider">Painel Admin</div>
               <span className="text-[10px] text-sky-400 font-semibold block">
+                {abaAtiva === "dashboard" && "Dashboard Geral"}
                 {abaAtiva === "digitalizar" && "Digitalizar Folha"}
                 {abaAtiva === "fechamento" && "Espelho & Fechamento"}
                 {abaAtiva === "historico" && "Histórico"}
                 {abaAtiva === "criterios" && "Critérios"}
+                {abaAtiva === "escalas" && "Escalas"}
                 {abaAtiva === "colaboradores" && "Colaboradores"}
                 {abaAtiva === "baterPonto" && "Portal de Ponto"}
+                {abaAtiva === "inconsistencias" && "Inconsistências"}
               </span>
             </div>
           </div>
@@ -2274,6 +2516,19 @@ export default function App() {
                 </div>
 
                 <nav className="space-y-1.5 text-xs font-semibold">
+                  <button
+                    onClick={() => {
+                      setAbaAtiva("dashboard");
+                      setSidebarAbertaMobile(false);
+                    }}
+                    className={`w-full px-3.5 py-3 rounded-xl transition-all flex items-center gap-3 text-left ${
+                      abaAtiva === "dashboard"
+                        ? "bg-sky-600 text-white font-bold shadow-md shadow-sky-600/30"
+                        : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                    }`}
+                  >
+                    <LayoutDashboard className="w-4 h-4 text-emerald-400" /> Dashboard & Turnos Ativos
+                  </button>
                   <button
                     onClick={() => {
                       setAbaAtiva("digitalizar");
@@ -2366,6 +2621,26 @@ export default function App() {
                   >
                     <Clock className="w-4 h-4 text-teal-400" /> Portal de Ponto
                   </button>
+                  <button
+                    onClick={() => {
+                      setAbaAtiva("inconsistencias");
+                      setSidebarAbertaMobile(false);
+                    }}
+                    className={`w-full px-3.5 py-3 rounded-xl transition-all flex items-center justify-between text-left ${
+                      abaAtiva === "inconsistencias"
+                        ? "bg-sky-600 text-white font-bold shadow-md shadow-sky-600/30"
+                        : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                    }`}
+                  >
+                    <span className="flex items-center gap-3">
+                      <AlertTriangle className="w-4 h-4 text-rose-400" /> Alertas & Inconsistências
+                    </span>
+                    {calcularInconsistenciasGerais().length > 0 && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-500 text-white">
+                        {calcularInconsistenciasGerais().length}
+                      </span>
+                    )}
+                  </button>
 
                   <div className="pt-3">
                     <button
@@ -2410,6 +2685,16 @@ export default function App() {
             </div>
 
             <nav className="space-y-1 text-xs font-semibold">
+              <button
+                onClick={() => setAbaAtiva("dashboard")}
+                className={`w-full px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-2.5 text-left ${
+                  abaAtiva === "dashboard"
+                    ? "bg-sky-600 text-white shadow-lg shadow-sky-600/30 font-bold"
+                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
+                }`}
+              >
+                <LayoutDashboard className="w-4 h-4 text-emerald-400" /> Dashboard & Turnos Ativos
+              </button>
               <button
                 onClick={() => setAbaAtiva("digitalizar")}
                 className={`w-full px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-2.5 text-left ${
@@ -2483,6 +2768,23 @@ export default function App() {
               >
                 <Clock className="w-4 h-4 text-teal-400" /> Portal de Ponto
               </button>
+              <button
+                onClick={() => setAbaAtiva("inconsistencias")}
+                className={`w-full px-3.5 py-2.5 rounded-xl transition-all flex items-center justify-between text-left ${
+                  abaAtiva === "inconsistencias"
+                    ? "bg-sky-600 text-white shadow-lg shadow-sky-600/30 font-bold"
+                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
+                }`}
+              >
+                <span className="flex items-center gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-rose-400" /> Alertas & Inconsistências
+                </span>
+                {calcularInconsistenciasGerais().length > 0 && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-500 text-white">
+                    {calcularInconsistenciasGerais().length}
+                  </span>
+                )}
+              </button>
 
               <div className="pt-3">
                 <button
@@ -2529,7 +2831,23 @@ export default function App() {
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={async () => {
+                  const colab = colaboradores.find((c) => c.id === portalColaboradorId);
+                  const ok = await enviarNotificacaoTeste(colab?.nome || "Colaborador");
+                  if (ok) {
+                    showToast("sucesso", "Notificação Testada!", "Alerta enviado com som e vibração via Service Worker.");
+                  }
+                }}
+                className="px-3 py-1.5 rounded-xl bg-sky-950/80 hover:bg-sky-900 text-sky-300 border border-sky-500/30 text-xs font-bold flex items-center gap-1.5 transition-all shadow"
+                title="Testar notificação de turno no aparelho"
+              >
+                <BellRing className="w-3.5 h-3.5 text-sky-400" />
+                <span className="hidden sm:inline">Testar Lembrete</span>
+              </button>
+
               <button
                 onClick={() => setUserRole("escolha")}
                 title="Sair / Trocar de Perfil"
@@ -2553,6 +2871,7 @@ export default function App() {
                 Módulo Aberto:
               </span>
               <h2 className="text-base sm:text-lg font-black text-white">
+                {abaAtiva === "dashboard" && "Dashboard em Tempo Real & Turnos Ativos"}
                 {abaAtiva === "digitalizar" && "Digitalização de Folhas de Ponto (IA)"}
                 {abaAtiva === "fechamento" && "Espelho de Ponto & Fechamento Mensal"}
                 {abaAtiva === "historico" && "Histórico de Fechamentos"}
@@ -2560,11 +2879,20 @@ export default function App() {
                 {abaAtiva === "escalas" && "Gestão de Escalas & Horários de Trabalho"}
                 {abaAtiva === "colaboradores" && "Gestão de Colaboradores & Senhas"}
                 {abaAtiva === "baterPonto" && "Terminal de Ponto"}
+                {abaAtiva === "inconsistencias" && "Alertas & Inconsistências de Ponto"}
               </h2>
             </div>
 
             {/* Abas Rápidas de navegação direta */}
             <div className="flex items-center gap-1.5 overflow-x-auto text-xs py-1">
+              <button
+                onClick={() => setAbaAtiva("dashboard")}
+                className={`px-3 py-1.5 rounded-lg font-semibold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                  abaAtiva === "dashboard" ? "bg-sky-600 text-white font-bold shadow-md shadow-sky-600/30" : "bg-slate-900 text-slate-400 hover:text-white"
+                }`}
+              >
+                <LayoutDashboard className="w-3.5 h-3.5 text-emerald-400" /> Dashboard
+              </button>
               <button
                 onClick={() => setAbaAtiva("digitalizar")}
                 className={`px-3 py-1.5 rounded-lg font-semibold transition-all flex items-center gap-1.5 whitespace-nowrap ${
@@ -2616,9 +2944,600 @@ export default function App() {
               >
                 <Users className="w-3.5 h-3.5" /> 6. Colaboradores
               </button>
+              <button
+                onClick={() => setAbaAtiva("inconsistencias")}
+                className={`px-3 py-1.5 rounded-lg font-semibold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                  abaAtiva === "inconsistencias" ? "bg-sky-600 text-white font-bold" : "bg-slate-900 text-slate-400 hover:text-white"
+                }`}
+              >
+                <AlertTriangle className="w-3.5 h-3.5 text-rose-400" /> Inconsistências
+              </button>
             </div>
           </div>
         )}
+        {/* ================= ABA: DASHBOARD DE TURNOS & PRESENÇA EM TEMPO REAL ================= */}
+        {abaAtiva === "dashboard" && (() => {
+          const statusColabsHoje = obterStatusColaboradoresHoje();
+          const totalColabs = colaboradores.length;
+          const emTurnoColabs = statusColabsHoje.filter((c) => c.status === "emTurno");
+          const emAlmocoColabs = statusColabsHoje.filter((c) => c.status === "almoco");
+          const concluidosColabs = statusColabsHoje.filter((c) => c.status === "concluido");
+          const aguardandoColabs = statusColabsHoje.filter((c) => c.status === "aguardando");
+          const folgaColabs = statusColabsHoje.filter((c) => c.status === "folga");
+          const ativosHojeCount = statusColabsHoje.filter((c) => c.ativoHoje).length;
+          const taxaPresenca = ativosHojeCount > 0 ? Math.round(((emTurnoColabs.length + emAlmocoColabs.length + concluidosColabs.length) / ativosHojeCount) * 100) : 0;
+
+          // Dados para o gráfico de fluxo de presença por hora (06h às 20h)
+          const dadosFluxo = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map((h) => {
+            const minCheck = h * 60 + 30;
+            let emTrabalho = 0;
+            let emAlmoco = 0;
+            statusColabsHoje.forEach((item) => {
+              if (!item.ativoHoje) return;
+              const ent = (parseInt(item.entrada.split(":")[0], 10) || 8) * 60 + (parseInt(item.entrada.split(":")[1], 10) || 0);
+              const almS = (parseInt(item.almocoSaida.split(":")[0], 10) || 12) * 60 + (parseInt(item.almocoSaida.split(":")[1], 10) || 0);
+              const almR = (parseInt(item.almocoRetorno.split(":")[0], 10) || 13) * 60 + (parseInt(item.almocoRetorno.split(":")[1], 10) || 0);
+              const sai = (parseInt(item.saida.split(":")[0], 10) || 17) * 60 + (parseInt(item.saida.split(":")[1], 10) || 0);
+
+              if ((minCheck >= ent && minCheck < almS) || (minCheck >= almR && minCheck < sai)) {
+                emTrabalho++;
+              } else if (minCheck >= almS && minCheck < almR) {
+                emAlmoco++;
+              }
+            });
+            return {
+              hora: `${String(h).padStart(2, "0")}h`,
+              "Em Turno": emTrabalho,
+              "Em Almoço": emAlmoco,
+            };
+          });
+
+          // Distribuição por departamento
+          const deptosSet = Array.from(new Set(colaboradores.map((c) => c.departamento || "Operações")));
+          const dadosDeptos = deptosSet.map((dept) => {
+            const total = statusColabsHoje.filter((c) => (c.colab.departamento || "Operações") === dept).length;
+            const emTurno = statusColabsHoje.filter((c) => (c.colab.departamento || "Operações") === dept && c.status === "emTurno").length;
+            const emAlmoco = statusColabsHoje.filter((c) => (c.colab.departamento || "Operações") === dept && c.status === "almoco").length;
+            const concl = statusColabsHoje.filter((c) => (c.colab.departamento || "Operações") === dept && c.status === "concluido").length;
+            const pct = total > 0 ? Math.round(((emTurno + emAlmoco + concl) / total) * 100) : 0;
+            return { departamento: dept, total, emTurno, emAlmoco, concl, pct };
+          });
+
+          // Filtro dos colaboradores na lista
+          const colabsFiltrados = statusColabsHoje.filter((item) => {
+            if (filtroStatusDashboard === "emTurno" && item.status !== "emTurno") return false;
+            if (filtroStatusDashboard === "almoco" && item.status !== "almoco") return false;
+            if (filtroStatusDashboard === "concluido" && item.status !== "concluido") return false;
+            if (filtroStatusDashboard === "aguardando" && (item.status !== "aguardando" && item.status !== "folga")) return false;
+
+            if (filtroDeptoDashboard !== "todos" && (item.colab.departamento || "Operações") !== filtroDeptoDashboard) return false;
+
+            if (filtroBuscaDashboard.trim()) {
+              const q = filtroBuscaDashboard.toLowerCase();
+              return (
+                item.colab.nome.toLowerCase().includes(q) ||
+                item.colab.cargo.toLowerCase().includes(q) ||
+                (item.colab.departamento && item.colab.departamento.toLowerCase().includes(q)) ||
+                item.escalaNome.toLowerCase().includes(q)
+              );
+            }
+            return true;
+          });
+
+          return (
+            <div className="space-y-6">
+              {/* Header Visual do Dashboard */}
+              <div className="bg-gradient-to-r from-slate-900 via-sky-950/40 to-slate-900 border border-sky-500/20 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-80 h-80 bg-sky-500/10 rounded-full blur-3xl pointer-events-none"></div>
+                <div className="absolute bottom-0 left-1/3 w-60 h-60 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
+                  <div className="space-y-2">
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-xs font-bold border border-emerald-500/20">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                      <Activity className="w-3.5 h-3.5" /> Monitoramento em Tempo Real
+                    </div>
+                    <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight flex items-center gap-3">
+                      <LayoutDashboard className="w-7 h-7 text-sky-400" />
+                      Dashboard Operacional & Turnos Ativos
+                    </h2>
+                    <p className="text-xs sm:text-sm text-slate-300 max-w-2xl leading-relaxed">
+                      Painel executivo de jornada: acompanhe os colaboradores em atendimento agora, intervalos de refeição, escala de horários e curvas de presença da empresa.
+                    </p>
+                  </div>
+
+                  {/* Relógio em Tempo Real & Data */}
+                  <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 text-center min-w-[210px] shadow-inner shrink-0">
+                    <div className="flex items-center justify-center gap-1.5 text-xs text-slate-400 uppercase font-bold tracking-wider">
+                      <Clock className="w-3.5 h-3.5 text-sky-400" /> Hora Local
+                    </div>
+                    <div className="text-2xl sm:text-3xl font-mono font-extrabold text-white mt-1">
+                      {new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                    </div>
+                    <div className="text-[11px] text-sky-400 font-semibold mt-1">
+                      {new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Seção 1: Indicadores e Métricas Rápidas (KPI Cards) */}
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5">
+                {/* Total */}
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-2 hover:border-slate-700 transition-all">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total Equipe</span>
+                    <div className="w-8 h-8 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300">
+                      <Users className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="text-2xl font-black text-white">{totalColabs}</div>
+                  <div className="text-[11px] text-slate-500 font-medium">{deptosSet.length} departamento(s)</div>
+                </div>
+
+                {/* Em Turno Agora */}
+                <div className="bg-slate-900 border border-emerald-500/40 rounded-2xl p-4 shadow-xl space-y-2 relative overflow-hidden hover:border-emerald-500/60 transition-all">
+                  <div className="absolute top-0 right-0 w-16 h-16 bg-emerald-500/10 rounded-full blur-xl pointer-events-none"></div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                      Em Turno Agora
+                    </span>
+                    <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                      <UserCheck className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="text-2xl font-black text-emerald-300">{emTurnoColabs.length}</div>
+                  <div className="text-[11px] text-emerald-400/80 font-medium">
+                    {totalColabs > 0 ? `${Math.round((emTurnoColabs.length / totalColabs) * 100)}% da força de trabalho` : "Nenhum colaborador"}
+                  </div>
+                </div>
+
+                {/* Em Intervalo / Almoço */}
+                <div className="bg-slate-900 border border-amber-500/30 rounded-2xl p-4 shadow-xl space-y-2 hover:border-amber-500/50 transition-all">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider">Em Intervalo</span>
+                    <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                      <Coffee className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="text-2xl font-black text-amber-300">{emAlmocoColabs.length}</div>
+                  <div className="text-[11px] text-amber-400/80 font-medium">Pausa de almoço / lanche</div>
+                </div>
+
+                {/* Jornada Concluída */}
+                <div className="bg-slate-900 border border-sky-500/30 rounded-2xl p-4 shadow-xl space-y-2 hover:border-sky-500/50 transition-all">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-sky-400 uppercase tracking-wider">Concluído Hoje</span>
+                    <div className="w-8 h-8 rounded-xl bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-400">
+                      <CheckCircle2 className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="text-2xl font-black text-sky-300">{concluidosColabs.length}</div>
+                  <div className="text-[11px] text-sky-400/80 font-medium">Expediente finalizado</div>
+                </div>
+
+                {/* Taxa de Presença / Atividade */}
+                <div className="bg-slate-900 border border-purple-500/30 rounded-2xl p-4 shadow-xl space-y-2 col-span-2 lg:col-span-1 hover:border-purple-500/50 transition-all">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-purple-400 uppercase tracking-wider">Aderência Hoje</span>
+                    <div className="w-8 h-8 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400">
+                      <BarChart3 className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="text-2xl font-black text-purple-300">{taxaPresenca}%</div>
+                  <div className="text-[11px] text-purple-400/80 font-medium">
+                    {aguardandoColabs.length > 0 ? `${aguardandoColabs.length} aguardando início` : "Equipe 100% iniciada"}
+                  </div>
+                </div>
+              </div>
+
+              {/* Seção 2: Gráficos de Tendência de Presença em Tempo Real */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Gráfico 1: Curva de Fluxo de Presença por Hora do Dia */}
+                <div className="lg:col-span-8 bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl space-y-4">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pb-3 border-b border-slate-800">
+                    <div>
+                      <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                        <TrendingUp className="w-4 h-4 text-sky-400" />
+                        Curva Horária de Presença & Movimentação (06h às 20h)
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Volume dinâmico de colaboradores ativos em seus postos vs. intervalos de almoço ao longo do dia.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-3 text-xs">
+                      <span className="flex items-center gap-1.5 text-sky-400 font-semibold">
+                        <span className="w-3 h-3 rounded bg-sky-500"></span> Em Turno
+                      </span>
+                      <span className="flex items-center gap-1.5 text-amber-400 font-semibold">
+                        <span className="w-3 h-3 rounded bg-amber-500"></span> Almoço
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="h-64 sm:h-72 w-full pt-2">
+                    {totalColabs === 0 ? (
+                      <div className="h-full flex flex-col items-center justify-center text-slate-500 space-y-2">
+                        <Clock className="w-8 h-8 text-slate-600" />
+                        <span className="text-xs">Cadastre colaboradores para visualizar a curva de presença horária.</span>
+                      </div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={dadosFluxo} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                          <XAxis dataKey="hora" stroke="#64748b" fontSize={11} tickLine={false} />
+                          <YAxis stroke="#64748b" fontSize={11} tickLine={false} allowDecimals={false} />
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor: "#090d16",
+                              borderColor: "#334155",
+                              borderRadius: "12px",
+                              color: "#f8fafc",
+                              fontSize: "12px",
+                              boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.5)",
+                            }}
+                          />
+                          <Bar dataKey="Em Turno" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
+                          <Bar dataKey="Em Almoço" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    )}
+                  </div>
+                </div>
+
+                {/* Gráfico 2: Presença por Departamento */}
+                <div className="lg:col-span-4 bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl space-y-4 flex flex-col justify-between">
+                  <div>
+                    <div className="pb-3 border-b border-slate-800">
+                      <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                        <Briefcase className="w-4 h-4 text-emerald-400" />
+                        Efetivo por Setor
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Proporção de colaboradores em atividade por departamento.
+                      </p>
+                    </div>
+
+                    <div className="space-y-3.5 pt-4">
+                      {dadosDeptos.length === 0 ? (
+                        <p className="text-xs text-slate-500 italic text-center py-8">Nenhum departamento cadastrado.</p>
+                      ) : (
+                        dadosDeptos.map((dept) => (
+                          <div key={dept.departamento} className="space-y-1.5">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-bold text-white">{dept.departamento}</span>
+                              <span className="font-mono text-slate-400 text-[11px]">
+                                <strong className="text-emerald-400">{dept.emTurno}</strong> em turno / {dept.total} total ({dept.pct}%)
+                              </span>
+                            </div>
+                            <div className="h-2.5 w-full bg-slate-950 rounded-full overflow-hidden border border-slate-800 flex">
+                              <div
+                                style={{ width: `${dept.total > 0 ? (dept.emTurno / dept.total) * 100 : 0}%` }}
+                                className="bg-emerald-500 transition-all duration-500"
+                                title={`${dept.emTurno} em turno`}
+                              />
+                              <div
+                                style={{ width: `${dept.total > 0 ? (dept.emAlmoco / dept.total) * 100 : 0}%` }}
+                                className="bg-amber-500 transition-all duration-500"
+                                title={`${dept.emAlmoco} em almoço`}
+                              />
+                              <div
+                                style={{ width: `${dept.total > 0 ? (dept.concl / dept.total) * 100 : 0}%` }}
+                                className="bg-sky-500 transition-all duration-500"
+                                title={`${dept.concl} concluídos`}
+                              />
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Resumo de Escalas Ativas */}
+                  <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800/80 space-y-2 mt-4 text-xs">
+                    <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider flex items-center justify-between">
+                      <span>Escalas Cadastradas</span>
+                      <span className="text-sky-400">{escalas.length} ativas</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {escalas.slice(0, 4).map((esc) => (
+                        <span key={esc.id} className="px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-800 text-[10px] text-slate-300 font-mono">
+                          {esc.tipo} • {esc.nome.split("(")[0]}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Seção 3: Quadro Interativo de Colaboradores em Atividade */}
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl space-y-5">
+                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+                  <div>
+                    <h3 className="text-base font-bold text-white flex items-center gap-2">
+                      <Users className="w-5 h-5 text-sky-400" />
+                      Quadro de Presença em Tempo Real ({colabsFiltrados.length} de {totalColabs})
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Visualização detalhada do status de cada colaborador hoje, progresso da jornada e horários nominais.
+                    </p>
+                  </div>
+
+                  {/* Ação rápida para cadastrar ou testar */}
+                  <div className="flex items-center gap-2 w-full md:w-auto">
+                    {colaboradores.length === 0 ? (
+                      <button
+                        onClick={handleCarregarExemploPronto}
+                        className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-sky-600/30 flex items-center gap-1.5 whitespace-nowrap"
+                      >
+                        <Play className="w-3.5 h-3.5" /> Carregar Demonstração (IA)
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleAbrirNovoColaborador}
+                        className="px-4 py-2 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap"
+                      >
+                        <UserPlus className="w-3.5 h-3.5" /> + Novo Colaborador
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Filtros da Lista: Status, Departamento e Busca */}
+                <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 text-xs">
+                  {/* Pílulas de Status */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0">
+                    <button
+                      type="button"
+                      onClick={() => setFiltroStatusDashboard("todos")}
+                      className={`px-3 py-1.5 rounded-xl font-semibold whitespace-nowrap transition-all ${
+                        filtroStatusDashboard === "todos"
+                          ? "bg-sky-600 text-white shadow-md shadow-sky-600/30 font-bold"
+                          : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800"
+                      }`}
+                    >
+                      Todos ({totalColabs})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFiltroStatusDashboard("emTurno")}
+                      className={`px-3 py-1.5 rounded-xl font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                        filtroStatusDashboard === "emTurno"
+                          ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/30 font-bold"
+                          : "bg-slate-950 text-slate-400 hover:text-emerald-300 border border-slate-800"
+                      }`}
+                    >
+                      <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                      Em Turno ({emTurnoColabs.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFiltroStatusDashboard("almoco")}
+                      className={`px-3 py-1.5 rounded-xl font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                        filtroStatusDashboard === "almoco"
+                          ? "bg-amber-600 text-white shadow-md shadow-amber-600/30 font-bold"
+                          : "bg-slate-950 text-slate-400 hover:text-amber-300 border border-slate-800"
+                      }`}
+                    >
+                      <Coffee className="w-3.5 h-3.5 text-amber-400" />
+                      Em Almoço ({emAlmocoColabs.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFiltroStatusDashboard("concluido")}
+                      className={`px-3 py-1.5 rounded-xl font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                        filtroStatusDashboard === "concluido"
+                          ? "bg-sky-600 text-white shadow-md shadow-sky-600/30 font-bold"
+                          : "bg-slate-950 text-slate-400 hover:text-sky-300 border border-slate-800"
+                      }`}
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5 text-sky-400" />
+                      Concluído ({concluidosColabs.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFiltroStatusDashboard("aguardando")}
+                      className={`px-3 py-1.5 rounded-xl font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                        filtroStatusDashboard === "aguardando"
+                          ? "bg-slate-700 text-white shadow-md font-bold"
+                          : "bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800"
+                      }`}
+                    >
+                      <Clock className="w-3.5 h-3.5 text-slate-400" />
+                      Aguardando / Folga ({aguardandoColabs.length + folgaColabs.length})
+                    </button>
+                  </div>
+
+                  {/* Dropdown de Departamento e Campo de Busca */}
+                  <div className="flex items-center gap-2 w-full lg:w-auto">
+                    <select
+                      value={filtroDeptoDashboard}
+                      onChange={(e) => setFiltroDeptoDashboard(e.target.value)}
+                      className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-white font-medium focus:outline-none focus:border-sky-500"
+                    >
+                      <option value="todos">Todos os Setores</option>
+                      {deptosSet.map((d) => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+
+                    <div className="relative flex-1 lg:w-60">
+                      <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        placeholder="Buscar funcionário ou cargo..."
+                        value={filtroBuscaDashboard}
+                        onChange={(e) => setFiltroBuscaDashboard(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Grid de Cards dos Colaboradores */}
+                {totalColabs === 0 ? (
+                  <div className="bg-slate-950/60 border border-slate-800 rounded-3xl p-12 text-center space-y-4 max-w-lg mx-auto">
+                    <div className="w-16 h-16 rounded-2xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 mx-auto">
+                      <Users className="w-8 h-8" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-white text-base">Nenhum Colaborador Cadastrado</h4>
+                      <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                        Cadastre os colaboradores e vincule suas escalas para acompanhar os turnos ativos e tendências de pontualidade em tempo real.
+                      </p>
+                    </div>
+                    <div className="flex items-center justify-center gap-3 pt-2">
+                      <button
+                        onClick={handleAbrirNovoColaborador}
+                        className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-bold transition-all"
+                      >
+                        + Cadastrar Colaborador
+                      </button>
+                      <button
+                        onClick={handleCarregarExemploPronto}
+                        className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold border border-slate-700"
+                      >
+                        Carregar Exemplo de Demonstração
+                      </button>
+                    </div>
+                  </div>
+                ) : colabsFiltrados.length === 0 ? (
+                  <div className="bg-slate-950/40 border border-slate-800/80 rounded-2xl p-8 text-center text-slate-400 text-xs">
+                    Nenhum colaborador encontrado com os filtros selecionados.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {colabsFiltrados.map((item) => {
+                      const { colab, status, statusRotulo, statusDesc, statusCor, entrada, saida, almocoSaida, almocoRetorno, progressoPct, jornadaTotalMin, minutosTrabalhados } = item;
+                      const emTurno = status === "emTurno";
+                      const emAlmoco = status === "almoco";
+
+                      return (
+                        <div
+                          key={colab.id}
+                          className={`bg-slate-950/90 border rounded-3xl p-5 shadow-xl space-y-4 transition-all ${
+                            emTurno
+                              ? "border-emerald-500/40 shadow-emerald-950/20"
+                              : emAlmoco
+                              ? "border-amber-500/40 shadow-amber-950/20"
+                              : status === "concluido"
+                              ? "border-sky-500/30"
+                              : "border-slate-800 hover:border-slate-700"
+                          }`}
+                        >
+                          {/* Topo do Card: Avatar, Nome e Badge de Status */}
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-center gap-3">
+                              <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-bold text-sm shrink-0 shadow-inner ${
+                                emTurno
+                                  ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 ring-2 ring-emerald-500/20"
+                                  : emAlmoco
+                                  ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                                  : status === "concluido"
+                                  ? "bg-sky-500/20 text-sky-300 border border-sky-500/30"
+                                  : "bg-slate-800 text-slate-300 border border-slate-700"
+                              }`}>
+                                {colab.nome.charAt(0)}
+                              </div>
+                              <div>
+                                <h4 className="font-bold text-white text-xs leading-tight line-clamp-1">{colab.nome}</h4>
+                                <span className="text-[11px] text-sky-400 font-semibold block">{colab.cargo}</span>
+                                <span className="text-[10px] text-slate-400 block">{colab.departamento || "Geral"}</span>
+                              </div>
+                            </div>
+
+                            {/* Status Badge */}
+                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border flex items-center gap-1.5 shrink-0 ${
+                              emTurno
+                                ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30 font-bold"
+                                : emAlmoco
+                                ? "bg-amber-500/10 text-amber-300 border-amber-500/30"
+                                : status === "concluido"
+                                ? "bg-sky-500/10 text-sky-300 border-sky-500/30"
+                                : "bg-slate-900 text-slate-400 border-slate-800"
+                            }`}>
+                              {emTurno && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>}
+                              {emAlmoco && <Coffee className="w-3 h-3 text-amber-400" />}
+                              {status === "concluido" && <Check className="w-3 h-3 text-sky-400" />}
+                              {statusRotulo}
+                            </span>
+                          </div>
+
+                          {/* Horário Nominal e Descrição */}
+                          <div className="p-3 rounded-2xl bg-slate-900 border border-slate-800/80 space-y-2 text-xs">
+                            <div className="flex items-center justify-between text-[11px] font-mono">
+                              <span className="text-slate-400 flex items-center gap-1 font-sans">
+                                <Clock className="w-3 h-3 text-sky-400" /> Expediente Hoje:
+                              </span>
+                              <span className="font-bold text-white">
+                                {entrada} às {saida}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono pt-1 border-t border-slate-800/60">
+                              <span>Almoço: {almocoSaida} - {almocoRetorno}</span>
+                              <span className="text-emerald-400">{item.escalaNome.split("(")[0]}</span>
+                            </div>
+
+                            <div className="text-[10px] text-slate-400 italic">
+                              {statusDesc}
+                            </div>
+                          </div>
+
+                          {/* Barra de Progresso da Jornada Diária */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="text-slate-400">Progresso do Dia:</span>
+                              <span className="font-mono font-bold text-white">
+                                {minutosParaTextoExtenso(minutosTrabalhados, false)} / {minutosParaTextoExtenso(jornadaTotalMin, false)} ({progressoPct}%)
+                              </span>
+                            </div>
+                            <div className="h-2 w-full bg-slate-900 rounded-full overflow-hidden border border-slate-800">
+                              <div
+                                style={{ width: `${progressoPct}%` }}
+                                className={`h-full transition-all duration-500 ${
+                                  emTurno ? "bg-emerald-500" : emAlmoco ? "bg-amber-500" : status === "concluido" ? "bg-sky-500" : "bg-slate-700"
+                                }`}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Ações Rápidas */}
+                          <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2 text-xs">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPortalColaboradorId(colab.id);
+                                setAbaAtiva("baterPonto");
+                              }}
+                              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-semibold transition-colors flex items-center gap-1.5 text-[11px]"
+                            >
+                              <Clock className="w-3 h-3 text-teal-400" /> Bater Ponto
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setColaboradorSelecionadoId(colab.id);
+                                setAbaAtiva("fechamento");
+                              }}
+                              className="px-3 py-1.5 rounded-xl bg-sky-600/20 hover:bg-sky-600 text-sky-300 hover:text-white border border-sky-500/30 font-semibold transition-all flex items-center gap-1.5 text-[11px]"
+                            >
+                              <FileText className="w-3 h-3 text-sky-400" /> Ver Espelho
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* ================= ABA: PORTAL DE PONTO (FUNCIONÁRIOS) ================= */}
         {abaAtiva === "baterPonto" && (
           <div className="space-y-6 max-w-4xl mx-auto">
@@ -2715,6 +3634,20 @@ export default function App() {
                     </select>
                   </div>
                 </div>
+
+                {/* Painel de Notificações Push & Alertas de Turno PWA */}
+                {(() => {
+                  const colabAtual = colaboradores.find((c) => c.id === portalColaboradorId) || colaboradores[0];
+                  if (!colabAtual) return null;
+                  return (
+                    <PainelNotificacoesTurno
+                      colaboradorId={colabAtual.id}
+                      colaboradorNome={colabAtual.nome}
+                      horarioTrabalho={colabAtual.horarioTrabalho}
+                      onNotificacaoEnviada={(tit, msg) => showToast("sucesso", tit, msg)}
+                    />
+                  );
+                })()}
 
                 {/* Painel de Ações de Batida */}
                 {(() => {
@@ -2823,6 +3756,97 @@ export default function App() {
               );
             })()}
               </>
+            )}
+          </div>
+        )}
+
+        {/* ================= ABA: ALERTAS & INCONSISTÊNCIAS ================= */}
+        {abaAtiva === "inconsistencias" && (
+          <div className="space-y-6 max-w-6xl mx-auto">
+            <div className="bg-gradient-to-r from-rose-950/40 via-slate-900 to-amber-950/30 border border-rose-500/30 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-rose-500/10 rounded-full blur-3xl pointer-events-none"></div>
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
+                <div className="space-y-2">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/10 text-rose-400 text-xs font-bold border border-rose-500/20">
+                    <AlertTriangle className="w-3.5 h-3.5" /> Monitoramento em Tempo Real
+                  </span>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">Alertas & Inconsistências de Ponto</h2>
+                  <p className="text-sm text-slate-300 max-w-xl leading-relaxed">
+                    Detecção automática de batidas incompletas (ímpares), esquecimentos de marcação e faltas injustificadas na jornada dos colaboradores.
+                  </p>
+                </div>
+                <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 text-center min-w-[200px] shadow-inner">
+                  <div className="text-xs text-slate-400 uppercase font-bold tracking-wider">Inconsistências Ativas</div>
+                  <div className="text-3xl font-extrabold text-rose-400 mt-1">
+                    {calcularInconsistenciasGerais().length}
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-1">Competência Setembro / 2026</div>
+                </div>
+              </div>
+            </div>
+
+            {calcularInconsistenciasGerais().length === 0 ? (
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center space-y-4 max-w-xl mx-auto shadow-2xl">
+                <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mx-auto">
+                  <CheckCircle2 className="w-8 h-8" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-white text-base">Nenhuma Inconsistência Detectada!</h4>
+                  <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                    Todos os registros de ponto dos colaboradores estão completos e corretos para a competência atual.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+                <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <AlertTriangle className="w-5 h-5 text-rose-400" /> Lista de Alertas Pendentes de Correção
+                  </h3>
+                  <span className="text-xs text-slate-400 font-medium">Exibindo registros que exigem atenção do DP</span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-950 text-slate-400 uppercase tracking-wider font-bold border-b border-slate-800">
+                      <tr>
+                        <th className="py-3 px-4">Colaborador</th>
+                        <th className="py-3 px-4">Data</th>
+                        <th className="py-3 px-4">Tipo de Alerta</th>
+                        <th className="py-3 px-4">Descrição da Inconsistência</th>
+                        <th className="py-3 px-4 text-right">Ação</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800 font-medium text-slate-300">
+                      {calcularInconsistenciasGerais().map((inc, idx) => (
+                        <tr key={idx} className="hover:bg-slate-950/60 transition-colors">
+                          <td className="py-3 px-4 font-bold text-white">{inc.colaboradorNome}</td>
+                          <td className="py-3 px-4 font-mono text-sky-400">{inc.dataStr}</td>
+                          <td className="py-3 px-4">
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-300 border border-rose-500/20">
+                              {inc.tipo}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-slate-300">{inc.descricao}</td>
+                          <td className="py-3 px-4 text-right">
+                            <button
+                              onClick={() => {
+                                setColaboradorSelecionadoId(inc.colaboradorId);
+                                setPortalColaboradorId(inc.colaboradorId);
+                                setPortalDiaSelecionado(inc.dia);
+                                setAbaAtiva("baterPonto");
+                              }}
+                              className="px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold transition-all shadow"
+                            >
+                              Corrigir Ponto
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             )}
           </div>
         )}
