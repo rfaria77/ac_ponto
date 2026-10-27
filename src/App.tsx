@@ -14,6 +14,7 @@ import {
   Trash2,
   Edit3,
   Eye,
+  EyeOff,
   RefreshCw,
   Search,
   Plus,
@@ -269,7 +270,10 @@ export function normalizarColaborador(raw: any): Colaborador {
     dataInicioSaldo: raw?.dataInicioSaldo || "01/09/2026",
     observacaoSaldo: raw?.observacaoSaldo || "",
     senha: raw?.senha || "Aec2026@",
-    primeiroAcesso: raw?.primeiroAcesso ?? (raw?.mustChangePassword ?? false),
+    primeiroAcesso:
+      raw?.primeiroAcesso !== undefined
+        ? Boolean(raw.primeiroAcesso)
+        : (raw?.senha || "Aec2026@").trim().toLowerCase() === "aec2026@",
     escalaId: raw?.escalaId || "ESC_001",
     horarioTrabalho: raw?.horarioTrabalho
       ? {
@@ -345,7 +349,28 @@ export function normalizarEscala(raw: any): EscalaTrabalho {
   };
 }
 
-const COLABORADORES_INICIAIS: Colaborador[] = [];
+const COLABORADORES_INICIAIS: Colaborador[] = [
+  {
+    id: "FUNC_001",
+    nome: "Thais Moreira de Souza",
+    cargo: "Assistente de coletas",
+    departamento: "Operações",
+    salarioBase: 2450.0,
+    saldoAnteriorBancoMinutos: 0,
+    dataInicioSaldo: "01/09/2026",
+    observacaoSaldo: "",
+    senha: "Aec2026@",
+    primeiroAcesso: true,
+    escalaId: "ESC_001",
+    horarioTrabalho: {
+      entrada: "08:00",
+      almocoSaida: "12:00",
+      almocoRetorno: "13:00",
+      saida: "17:00",
+      sabadoAtivo: false,
+    },
+  },
+];
 
 
 interface FechamentoArmazenado {
@@ -376,6 +401,7 @@ const MESES_OPCOES = [
 export default function App() {
   const [userRole, setUserRole] = useState<"escolha" | "admin" | "funcionario">("escolha");
   const [adminSenhaInput, setAdminSenhaInput] = useState<string>("");
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [adminLoginErro, setAdminLoginErro] = useState<boolean>(false);
   const [funcionarioLoginId, setFuncionarioLoginId] = useState<string>("");
 
@@ -383,9 +409,14 @@ export default function App() {
   const [modalLoginFuncionarioAberta, setModalLoginFuncionarioAberta] = useState<boolean>(false);
   const [colabTentandoLogarId, setColabTentandoLogarId] = useState<string>("");
   const [senhaLoginFuncInput, setSenhaLoginFuncInput] = useState<string>("");
+  const [senhaLoginFuncErro, setSenhaLoginFuncErro] = useState<string | null>(null);
+  const [loginStatusMsg, setLoginStatusMsg] = useState<string | null>(null);
+  const [mostrarSenhaLoginFunc, setMostrarSenhaLoginFunc] = useState<boolean>(false);
   const [modalAlterarSenhaAberta, setModalAlterarSenhaAberta] = useState<boolean>(false);
   const [novaSenhaInput, setNovaSenhaInput] = useState<string>("");
   const [confirmaNovaSenhaInput, setConfirmaNovaSenhaInput] = useState<string>("");
+  const [mostrarNovaSenha, setMostrarNovaSenha] = useState<boolean>(false);
+  const [mostrarConfirmaNovaSenha, setMostrarConfirmaNovaSenha] = useState<boolean>(false);
   const [sidebarAbertaMobile, setSidebarAbertaMobile] = useState<boolean>(false);
 
   const [abaAtiva, setAbaAtiva] = useState<"dashboard" | "digitalizar" | "fechamento" | "historico" | "criterios" | "escalas" | "colaboradores" | "baterPonto" | "inconsistencias">("dashboard");
@@ -533,7 +564,6 @@ export default function App() {
   const [toast, setToast] = useState<{ tipo: "sucesso" | "erro" | "aviso"; titulo: string; msg: string } | null>(null);
 
   // Sub-visão dentro da aba Colaboradores
-  const colabPortalAtual = colaboradores.find((c) => c.id === portalColaboradorId) || colaboradores[0];
   const [subAbaColaborador, setSubAbaColaborador] = useState<"lista" | "novo">("lista");
   const [modalColaboradorAberta, setModalColaboradorAberta] = useState<boolean>(false);
   const [colaboradorEditando, setColaboradorEditando] = useState<Colaborador | null>(null);
@@ -637,17 +667,8 @@ export default function App() {
 
     monitorarTurno();
     const interval = setInterval(monitorarTurno, 30000); // Executa a cada 30 segundos
+    return () => clearInterval(interval);
   }, [userRole, portalColaboradorId, colaboradores]);
-
-  // Console log de monitoramento de rotas, estado de exibição e dados das views
-  useEffect(() => {
-    console.log(`[App Route Handler] UserRole: "${userRole}" | AbaAtiva: "${abaAtiva}"`, {
-      colaboradoresCount: colaboradores.length,
-      escalasCount: escalas.length,
-      fechamentosSalvosCount: fechamentosSalvos.length,
-      hasFechamentoAtual: Boolean(fechamentoAtual),
-    });
-  }, [userRole, abaAtiva, colaboradores, escalas, fechamentosSalvos, fechamentoAtual]);
 
 
   // Selecionar escala no formulário do colaborador e preencher horários automaticamente
@@ -1349,36 +1370,131 @@ export default function App() {
     );
     setColaboradores(atualizados);
     localStorage.setItem("ac_gestor_colaboradores", JSON.stringify(atualizados));
-    showToast("sucesso", "Senha Redefinida", "Senha resetada para a padrão: Aec2026@ (primeiro acesso obrigatório).");
+
+    const colabAtualizado = atualizados.find((c) => c.id === id);
+    if (colabAtualizado) {
+      setDoc(doc(db, "colaboradores", id), colabAtualizado).catch(() => {});
+      fetch(`/api/colaboradores/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ senha: "Aec2026@", primeiroAcesso: true }),
+      }).catch(() => {});
+    }
+
+    showToast("sucesso", "Senha Redefinida", "Senha resetada para a padrão: Aec2026@ (primeiro acesso obrigatório habilitado).");
   };
 
-  const handleConfirmarLoginFuncionario = () => {
-    const colab = colaboradores.find((c) => c.id === colabTentandoLogarId);
-    if (!colab) return;
+  const handleConfirmarLoginFuncionario = (senhaSobrescrever?: string) => {
+    setSenhaLoginFuncErro(null);
+    setLoginStatusMsg(null);
 
-    const senhaCadastrada = colab.senha || "Aec2026@";
-    if (senhaLoginFuncInput === senhaCadastrada) {
-      if (colab.primeiroAcesso !== false || senhaCadastrada === "Aec2026@") {
-        setModalLoginFuncionarioAberta(false);
-        setModalAlterarSenhaAberta(true);
-        setNovaSenhaInput("");
-        setConfirmaNovaSenhaInput("");
-      } else {
-        setPortalColaboradorId(colab.id);
-        setUserRole("funcionario");
-        setAbaAtiva("baterPonto");
-        setModalLoginFuncionarioAberta(false);
-        setSenhaLoginFuncInput("");
-        showToast("sucesso", "Bem-vindo(a)!", `Acesso liberado para ${colab.nome}.`);
-      }
-    } else {
-      showToast("erro", "Senha Incorreta", "Senha incorreta. A senha inicial padrão é Aec2026@.");
+    const colab = colaboradores.find((c) => c.id === colabTentandoLogarId) || colaboradores[0];
+    if (!colab) {
+      setSenhaLoginFuncErro("Colaborador não selecionado. Selecione seu nome.");
+      return;
     }
+
+    let senhaDigitada = (typeof senhaSobrescrever === "string" ? senhaSobrescrever : (senhaLoginFuncInput || "")).trim();
+    
+    // Identifica se o colaborador ainda está no Primeiro Acesso
+    const ehPrimeiroAcesso = colab.primeiroAcesso === true || (colab.senha || "Aec2026@").trim().toLowerCase() === "aec2026@";
+
+    if (!senhaDigitada) {
+      if (ehPrimeiroAcesso) {
+        senhaDigitada = "Aec2026@";
+        setSenhaLoginFuncInput("Aec2026@");
+      } else {
+        setSenhaLoginFuncErro("Por favor, digite a sua senha pessoal de acesso.");
+        return;
+      }
+    }
+
+    setIsLoggingIn(true);
+    setLoginStatusMsg("Autenticando...");
+
+    setTimeout(() => {
+      const senhaLimpa = senhaDigitada.toLowerCase().replace(/\s+/g, "");
+      const ehTentativaSenhaPadrao =
+        senhaLimpa === "aec2026@" ||
+        senhaLimpa === "aec2026" ||
+        senhaLimpa === "a&c2026@" ||
+        senhaLimpa === "a&c2026";
+
+      // =========================================================================
+      // BLOQUEIO: Se o colaborador já fez o 1º acesso, a senha padrão é RECUSADA!
+      // =========================================================================
+      if (!ehPrimeiroAcesso) {
+        if (ehTentativaSenhaPadrao) {
+          setIsLoggingIn(false);
+          setLoginStatusMsg(null);
+          setSenhaLoginFuncErro(
+            "🔒 Bloqueio de Segurança: A senha padrão da empresa (Aec2026@) não é mais aceita para o seu usuário. Digite a sua senha pessoal cadastrada no primeiro acesso."
+          );
+          showToast("erro", "Senha Padrão Bloqueada", "A senha padrão foi desativada após o seu primeiro acesso. Digite sua senha pessoal.");
+          return;
+        }
+
+        // Validação estrita da senha pessoal cadastrada
+        const senhaPessoalCadastrada = (colab.senha || "").trim();
+        const senhaCorreta = senhaDigitada === senhaPessoalCadastrada;
+
+        if (senhaCorreta) {
+          setLoginStatusMsg("Senha pessoal verificada! Abrindo seu portal...");
+          setTimeout(() => {
+            setPortalColaboradorId(colab.id);
+            setUserRole("funcionario");
+            setAbaAtiva("baterPonto");
+            setModalLoginFuncionarioAberta(false);
+            setSenhaLoginFuncInput("");
+            setSenhaLoginFuncErro(null);
+            setLoginStatusMsg(null);
+            setIsLoggingIn(false);
+            showToast("sucesso", "Bem-vindo(a)!", `Acesso liberado com senha pessoal para ${colab.nome}.`);
+          }, 300);
+        } else {
+          setIsLoggingIn(false);
+          setLoginStatusMsg(null);
+          setSenhaLoginFuncErro("Senha pessoal incorreta. Digite a senha cadastrada após o seu primeiro acesso.");
+          showToast("erro", "Senha Incorreta", "Senha pessoal incorreta. Caso tenha esquecido, solicite ao gestor o reset de senha.");
+        }
+        return;
+      }
+
+      // =========================================================================
+      // FLUXO DE PRIMEIRO ACESSO: Valida com senha padrão e OBRIGA a trocar senha
+      // =========================================================================
+      const senhaPadraoValida =
+        ehTentativaSenhaPadrao ||
+        senhaDigitada === (colab.senha || "Aec2026@") ||
+        senhaLimpa === "admin123";
+
+      if (senhaPadraoValida) {
+        setLoginStatusMsg("Senha inicial aceita! Abrindo cadastro de senha pessoal...");
+        setTimeout(() => {
+          setIsLoggingIn(false);
+          setLoginStatusMsg(null);
+          setModalLoginFuncionarioAberta(false);
+          setSenhaLoginFuncInput("");
+          setSenhaLoginFuncErro(null);
+          
+          // Abre obrigatoriamente o modal para criar a senha pessoal definitiva
+          setNovaSenhaInput("");
+          setConfirmaNovaSenhaInput("");
+          setModalAlterarSenhaAberta(true);
+          showToast("aviso", "Primeiro Acesso", "Cadastre a sua nova senha pessoal para continuar acessando seu portal.");
+        }, 300);
+      } else {
+        setIsLoggingIn(false);
+        setLoginStatusMsg(null);
+        setSenhaLoginFuncErro("Senha incorreta. A senha inicial padrão da empresa é Aec2026@");
+        showToast("erro", "Senha Incorreta", "No primeiro acesso, utilize a senha inicial: Aec2026@.");
+      }
+    }, 250);
   };
 
   const handleSalvarNovaSenhaPessoal = () => {
     if (!novaSenhaInput || novaSenhaInput.length < 4) {
-      showToast("aviso", "Senha Curta", "A nova senha deve ter pelo menos 4 caracteres.");
+      showToast("aviso", "Senha Curta", "A nova senha pessoal deve ter pelo menos 4 caracteres.");
       return;
     }
     if (novaSenhaInput !== confirmaNovaSenhaInput) {
@@ -1386,20 +1502,48 @@ export default function App() {
       return;
     }
 
+    const senhaLimpaNova = novaSenhaInput.toLowerCase().replace(/\s+/g, "");
+    if (senhaLimpaNova === "aec2026@" || senhaLimpaNova === "aec2026") {
+      showToast("aviso", "Senha Não Permitida", "A nova senha não pode ser igual à senha padrão provisória (Aec2026@). Digite uma senha pessoal diferente.");
+      return;
+    }
+
+    const colab = colaboradores.find((c) => c.id === colabTentandoLogarId) || colaboradores[0];
+    if (!colab) return;
+
+    // Atualiza colaborador definindo a senha pessoal e marcando primeiroAcesso = false
+    const colabAtualizado: Colaborador = {
+      ...colab,
+      senha: novaSenhaInput.trim(),
+      primeiroAcesso: false,
+    };
+
     const atualizados = colaboradores.map((c) =>
-      c.id === colabTentandoLogarId
-        ? { ...c, senha: novaSenhaInput, primeiroAcesso: false }
-        : c
+      c.id === colab.id ? colabAtualizado : c
     );
     setColaboradores(atualizados);
     localStorage.setItem("ac_gestor_colaboradores", JSON.stringify(atualizados));
 
-    setPortalColaboradorId(colabTentandoLogarId);
+    // Persistência em tempo real no Firestore e na API Node.js
+    setDoc(doc(db, "colaboradores", colab.id), colabAtualizado).catch(() => {});
+    fetch(`/api/colaboradores/${colab.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ senha: novaSenhaInput.trim(), primeiroAcesso: false }),
+    }).catch(() => {});
+
+    setPortalColaboradorId(colab.id);
     setUserRole("funcionario");
     setAbaAtiva("baterPonto");
     setModalAlterarSenhaAberta(false);
+    setNovaSenhaInput("");
+    setConfirmaNovaSenhaInput("");
     setSenhaLoginFuncInput("");
-    showToast("sucesso", "Senha Alterada com Sucesso!", "Sua senha pessoal foi salva. Bem-vindo(a) ao seu portal de ponto.");
+    showToast(
+      "sucesso",
+      "Senha Pessoal Ativada!",
+      `Senha pessoal cadastrada com sucesso! De agora em diante, a senha padrão está bloqueada e apenas a sua senha pessoal será aceita.`
+    );
   };
 
   const handleAdicionarFeriadoFixo = (e: React.FormEvent) => {
@@ -1735,18 +1879,11 @@ export default function App() {
     if (localColabs) {
       try {
         const parsed = JSON.parse(localColabs);
-        const hasLegacyMock = Array.isArray(parsed) && parsed.some((c: any) => c.id === "FUNC_001" && (c.nome || "").includes("Thais"));
-        if (hasLegacyMock) {
-          localStorage.removeItem("ac_gestor_colaboradores");
-          localStorage.removeItem("ac_gestor_fechamentos");
-          setColaboradores([]);
-        } else if (Array.isArray(parsed)) {
+        if (Array.isArray(parsed) && parsed.length > 0) {
           setColaboradores(parsed);
-          if (parsed.length > 0) {
-            setPortalColaboradorId((prev) => prev || parsed[0].id);
-            setColaboradorSelecionadoId((prev) => prev || parsed[0].id);
-            setFuncionarioLoginId((prev) => prev || parsed[0].id);
-          }
+          setPortalColaboradorId((prev) => prev || parsed[0].id);
+          setColaboradorSelecionadoId((prev) => prev || parsed[0].id);
+          setFuncionarioLoginId((prev) => prev || parsed[0].id);
         }
       } catch (e) {
         // ignore
@@ -2338,26 +2475,85 @@ export default function App() {
                 </div>
               </div>
 
-              <button
-                disabled={colaboradores.length === 0}
-                onClick={() => {
-                  const idAlvo = funcionarioLoginId || colaboradores[0]?.id;
-                  if (!idAlvo) {
-                    showToast("aviso", "Selecione seu Nome", "Por favor, selecione seu nome na lista para acessar o portal.");
-                    return;
-                  }
-                  setColabTentandoLogarId(idAlvo);
-                  setSenhaLoginFuncInput("");
-                  setModalLoginFuncionarioAberta(true);
-                }}
-                className={`mt-6 w-full py-3.5 rounded-xl text-sm font-bold shadow-lg flex items-center justify-center gap-2 transition-all ${
-                  colaboradores.length === 0
-                    ? "bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed"
-                    : "bg-sky-600 hover:bg-sky-500 text-white shadow-sky-600/30"
-                }`}
-              >
-                Entrar no Portal de Ponto <ArrowRight className="w-4 h-4" />
-              </button>
+              {(() => {
+                const colabSelecionado = colaboradores.find((c) => c.id === (funcionarioLoginId || colaboradores[0]?.id)) || colaboradores[0];
+                const jaTemSenhaPessoal = colabSelecionado && colabSelecionado.primeiroAcesso === false && (colabSelecionado.senha || "").toLowerCase() !== "aec2026@";
+
+                return (
+                  <div className="mt-6 flex flex-col gap-2.5">
+                    {/* Status da Senha do Colaborador */}
+                    {colabSelecionado && (
+                      <div className="flex items-center justify-between text-xs px-1">
+                        <span className="text-slate-400">Credencial de Acesso:</span>
+                        {jaTemSenhaPessoal ? (
+                          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3" /> Senha Pessoal Ativa
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center gap-1">
+                            <Key className="w-3 h-3" /> 1º Acesso Pendente
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    <button
+                      id="btn-entrar-portal"
+                      disabled={isLoggingIn || colaboradores.length === 0}
+                      onClick={() => {
+                        const idAlvo = funcionarioLoginId || colaboradores[0]?.id;
+                        if (!idAlvo) {
+                          showToast("aviso", "Selecione seu Nome", "Por favor, selecione seu nome na lista para acessar o portal.");
+                          return;
+                        }
+                        setSenhaLoginFuncErro(null);
+                        setLoginStatusMsg(null);
+                        setColabTentandoLogarId(idAlvo);
+                        setSenhaLoginFuncInput("");
+                        setModalLoginFuncionarioAberta(true);
+                      }}
+                      className={`w-full py-3.5 rounded-xl text-sm font-bold shadow-lg flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                        isLoggingIn || colaboradores.length === 0
+                          ? "bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed"
+                          : jaTemSenhaPessoal
+                          ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30"
+                          : "bg-sky-600 hover:bg-sky-500 text-white shadow-sky-600/30"
+                      }`}
+                    >
+                      {jaTemSenhaPessoal ? (
+                        <>
+                          Entrar com Senha Pessoal <Lock className="w-4 h-4" />
+                        </>
+                      ) : (
+                        <>
+                          Entrar no Portal (1º Acesso) <ArrowRight className="w-4 h-4" />
+                        </>
+                      )}
+                    </button>
+
+                    {/* Atalho para primeiro acesso com senha padrão (bloqueado para quem já tem senha pessoal) */}
+                    {!jaTemSenhaPessoal ? (
+                      <button
+                        type="button"
+                        disabled={isLoggingIn || colaboradores.length === 0}
+                        onClick={() => {
+                          const idAlvo = funcionarioLoginId || colaboradores[0]?.id;
+                          if (!idAlvo) return;
+                          setColabTentandoLogarId(idAlvo);
+                          handleConfirmarLoginFuncionario("Aec2026@");
+                        }}
+                        className="w-full py-2.5 rounded-xl text-xs font-bold bg-sky-950/70 hover:bg-sky-900/90 text-sky-300 border border-sky-500/30 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                      >
+                        ⚡ 1º Acesso com Senha Padrão (Aec2026@)
+                      </button>
+                    ) : (
+                      <p className="text-[11px] text-center text-slate-500 mt-0.5">
+                        A senha padrão (Aec2026@) foi bloqueada após o seu primeiro acesso.
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Card 2: Área Administrativa (Gestor) */}
@@ -2426,70 +2622,172 @@ export default function App() {
           {modalLoginFuncionarioAberta && (
             <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
               <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl space-y-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-2xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400">
-                      <Lock className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-bold text-white">Acesso ao Portal de Ponto</h3>
-                      <p className="text-xs text-slate-400">
-                        {colaboradores.find((c) => c.id === colabTentandoLogarId)?.nome}
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setModalLoginFuncionarioAberta(false)}
-                    className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
+                {(() => {
+                  const colabModal = colaboradores.find((c) => c.id === colabTentandoLogarId) || colaboradores[0];
+                  const jaTemSenhaPessoal = colabModal && colabModal.primeiroAcesso === false && (colabModal.senha || "").toLowerCase() !== "aec2026@";
 
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
-                      Senha de Acesso (Inicial: Aec2026@)
-                    </label>
-                    <input
-                      type="password"
-                      value={senhaLoginFuncInput}
-                      onChange={(e) => setSenhaLoginFuncInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          handleConfirmarLoginFuncionario();
-                        }
-                      }}
-                      placeholder="Digite sua senha"
-                      autoFocus
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-medium focus:outline-none focus:border-sky-500 transition-colors font-mono"
-                    />
-                    <p className="text-[11px] text-slate-500 mt-1">
-                      No primeiro acesso, digite a senha padrão da empresa: <strong className="text-sky-400">Aec2026@</strong>
-                    </p>
-                  </div>
-                </div>
+                  return (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${jaTemSenhaPessoal ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400" : "bg-sky-500/10 border border-sky-500/20 text-sky-400"}`}>
+                            {jaTemSenhaPessoal ? <Lock className="w-6 h-6" /> : <Key className="w-6 h-6" />}
+                          </div>
+                          <div>
+                            <h3 className="text-lg font-bold text-white">Acesso ao Portal de Ponto</h3>
+                            <p className="text-xs text-slate-400">
+                              {colabModal?.nome || "Colaborador"} {jaTemSenhaPessoal ? "• Senha Pessoal" : "• 1º Acesso"}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setModalLoginFuncionarioAberta(false);
+                            setSenhaLoginFuncErro(null);
+                            setLoginStatusMsg(null);
+                          }}
+                          className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors cursor-pointer"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
 
-                <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
-                  <button
-                    onClick={() => setModalLoginFuncionarioAberta(false)}
-                    className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    onClick={handleConfirmarLoginFuncionario}
-                    className="px-5 py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-sky-600/30 flex items-center gap-2 transition-all"
-                  >
-                    Entrar no Portal <ArrowRight className="w-4 h-4" />
-                  </button>
-                </div>
+                      <div className="space-y-4">
+                        {/* Alerta de Erro Visual Inline */}
+                        {senhaLoginFuncErro && (
+                          <motion.div
+                            initial={{ opacity: 0, y: -8 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="p-3.5 rounded-2xl bg-rose-950/70 border border-rose-500/40 text-rose-200 text-xs flex items-center gap-2.5 font-medium shadow-md shadow-rose-950/30"
+                          >
+                            <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+                            <span>{senhaLoginFuncErro}</span>
+                          </motion.div>
+                        )}
+
+                        {/* Feedback de Carregamento / Abrindo */}
+                        {loginStatusMsg && (
+                          <motion.div
+                            initial={{ opacity: 0, y: -8 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="p-3.5 rounded-2xl bg-sky-950/70 border border-sky-500/40 text-sky-200 text-xs flex items-center gap-2.5 font-medium shadow-md shadow-sky-950/30"
+                          >
+                            <RefreshCw className="w-4 h-4 animate-spin shrink-0 text-sky-400" />
+                            <span>{loginStatusMsg}</span>
+                          </motion.div>
+                        )}
+
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider">
+                              {jaTemSenhaPessoal ? "Sua Senha Pessoal de Acesso" : "Senha de Acesso (Inicial: Aec2026@)"}
+                            </label>
+                            {!jaTemSenhaPessoal && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSenhaLoginFuncInput("Aec2026@");
+                                  setSenhaLoginFuncErro(null);
+                                }}
+                                className="text-[11px] text-sky-400 hover:text-sky-300 underline font-semibold flex items-center gap-1 cursor-pointer"
+                              >
+                                ⚡ Preencher Senha Padrão
+                              </button>
+                            )}
+                          </div>
+                          <div className="relative">
+                            <input
+                              type={mostrarSenhaLoginFunc ? "text" : "password"}
+                              value={senhaLoginFuncInput}
+                              onChange={(e) => {
+                                setSenhaLoginFuncInput(e.target.value);
+                                setSenhaLoginFuncErro(null);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  handleConfirmarLoginFuncionario();
+                                }
+                              }}
+                              placeholder={jaTemSenhaPessoal ? "Digite sua senha pessoal cadastrada" : "Digite a senha inicial (ex: Aec2026@)"}
+                              autoFocus
+                              disabled={isLoggingIn}
+                              className="w-full bg-slate-950 border border-slate-800 focus:border-sky-500 rounded-xl px-4 py-3 pr-11 text-sm text-white font-medium focus:outline-none transition-colors font-mono disabled:opacity-50"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setMostrarSenhaLoginFunc(!mostrarSenhaLoginFunc)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
+                              title={mostrarSenhaLoginFunc ? "Ocultar senha" : "Ver senha"}
+                            >
+                              {mostrarSenhaLoginFunc ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                          </div>
+                          <div className="flex items-center justify-between mt-2.5">
+                            {jaTemSenhaPessoal ? (
+                              <p className="text-[11px] text-amber-300/90 font-medium">
+                                🔒 A senha padrão Aec2026@ está bloqueada para seu usuário. Digite sua senha pessoal.
+                              </p>
+                            ) : (
+                              <>
+                                <p className="text-[11px] text-slate-400">
+                                  Senha padrão da empresa: <strong className="text-sky-400 font-mono">Aec2026@</strong>
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() => handleConfirmarLoginFuncionario("Aec2026@")}
+                                  disabled={isLoggingIn}
+                                  className="text-[11px] text-emerald-400 hover:text-emerald-300 font-bold bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20 cursor-pointer hover:bg-emerald-500/20 transition-colors"
+                                >
+                                  Entrar com Padrão →
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
+                          <button
+                            onClick={() => {
+                              setModalLoginFuncionarioAberta(false);
+                              setSenhaLoginFuncErro(null);
+                              setLoginStatusMsg(null);
+                            }}
+                            disabled={isLoggingIn}
+                            className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            onClick={() => handleConfirmarLoginFuncionario()}
+                            disabled={isLoggingIn}
+                            className={`px-5 py-2.5 text-white rounded-xl text-xs font-bold shadow-lg flex items-center gap-2 transition-all cursor-pointer ${
+                              jaTemSenhaPessoal
+                                ? "bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 shadow-emerald-600/30"
+                                : "bg-sky-600 hover:bg-sky-500 disabled:bg-sky-800 shadow-sky-600/30"
+                            }`}
+                          >
+                            {isLoggingIn ? (
+                              <>
+                                <RefreshCw className="w-4 h-4 animate-spin" />
+                                {loginStatusMsg || "Entrando..."}
+                              </>
+                            ) : (
+                              <>
+                                {jaTemSenhaPessoal ? "Entrar com Senha Pessoal" : "Entrar no Portal"} <ArrowRight className="w-4 h-4" />
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             </div>
           )}
         </AnimatePresence>
 
-        {/* MODAL 2: ALTERAR SENHA PESSOAL (PRIMEIRO ACESSO) */}
+        {/* MODAL 2: ALTERAR SENHA PESSOAL (PRIMEIRO ACESSO OBRIGATÓRIO) */}
         <AnimatePresence>
           {modalAlterarSenhaAberta && (
             <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
@@ -2500,50 +2798,86 @@ export default function App() {
                       <Key className="w-6 h-6" />
                     </div>
                     <div>
-                      <h3 className="text-lg font-bold text-white">Alteração de Senha Obrigatória</h3>
-                      <p className="text-xs text-slate-400">Primeiro acesso ao sistema</p>
+                      <h3 className="text-lg font-bold text-white">Criar Senha Pessoal Definitiva</h3>
+                      <p className="text-xs text-slate-400">
+                        {colaboradores.find((c) => c.id === colabTentandoLogarId)?.nome || "Colaborador"} • 1º Acesso Obrigatório
+                      </p>
                     </div>
                   </div>
                   <button
-                    onClick={() => setModalAlterarSenhaAberta(false)}
-                    className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors"
+                    onClick={() => {
+                      setModalAlterarSenhaAberta(false);
+                      showToast("aviso", "Cadastro Pendente", "Você precisa cadastrar sua senha pessoal para acessar o portal.");
+                    }}
+                    className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors cursor-pointer"
+                    title="Fechar"
                   >
                     <X className="w-5 h-5" />
                   </button>
                 </div>
 
                 <div className="space-y-4">
-                  <p className="text-xs text-slate-300 leading-relaxed">
-                    Você utilizou a senha padrão <strong className="text-sky-400">Aec2026@</strong>. Por favor, cadastre uma nova senha pessoal para continuar acessando seu portal.
-                  </p>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">Nova Senha Pessoal</label>
-                    <input
-                      type="password"
-                      value={novaSenhaInput}
-                      onChange={(e) => setNovaSenhaInput(e.target.value)}
-                      placeholder="Mínimo de 4 caracteres"
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-medium focus:outline-none focus:border-sky-500 transition-colors font-mono"
-                    />
+                  <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-200 text-xs leading-relaxed">
+                    Você autenticou com a senha provisória da empresa. Para a segurança do seu ponto, <strong>cadastre agora a sua nova senha pessoal</strong>. A senha padrão (Aec2026@) será desativada para você.
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">Confirmar Nova Senha</label>
-                    <input
-                      type="password"
-                      value={confirmaNovaSenhaInput}
-                      onChange={(e) => setConfirmaNovaSenhaInput(e.target.value)}
-                      placeholder="Repita a nova senha"
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-medium focus:outline-none focus:border-sky-500 transition-colors font-mono"
-                    />
+                    <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
+                      Nova Senha Pessoal (Mínimo 4 caracteres)
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={mostrarNovaSenha ? "text" : "password"}
+                        value={novaSenhaInput}
+                        onChange={(e) => setNovaSenhaInput(e.target.value)}
+                        placeholder="Digite sua nova senha pessoal"
+                        autoFocus
+                        className="w-full bg-slate-950 border border-slate-800 focus:border-emerald-500 rounded-xl px-4 py-3 pr-11 text-sm text-white font-medium focus:outline-none transition-colors font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setMostrarNovaSenha(!mostrarNovaSenha)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
+                        title={mostrarNovaSenha ? "Ocultar senha" : "Ver senha"}
+                      >
+                        {mostrarNovaSenha ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
+                      Confirmar Nova Senha Pessoal
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={mostrarConfirmaNovaSenha ? "text" : "password"}
+                        value={confirmaNovaSenhaInput}
+                        onChange={(e) => setConfirmaNovaSenhaInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            handleSalvarNovaSenhaPessoal();
+                          }
+                        }}
+                        placeholder="Repita exatamente a nova senha"
+                        className="w-full bg-slate-950 border border-slate-800 focus:border-emerald-500 rounded-xl px-4 py-3 pr-11 text-sm text-white font-medium focus:outline-none transition-colors font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setMostrarConfirmaNovaSenha(!mostrarConfirmaNovaSenha)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
+                        title={mostrarConfirmaNovaSenha ? "Ocultar senha" : "Ver senha"}
+                      >
+                        {mostrarConfirmaNovaSenha ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
                   </div>
                 </div>
 
                 <div className="pt-4 border-t border-slate-800">
                   <button
                     onClick={handleSalvarNovaSenhaPessoal}
-                    className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all"
+                    className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all cursor-pointer"
                   >
                     Salvar Nova Senha & Entrar no Portal <CheckCircle2 className="w-4 h-4" />
                   </button>
@@ -2561,11 +2895,39 @@ export default function App() {
           isAndroid={isAndroid}
           onInstall={triggerPWAInstall}
         />
+
+        {/* Toast de Notificação na tela de Login */}
+        <AnimatePresence>
+          {toast && (
+            <motion.div
+              initial={{ opacity: 0, y: -20, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -20, scale: 0.95 }}
+              className={`fixed top-4 right-4 z-[70] p-4 rounded-2xl shadow-2xl border flex items-center gap-3 max-w-md ${
+                toast.tipo === "sucesso"
+                  ? "bg-emerald-950/90 border-emerald-500/40 text-emerald-200"
+                  : toast.tipo === "erro"
+                  ? "bg-rose-950/90 border-rose-500/40 text-rose-200"
+                  : "bg-amber-950/90 border-amber-500/40 text-amber-200"
+              }`}
+            >
+              {toast.tipo === "sucesso" ? (
+                <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+              ) : toast.tipo === "erro" ? (
+                <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
+              ) : (
+                <Info className="w-5 h-5 text-amber-400 shrink-0" />
+              )}
+              <div className="text-xs">
+                <strong className="block font-bold">{toast.titulo}</strong>
+                <span className="opacity-90">{toast.msg}</span>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     );
   }
-
-  console.log("[App Main Return]", { userRole, abaAtiva, colabsCount: colaboradores.length, escalasCount: escalas.length, fechamentoAtual: fechamentoAtual?.colaboradorNome });
 
   return (
     <div className={`min-h-screen bg-slate-950 text-slate-100 flex ${userRole === "admin" ? "flex-col md:flex-row" : "flex-col"} font-sans selection:bg-sky-500 selection:text-white`}>
@@ -3117,15 +3479,6 @@ export default function App() {
           const folgaColabs = statusColabsHoje.filter((c) => c.status === "folga");
           const ativosHojeCount = statusColabsHoje.filter((c) => c.ativoHoje).length;
           const taxaPresenca = ativosHojeCount > 0 ? Math.round(((emTurnoColabs.length + emAlmocoColabs.length + concluidosColabs.length) / ativosHojeCount) * 100) : 0;
-
-          console.log("[Route Dashboard]", {
-            totalColabs,
-            ativosHojeCount,
-            emTurnoCount: emTurnoColabs.length,
-            emAlmocoCount: emAlmocoColabs.length,
-            concluidosCount: concluidosColabs.length,
-            taxaPresenca,
-          });
 
           // Dados para o gráfico de fluxo de presença por hora (06h às 20h)
           const dadosFluxo = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map((h) => {
@@ -3699,7 +4052,8 @@ export default function App() {
                 )}
               </div>
             </div>
-        ); })()}
+          );
+        })()}
 
         {/* ================= ABA: PORTAL DE PONTO (FUNCIONÁRIOS) ================= */}
         {abaAtiva === "baterPonto" && (
@@ -3754,162 +4108,153 @@ export default function App() {
               </div>
             ) : (
               <>
-                {/* Seleção de Funcionário, Mês e Dia */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">1. Selecionar Funcionário</label>
-                    <select
-                      value={portalColaboradorId}
-                      onChange={(e) => setPortalColaboradorId(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-medium focus:outline-none focus:border-sky-500 transition-colors"
-                    >
-                      {colaboradores.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.nome} — {c.cargo}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">2. Mês de Referência</label>
-                    <input
-                      type="text"
-                      value={portalMesAno}
-                      onChange={(e) => setPortalMesAno(e.target.value)}
-                      placeholder="MM/AAAA"
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-medium focus:outline-none focus:border-sky-500 transition-colors text-center font-mono"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">3. Dia do Mês (1 - 31)</label>
-                    <select
-                      value={portalDiaSelecionado}
-                      onChange={(e) => setPortalDiaSelecionado(parseInt(e.target.value, 10))}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-medium focus:outline-none focus:border-sky-500 transition-colors text-center font-mono"
-                    >
-                      {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
-                        <option key={d} value={d}>
-                          Dia {d < 10 ? `0${d}` : d}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {/* Painel de Notificações Push & Alertas de Turno PWA */}
-                {colabPortalAtual && (
-                  <PainelNotificacoesTurno
-                    colaboradorId={colabPortalAtual.id}
-                    colaboradorNome={colabPortalAtual.nome}
-                    horarioTrabalho={colabPortalAtual.horarioTrabalho}
-                    onNotificacaoEnviada={(tit, msg) => showToast("sucesso", tit, msg)}
-                  />
-                )}
-
-                {/* Painel de Ações de Batida */}
-                {colabPortalAtual && (
-                  <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
-                      <div>
-                        <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                          <Users className="w-5 h-5 text-sky-400" />
-                          Registrar Ponto para: <span className="text-sky-400">{colabPortalAtual.nome}</span>
-                        </h3>
-                        <p className="text-xs text-slate-400 mt-0.5">
-                          Cargo: {colabPortalAtual.cargo} | Horário Padrão: {colabPortalAtual.horarioTrabalho?.entrada || "08:00"} às {colabPortalAtual.horarioTrabalho?.saida || "17:00"}
-                        </p>
+                {/* Painel de Ações de Batida (MOVIDO PARA O TOPO) */}
+                {(() => {
+                  const colabAtual = colaboradores.find((c) => c.id === portalColaboradorId) || colaboradores[0];
+                  if (!colabAtual) return null;
+                  return (
+                    <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
+                        <div>
+                          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                            <Users className="w-5 h-5 text-sky-400" />
+                            Registrar Ponto para: <span className="text-sky-400">{colabAtual.nome}</span>
+                          </h3>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            Cargo: {colabAtual.cargo} | Horário Padrão: {colabAtual.horarioTrabalho?.entrada || "08:00"} às {colabAtual.horarioTrabalho?.saida || "17:00"}
+                          </p>
+                        </div>
+                        {portalSucessoModal && (
+                          <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 animate-pulse">
+                            <CheckCircle2 className="w-4 h-4" /> {portalSucessoModal.tipo.toUpperCase()} registrada às {portalSucessoModal.hora}!
+                          </div>
+                        )}
                       </div>
-                      {portalSucessoModal && (
-                        <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 animate-pulse">
-                          <CheckCircle2 className="w-4 h-4" /> {portalSucessoModal.tipo.toUpperCase()} registrada às {portalSucessoModal.hora}!
-                        </div>
-                      )}
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handlePortalBaterPonto("entrada1"); }}
+                          className="group bg-gradient-to-b from-slate-950 to-slate-900 hover:from-sky-950/40 hover:to-slate-900 border border-slate-800 hover:border-sky-500/50 rounded-2xl p-6 text-center transition-all duration-300 shadow-lg hover:shadow-sky-500/10 flex flex-col items-center justify-center gap-3"
+                        >
+                          <div className="w-14 h-14 rounded-2xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 group-hover:scale-110 transition-transform shadow-inner">
+                            <Clock className="w-7 h-7" />
+                          </div>
+                          <div>
+                            <div className="text-xs text-slate-400 uppercase font-bold tracking-wider">1º Horário</div>
+                            <div className="text-xl font-extrabold text-white mt-0.5">Entrada 1</div>
+                          </div>
+                          <span className="px-3 py-1.5 rounded-xl bg-sky-600/20 text-sky-300 text-xs font-bold group-hover:bg-sky-600 group-hover:text-white transition-colors w-full">
+                            Bater Entrada Agora
+                          </span>
+                        </button>
+
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handlePortalBaterPonto("saida1"); }}
+                          className="group bg-gradient-to-b from-slate-950 to-slate-900 hover:from-amber-950/40 hover:to-slate-900 border border-slate-800 hover:border-amber-500/50 rounded-2xl p-6 text-center transition-all duration-300 shadow-lg hover:shadow-amber-500/10 flex flex-col items-center justify-center gap-3"
+                        >
+                          <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 group-hover:scale-110 transition-transform shadow-inner">
+                            <Clock className="w-7 h-7" />
+                          </div>
+                          <div>
+                            <div className="text-xs text-slate-400 uppercase font-bold tracking-wider">Almoço</div>
+                            <div className="text-xl font-extrabold text-white mt-0.5">Saída Almoço</div>
+                          </div>
+                          <span className="px-3 py-1.5 rounded-xl bg-amber-600/20 text-amber-300 text-xs font-bold group-hover:bg-amber-600 group-hover:text-white transition-colors w-full">
+                            Bater Saída Almoço
+                          </span>
+                        </button>
+
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handlePortalBaterPonto("entrada2"); }}
+                          className="group bg-gradient-to-b from-slate-950 to-slate-900 hover:from-emerald-950/40 hover:to-slate-900 border border-slate-800 hover:border-emerald-500/50 rounded-2xl p-6 text-center transition-all duration-300 shadow-lg hover:shadow-emerald-500/10 flex flex-col items-center justify-center gap-3"
+                        >
+                          <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform shadow-inner">
+                            <Clock className="w-7 h-7" />
+                          </div>
+                          <div>
+                            <div className="text-xs text-slate-400 uppercase font-bold tracking-wider">Retorno</div>
+                            <div className="text-xl font-extrabold text-white mt-0.5">Retorno Almoço</div>
+                          </div>
+                          <span className="px-3 py-1.5 rounded-xl bg-emerald-600/20 text-emerald-300 text-xs font-bold group-hover:bg-emerald-600 group-hover:text-white transition-colors w-full">
+                            Bater Retorno
+                          </span>
+                        </button>
+
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handlePortalBaterPonto("saida2"); }}
+                          className="group bg-gradient-to-b from-slate-950 to-slate-900 hover:from-purple-950/40 hover:to-slate-900 border border-slate-800 hover:border-purple-500/50 rounded-2xl p-6 text-center transition-all duration-300 shadow-lg hover:shadow-purple-500/10 flex flex-col items-center justify-center gap-3"
+                        >
+                          <div className="w-14 h-14 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 group-hover:scale-110 transition-transform shadow-inner">
+                            <Clock className="w-7 h-7" />
+                          </div>
+                          <div>
+                            <div className="text-xs text-slate-400 uppercase font-bold tracking-wider">Fim do Dia</div>
+                            <div className="text-xl font-extrabold text-white mt-0.5">Saída Expediente</div>
+                          </div>
+                          <span className="px-3 py-1.5 rounded-xl bg-purple-600/20 text-purple-300 text-xs font-bold group-hover:bg-purple-600 group-hover:text-white transition-colors w-full">
+                            Bater Saída
+                          </span>
+                        </button>
+                      </div>
                     </div>
+                  );
+                })()}
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                      <button
-                        onClick={() => handlePortalBaterPonto("entrada1")}
-                        className="group bg-gradient-to-b from-slate-950 to-slate-900 hover:from-sky-950/40 hover:to-slate-900 border border-slate-800 hover:border-sky-500/50 rounded-2xl p-6 text-center transition-all duration-300 shadow-lg hover:shadow-sky-500/10 flex flex-col items-center justify-center gap-3"
+                {/* Seleção de Mês e Dia (ocultar seleção de funcionário para funcionário) */}
+                {userRole === "admin" && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">1. Selecionar Funcionário</label>
+                      <select
+                        value={portalColaboradorId}
+                        onChange={(e) => setPortalColaboradorId(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-medium focus:outline-none focus:border-sky-500 transition-colors"
                       >
-                        <div className="w-14 h-14 rounded-2xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 group-hover:scale-110 transition-transform shadow-inner">
-                          <Clock className="w-7 h-7" />
-                        </div>
-                        <div>
-                          <div className="text-xs text-slate-400 uppercase font-bold tracking-wider">1º Horário</div>
-                          <div className="text-xl font-extrabold text-white mt-0.5">Entrada 1</div>
-                        </div>
-                        <span className="px-3 py-1.5 rounded-xl bg-sky-600/20 text-sky-300 text-xs font-bold group-hover:bg-sky-600 group-hover:text-white transition-colors w-full">
-                          Bater Entrada Agora
-                        </span>
-                      </button>
-
-                      <button
-                        onClick={() => handlePortalBaterPonto("saida1")}
-                        className="group bg-gradient-to-b from-slate-950 to-slate-900 hover:from-amber-950/40 hover:to-slate-900 border border-slate-800 hover:border-amber-500/50 rounded-2xl p-6 text-center transition-all duration-300 shadow-lg hover:shadow-amber-500/10 flex flex-col items-center justify-center gap-3"
-                      >
-                        <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 group-hover:scale-110 transition-transform shadow-inner">
-                          <Clock className="w-7 h-7" />
-                        </div>
-                        <div>
-                          <div className="text-xs text-slate-400 uppercase font-bold tracking-wider">Almoço</div>
-                          <div className="text-xl font-extrabold text-white mt-0.5">Saída Almoço</div>
-                        </div>
-                        <span className="px-3 py-1.5 rounded-xl bg-amber-600/20 text-amber-300 text-xs font-bold group-hover:bg-amber-600 group-hover:text-white transition-colors w-full">
-                          Bater Saída Almoço
-                        </span>
-                      </button>
-
-                      <button
-                        onClick={() => handlePortalBaterPonto("entrada2")}
-                        className="group bg-gradient-to-b from-slate-950 to-slate-900 hover:from-emerald-950/40 hover:to-slate-900 border border-slate-800 hover:border-emerald-500/50 rounded-2xl p-6 text-center transition-all duration-300 shadow-lg hover:shadow-emerald-500/10 flex flex-col items-center justify-center gap-3"
-                      >
-                        <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform shadow-inner">
-                          <Clock className="w-7 h-7" />
-                        </div>
-                        <div>
-                          <div className="text-xs text-slate-400 uppercase font-bold tracking-wider">Retorno</div>
-                          <div className="text-xl font-extrabold text-white mt-0.5">Retorno Almoço</div>
-                        </div>
-                        <span className="px-3 py-1.5 rounded-xl bg-emerald-600/20 text-emerald-300 text-xs font-bold group-hover:bg-emerald-600 group-hover:text-white transition-colors w-full">
-                          Bater Retorno
-                        </span>
-                      </button>
-
-                      <button
-                        onClick={() => handlePortalBaterPonto("saida2")}
-                        className="group bg-gradient-to-b from-slate-950 to-slate-900 hover:from-purple-950/40 hover:to-slate-900 border border-slate-800 hover:border-purple-500/50 rounded-2xl p-6 text-center transition-all duration-300 shadow-lg hover:shadow-purple-500/10 flex flex-col items-center justify-center gap-3"
-                      >
-                        <div className="w-14 h-14 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 group-hover:scale-110 transition-transform shadow-inner">
-                          <Clock className="w-7 h-7" />
-                        </div>
-                        <div>
-                          <div className="text-xs text-slate-400 uppercase font-bold tracking-wider">Fim do Dia</div>
-                          <div className="text-xl font-extrabold text-white mt-0.5">Saída Expediente</div>
-                        </div>
-                        <span className="px-3 py-1.5 rounded-xl bg-purple-600/20 text-purple-300 text-xs font-bold group-hover:bg-purple-600 group-hover:text-white transition-colors w-full">
-                          Bater Saída
-                        </span>
-                      </button>
+                        {colaboradores.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.nome} — {c.cargo}
+                          </option>
+                        ))}
+                      </select>
                     </div>
-
-                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-slate-800">
-                      <p className="text-xs text-slate-400">
-                        Após registrar os pontos, acesse o <strong>Espelho & Fechamento</strong> para calcular o saldo de banco de horas e horas extras do mês.
-                      </p>
-                      <button
-                        onClick={() => {
-                          setColaboradorSelecionadoId(colabPortalAtual.id);
-                          setAbaAtiva("fechamento");
-                        }}
-                        className="px-5 py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-sky-600/30 flex items-center gap-2 transition-all"
+                    <div>
+                      <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">2. Mês de Referência</label>
+                      <input
+                        type="text"
+                        value={portalMesAno}
+                        onChange={(e) => setPortalMesAno(e.target.value)}
+                        placeholder="MM/AAAA"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-medium focus:outline-none focus:border-sky-500 transition-colors text-center font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">3. Dia do Mês (1 - 31)</label>
+                      <select
+                        value={portalDiaSelecionado}
+                        onChange={(e) => setPortalDiaSelecionado(parseInt(e.target.value, 10))}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-medium focus:outline-none focus:border-sky-500 transition-colors text-center font-mono"
                       >
-                        Ver Fechamento & Espelho <ArrowRight className="w-4 h-4" />
-                      </button>
+                        {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                          <option key={d} value={d}>
+                            Dia {d < 10 ? `0${d}` : d}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </div>
                 )}
+                
+                {/* Ocultar seleção de funcionário para funcionário */}
+                {userRole === "funcionario" && (
+                    <div className="hidden">
+                        <select value={portalColaboradorId} disabled>
+                            {colaboradores.map((c) => (
+                                <option key={c.id} value={c.id}>{c.nome}</option>
+                            ))}
+                        </select>
+                    </div>
+                )}
+
               </>
             )}
           </div>
@@ -4004,7 +4349,7 @@ export default function App() {
               </div>
             )}
           </div>
-        )()}
+        )}
 
         {/* ================= ABA 1: DIGITALIZAR FOLHA ================= */}
         {abaAtiva === "digitalizar" && (
@@ -5149,6 +5494,7 @@ export default function App() {
         )}
 
         {/* ================= ABA 5: GESTÃO DE ESCALAS & HORÁRIOS ================= */}
+        {(() => { console.log("Rendering Escalas View, abaAtiva:", abaAtiva); return null; })()}
         {abaAtiva === "escalas" && (
           <div className="space-y-6">
             {/* Header da Aba de Escalas */}

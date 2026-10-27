@@ -2,10 +2,11 @@ import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 import { injectSpeedInsights } from '@vercel/speed-insights';
-import { registerSW } from 'virtual:pwa-register';
+// import { registerSW } from 'virtual:pwa-register';
 
 injectSpeedInsights();
 
+/*
 // Registrar Service Worker do PWA para suporte offline e notificações
 registerSW({
   immediate: true,
@@ -16,6 +17,6 @@ registerSW({
     console.log('[PWA] Ponto A&C pronto para operação');
   },
 });
-
+*/
 createRoot(document.getElementById('root')!).render(<App />);
 

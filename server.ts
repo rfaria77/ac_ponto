@@ -52,6 +52,8 @@ let colaboradores: Array<{
   saldoAnteriorBancoMinutos: number;
   dataInicioSaldo?: string;
   observacaoSaldo?: string;
+  senha?: string;
+  primeiroAcesso?: boolean;
   escalaId?: string;
   horarioTrabalho: {
     entrada: string;
@@ -69,7 +71,35 @@ let colaboradores: Array<{
     lon: number;
     raio: number;
   };
-}> = [];
+}> = [
+  {
+    id: "FUNC_001",
+    nome: "Thais Moreira de Souza",
+    cargo: "Assistente de coletas",
+    departamento: "Operações",
+    salarioBase: 2450.0,
+    saldoAnteriorBancoMinutos: 0,
+    dataInicioSaldo: "01/09/2026",
+    observacaoSaldo: "",
+    senha: "Aec2026@",
+    primeiroAcesso: true,
+    escalaId: "ESC_001",
+    horarioTrabalho: {
+      entrada: "08:00",
+      almocoSaida: "12:00",
+      almocoRetorno: "13:00",
+      saida: "17:00",
+      sabadoAtivo: false,
+    },
+    fotoCadastro: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=400&auto=format&fit=crop&q=80",
+    localPermitido: {
+      nome: sedeConfig.nome,
+      lat: sedeConfig.lat,
+      lon: sedeConfig.lon,
+      raio: sedeConfig.raioMaximoMetros,
+    },
+  },
+];
 
 let escalas: Array<{
   id: string;
@@ -301,8 +331,11 @@ app.put("/api/colaboradores/:id", (req, res) => {
     escalaId: dados.escalaId !== undefined ? dados.escalaId : colabExistente.escalaId,
     horarioTrabalho: dados.horarioTrabalho ? { ...colabExistente.horarioTrabalho, ...dados.horarioTrabalho } : colabExistente.horarioTrabalho,
     fotoCadastro: dados.fotoCadastro !== undefined ? dados.fotoCadastro : colabExistente.fotoCadastro,
+    senha: dados.senha !== undefined ? dados.senha : colabExistente.senha,
+    primeiroAcesso: dados.primeiroAcesso !== undefined ? Boolean(dados.primeiroAcesso) : colabExistente.primeiroAcesso,
   };
 
+  console.log("Colaborador atualizado no servidor:", colaboradores[index]);
   res.json({ success: true, colaborador: colaboradores[index] });
 });
 
@@ -764,7 +797,7 @@ Retorne estritamente um JSON válido.
 });
 
 // Vite middleware setup for development vs production static serving
-const isProduction = process.env.NODE_ENV === "production" || fs.existsSync(path.join(__dirname, "dist"));
+const isProduction = process.env.NODE_ENV === "production";
 
 if (isProduction) {
   app.use(express.static(path.join(__dirname, "dist")));
