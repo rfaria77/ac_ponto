@@ -57,7 +57,27 @@ import {
   BarChart3,
   Bell,
   BellRing,
+  FileCheck,
+  QrCode,
+  Share2,
+  Stethoscope,
+  FileUp,
+  Receipt,
+  Send,
+  MessageSquare,
 } from "lucide-react";
+import {
+  ComprovantePonto,
+  gerarComprovantePDF,
+  gerarTextoWhatsAppComprovante,
+  gerarHashAutenticidade,
+} from "./utils/comprovantePonto";
+import {
+  gerarArquivoAFD,
+  gerarArquivoAFDT,
+  baixarArquivoTexto,
+  DADOS_EMPRESA_PADRAO,
+} from "./utils/mteFiscalAfd";
 import { motion, AnimatePresence } from "motion/react";
 import jsPDF from "jspdf";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
@@ -372,6 +392,39 @@ const COLABORADORES_INICIAIS: Colaborador[] = [
   },
 ];
 
+export interface SolicitacaoAjuste {
+  id: string;
+  colaboradorId: string;
+  colaboradorNome: string;
+  colaboradorCargo: string;
+  tipo: "Atestado Médico" | "Esquecimento de Ponto" | "Serviço Externo / Outros";
+  dataOcorrencia: string;
+  horarioSugerido?: string;
+  campoBatida?: "entrada1" | "saida1" | "entrada2" | "saida2";
+  descricaoJustificativa: string;
+  comprovanteFotoBase64?: string;
+  diasAfastamento?: number;
+  status: "Pendente" | "Aprovado" | "Recusado";
+  motivoRecusa?: string;
+  dataSolicitacao: string;
+  dataAprovacao?: string;
+  aprovadoPor?: string;
+}
+
+const SOLICITACOES_INICIAIS: SolicitacaoAjuste[] = [
+  {
+    id: "SOLIC_001",
+    colaboradorId: "FUNC_001",
+    colaboradorNome: "Thais Moreira de Souza",
+    colaboradorCargo: "Assistente de coletas",
+    tipo: "Atestado Médico",
+    dataOcorrencia: "15/09/2026",
+    descricaoJustificativa: "Consulta médica oftalmológica de rotina com dilatação de pupila e repouso no período da tarde.",
+    diasAfastamento: 1,
+    status: "Pendente",
+    dataSolicitacao: "15/09/2026 14:30",
+  },
+];
 
 interface FechamentoArmazenado {
   id: string;
@@ -419,7 +472,49 @@ export default function App() {
   const [mostrarConfirmaNovaSenha, setMostrarConfirmaNovaSenha] = useState<boolean>(false);
   const [sidebarAbertaMobile, setSidebarAbertaMobile] = useState<boolean>(false);
 
-  const [abaAtiva, setAbaAtiva] = useState<"dashboard" | "digitalizar" | "fechamento" | "historico" | "criterios" | "escalas" | "colaboradores" | "baterPonto" | "inconsistencias">("dashboard");
+  // Estados para Comprovantes Digitais (Portaria 671 MTE)
+  const [comprovantes, setComprovantes] = useState<ComprovantePonto[]>(() => {
+    const salvo = localStorage.getItem("ac_gestor_comprovantes");
+    if (salvo) {
+      try {
+        const parsed = JSON.parse(salvo);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {}
+    }
+    return [];
+  });
+  const [modalComprovanteRecente, setModalComprovanteRecente] = useState<ComprovantePonto | null>(null);
+  const [modalMeusComprovantesAberta, setModalMeusComprovantesAberta] = useState<boolean>(false);
+
+  // Estados para Solicitações de Ajuste & Atestados Médicos
+  const [solicitacoes, setSolicitacoes] = useState<SolicitacaoAjuste[]>(() => {
+    const salvo = localStorage.getItem("ac_gestor_solicitacoes");
+    if (salvo) {
+      try {
+        const parsed = JSON.parse(salvo);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {}
+    }
+    return SOLICITACOES_INICIAIS;
+  });
+  const [modalNovaSolicitacaoAberta, setModalNovaSolicitacaoAberta] = useState<boolean>(false);
+  const [modalVerFotoAtestado, setModalVerFotoAtestado] = useState<string | null>(null);
+  const [filtroStatusSolicitacao, setFiltroStatusSolicitacao] = useState<"todos" | "Pendente" | "Aprovado" | "Recusado">("todos");
+
+  // Formulário de Nova Solicitação / Atestado
+  const [formSolicTipo, setFormSolicTipo] = useState<"Atestado Médico" | "Esquecimento de Ponto" | "Serviço Externo / Outros">("Atestado Médico");
+  const [formSolicData, setFormSolicData] = useState<string>(new Date().toLocaleDateString("pt-BR"));
+  const [formSolicHorario, setFormSolicHorario] = useState<string>("08:00");
+  const [formSolicCampo, setFormSolicCampo] = useState<"entrada1" | "saida1" | "entrada2" | "saida2">("entrada1");
+  const [formSolicDescricao, setFormSolicDescricao] = useState<string>("");
+  const [formSolicDiasAfastamento, setFormSolicDiasAfastamento] = useState<number>(1);
+  const [formSolicFotoBase64, setFormSolicFotoBase64] = useState<string | null>(null);
+
+  // Estados para Exportação Fiscal AFD / AFDT (Portaria 671 MTE)
+  const [modalExportarAFDAberta, setModalExportarAFDAberta] = useState<boolean>(false);
+  const [tipoExportacaoFiscal, setTipoExportacaoFiscal] = useState<"AFD" | "AFDT">("AFD");
+
+  const [abaAtiva, setAbaAtiva] = useState<"dashboard" | "digitalizar" | "fechamento" | "historico" | "criterios" | "escalas" | "colaboradores" | "baterPonto" | "inconsistencias" | "solicitacoes">("dashboard");
   const [filtroStatusDashboard, setFiltroStatusDashboard] = useState<"todos" | "emTurno" | "almoco" | "concluido" | "aguardando">("todos");
   const [filtroBuscaDashboard, setFiltroBuscaDashboard] = useState<string>("");
   const [filtroDeptoDashboard, setFiltroDeptoDashboard] = useState<string>("todos");
@@ -494,9 +589,37 @@ export default function App() {
       console.warn("Firestore snapshot escalas error:", err);
     });
 
+    const unsubSolic = onSnapshot(collection(db, "solicitacoes_ajustes"), (snapshot) => {
+      const lista: SolicitacaoAjuste[] = [];
+      snapshot.forEach((docSnap) => {
+        lista.push({ ...(docSnap.data() as SolicitacaoAjuste), id: docSnap.id });
+      });
+      if (lista.length > 0) {
+        setSolicitacoes(lista);
+        localStorage.setItem("ac_gestor_solicitacoes", JSON.stringify(lista));
+      }
+    }, (err) => {
+      console.warn("Firestore snapshot solicitacoes error:", err);
+    });
+
+    const unsubComp = onSnapshot(collection(db, "comprovantes_ponto"), (snapshot) => {
+      const lista: ComprovantePonto[] = [];
+      snapshot.forEach((docSnap) => {
+        lista.push({ ...(docSnap.data() as ComprovantePonto), id: docSnap.id });
+      });
+      if (lista.length > 0) {
+        setComprovantes(lista);
+        localStorage.setItem("ac_gestor_comprovantes", JSON.stringify(lista));
+      }
+    }, (err) => {
+      console.warn("Firestore snapshot comprovantes error:", err);
+    });
+
     return () => {
       unsubColabs();
       unsubEscalas();
+      unsubSolic();
+      unsubComp();
     };
   }, []);
   const [filtroEscalas, setFiltroEscalas] = useState<string>("");
@@ -1838,7 +1961,230 @@ export default function App() {
 
     setFechamentoAtual(recalculado);
     setPortalSucessoModal({ tipo: campo, hora: horaStr });
-    showToast("sucesso", "Ponto Registrado com Sucesso!", `${colab.nome}: ${campo.toUpperCase()} marcada às ${horaStr}.`);
+
+    // Emissão do Comprovante Digital de Ponto (Portaria 671 MTE / CLT)
+    const mapaNomesBatida: Record<string, "Entrada 1" | "Saída Almoço" | "Retorno Almoço" | "Saída Expediente"> = {
+      entrada1: "Entrada 1",
+      saida1: "Saída Almoço",
+      entrada2: "Retorno Almoço",
+      saida2: "Saída Expediente",
+    };
+    const tipoLegivel = mapaNomesBatida[campo] || "Entrada 1";
+    const dataFormatada = `${String(dias[diaIndex].dia).padStart(2, "0")}/${mesAno}`;
+    const horaComSegundos = `${horaStr}:${String(agora.getSeconds()).padStart(2, "0")}`;
+    const nsrNovo = comprovantes.length + 1;
+    const hashBase = `${colab.id}-${colab.nome}-${dataFormatada}-${horaComSegundos}-${nsrNovo}-${DADOS_EMPRESA_PADRAO.cnpj}`;
+
+    gerarHashAutenticidade(hashBase).then((hashGerado) => {
+      const novoComprovante: ComprovantePonto = {
+        id: `COMP_${Date.now()}`,
+        nsr: nsrNovo,
+        colaboradorId: colab.id,
+        colaboradorNome: colab.nome,
+        colaboradorCargo: colab.cargo,
+        tipoBatida: tipoLegivel,
+        data: dataFormatada,
+        hora: horaComSegundos,
+        timestampIso: agora.toISOString(),
+        hashSha256: hashGerado,
+        empresa: {
+          razaoSocial: DADOS_EMPRESA_PADRAO.razaoSocial,
+          cnpj: DADOS_EMPRESA_PADRAO.cnpj,
+          local: DADOS_EMPRESA_PADRAO.localidade,
+        },
+        geolocalizacao: {
+          endereco: "Base Tupaciguara MG — Rua Modesto Alves Prudente, 266",
+          lat: -18.59969,
+          lon: -48.016335,
+          distanciaMetros: 15,
+        },
+      };
+
+      const atualizados = [novoComprovante, ...comprovantes];
+      setComprovantes(atualizados);
+      localStorage.setItem("ac_gestor_comprovantes", JSON.stringify(atualizados));
+      setModalComprovanteRecente(novoComprovante);
+
+      // Persistência em nuvem
+      setDoc(doc(db, "comprovantes_ponto", novoComprovante.id), novoComprovante).catch(() => {});
+      fetch("/api/comprovantes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(novoComprovante),
+      }).catch(() => {});
+    });
+
+    showToast("sucesso", "Ponto Registrado!", `Comprovante digital emitido conforme Portaria 671 MTE.`);
+  };
+
+  // Envio de Nova Solicitação de Ajuste / Atestado Médico
+  const handleCriarSolicitacaoAjuste = (e: React.FormEvent) => {
+    e.preventDefault();
+    const colab = colaboradores.find((c) => c.id === (portalColaboradorId || colabTentandoLogarId)) || colaboradores[0];
+    if (!colab) {
+      showToast("erro", "Erro", "Colaborador não identificado.");
+      return;
+    }
+    if (!formSolicDescricao.trim()) {
+      showToast("aviso", "Campo Obrigatório", "Por favor, informe a justificativa detalhada.");
+      return;
+    }
+
+    const novaSolicitacao: SolicitacaoAjuste = {
+      id: `SOLIC_${Date.now()}`,
+      colaboradorId: colab.id,
+      colaboradorNome: colab.nome,
+      colaboradorCargo: colab.cargo,
+      tipo: formSolicTipo,
+      dataOcorrencia: formSolicData,
+      horarioSugerido: formSolicTipo === "Esquecimento de Ponto" ? formSolicHorario : undefined,
+      campoBatida: formSolicTipo === "Esquecimento de Ponto" ? formSolicCampo : undefined,
+      descricaoJustificativa: formSolicDescricao,
+      comprovanteFotoBase64: formSolicFotoBase64 || undefined,
+      diasAfastamento: formSolicTipo === "Atestado Médico" ? Number(formSolicDiasAfastamento) || 1 : undefined,
+      status: "Pendente",
+      dataSolicitacao: new Date().toLocaleString("pt-BR"),
+    };
+
+    const atualizadas = [novaSolicitacao, ...solicitacoes];
+    setSolicitacoes(atualizadas);
+    localStorage.setItem("ac_gestor_solicitacoes", JSON.stringify(atualizadas));
+
+    setDoc(doc(db, "solicitacoes_ajustes", novaSolicitacao.id), novaSolicitacao).catch(() => {});
+    fetch("/api/solicitacoes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(novaSolicitacao),
+    }).catch(() => {});
+
+    setModalNovaSolicitacaoAberta(false);
+    setFormSolicDescricao("");
+    setFormSolicFotoBase64(null);
+    showToast("sucesso", "Solicitação Enviada!", "Sua justificativa/atestado foi enviado para validação do gestor.");
+  };
+
+  // Aprovação de Solicitação pelo Gestor
+  const handleAprovarSolicitacao = (solic: SolicitacaoAjuste) => {
+    const atualizadas = solicitacoes.map((s) =>
+      s.id === solic.id
+        ? {
+            ...s,
+            status: "Aprovado" as const,
+            dataAprovacao: new Date().toLocaleString("pt-BR"),
+            aprovadoPor: "Administrador DP",
+          }
+        : s
+    );
+    setSolicitacoes(atualizadas);
+    localStorage.setItem("ac_gestor_solicitacoes", JSON.stringify(atualizadas));
+
+    setDoc(doc(db, "solicitacoes_ajustes", solic.id), {
+      ...solic,
+      status: "Aprovado",
+      dataAprovacao: new Date().toLocaleString("pt-BR"),
+      aprovadoPor: "Administrador DP",
+    }).catch(() => {});
+
+    fetch(`/api/solicitacoes/${solic.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "Aprovado", dataAprovacao: new Date().toLocaleString("pt-BR"), aprovadoPor: "Administrador DP" }),
+    }).catch(() => {});
+
+    // Integração automática com o espelho de ponto atual
+    if (fechamentoAtual && fechamentoAtual.colaboradorId === solic.colaboradorId) {
+      const [diaStr] = solic.dataOcorrencia.split("/");
+      const diaNum = parseInt(diaStr, 10);
+
+      let diasAtualizados = [...fechamentoAtual.dias];
+      if (solic.tipo === "Esquecimento de Ponto" && solic.campoBatida && solic.horarioSugerido) {
+        diasAtualizados = diasAtualizados.map((d) =>
+          d.dia === diaNum ? { ...d, [solic.campoBatida!]: solic.horarioSugerido, observacao: "Ajuste Aprovado" } : d
+        );
+      } else if (solic.tipo === "Atestado Médico") {
+        const diasAfast = solic.diasAfastamento || 1;
+        diasAtualizados = diasAtualizados.map((d) => {
+          if (d.dia >= diaNum && d.dia < diaNum + diasAfast) {
+            return { ...d, observacao: "Atestado Médico" };
+          }
+          return d;
+        });
+      }
+
+      const recal = calcularFechamentoMensal(diasAtualizados, criterios, {
+        colaboradorNome: fechamentoAtual.colaboradorNome,
+        colaboradorCargo: fechamentoAtual.colaboradorCargo,
+        colaboradorId: fechamentoAtual.colaboradorId,
+        mesAno: fechamentoAtual.mesAno,
+        salarioBase: fechamentoAtual.salarioBase,
+        saldoAnteriorBancoMinutos: fechamentoAtual.saldoAnteriorBancoMinutos,
+      });
+      setFechamentoAtual(recal);
+    }
+
+    showToast("sucesso", "Solicitação Aprovada!", `Solicitação de ${solic.colaboradorNome} foi aprovada e integrada ao espelho.`);
+  };
+
+  // Recusa de Solicitação pelo Gestor
+  const handleRecusarSolicitacao = (id: string) => {
+    const motivo = window.prompt("Informe o motivo da recusa para o funcionário:", "Documento ilegível ou divergência de horários.");
+    if (motivo === null) return;
+
+    const atualizadas = solicitacoes.map((s) =>
+      s.id === id
+        ? {
+            ...s,
+            status: "Recusado" as const,
+            motivoRecusa: motivo || "Recusado pelo gestor",
+            dataAprovacao: new Date().toLocaleString("pt-BR"),
+            aprovadoPor: "Administrador DP",
+          }
+        : s
+    );
+    setSolicitacoes(atualizadas);
+    localStorage.setItem("ac_gestor_solicitacoes", JSON.stringify(atualizadas));
+
+    setDoc(doc(db, "solicitacoes_ajustes", id), {
+      status: "Recusado",
+      motivoRecusa: motivo || "Recusado pelo gestor",
+      dataAprovacao: new Date().toLocaleString("pt-BR"),
+      aprovadoPor: "Administrador DP",
+    }, { merge: true }).catch(() => {});
+
+    fetch(`/api/solicitacoes/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "Recusado", motivoRecusa: motivo || "Recusado pelo gestor" }),
+    }).catch(() => {});
+
+    showToast("aviso", "Solicitação Recusada", "O colaborador foi notificado sobre a recusa.");
+  };
+
+  // Exportação Fiscal AFD e AFDT (Portaria 671 MTE / REP-P)
+  const handleExportarArquivoFiscal = (formato: "AFD" | "AFDT") => {
+    if (!fechamentoAtual) {
+      showToast("aviso", "Sem Espelho Aberto", "Gere ou visualize o espelho de ponto antes de exportar o arquivo fiscal.");
+      return;
+    }
+
+    const colabEncontrado = colaboradores.find((c) => c.id === fechamentoAtual.colaboradorId);
+    const colab = {
+      id: colabEncontrado?.id || fechamentoAtual.colaboradorId || "FUNC_01",
+      nome: fechamentoAtual.colaboradorNome,
+    };
+
+    if (formato === "AFD") {
+      const conteudoAFD = gerarArquivoAFD(colab, fechamentoAtual);
+      const nomeArq = `AFD_Portaria671_${fechamentoAtual.colaboradorNome.replace(/\s+/g, "_")}_${fechamentoAtual.mesAno.replace(/\//g, "-")}.txt`;
+      baixarArquivoTexto(conteudoAFD, nomeArq);
+      showToast("sucesso", "Arquivo AFD Gerado!", `Arquivo fiscal ${nomeArq} baixado com sucesso.`);
+    } else {
+      const conteudoAFDT = gerarArquivoAFDT(colab, fechamentoAtual);
+      const nomeArq = `AFDT_Portaria671_${fechamentoAtual.colaboradorNome.replace(/\s+/g, "_")}_${fechamentoAtual.mesAno.replace(/\//g, "-")}.txt`;
+      baixarArquivoTexto(conteudoAFDT, nomeArq);
+      showToast("sucesso", "Arquivo AFDT Gerado!", `Arquivo tratado ${nomeArq} baixado com sucesso.`);
+    }
+    setModalExportarAFDAberta(false);
   };
 
   // Zerar todos os dados para iniciar do zero

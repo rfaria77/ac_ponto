@@ -240,7 +240,109 @@ let registrosPonto: Array<{
   selfieUrl: string;
 }> = [];
 
+let solicitacoesAjustes: Array<{
+  id: string;
+  colaboradorId: string;
+  colaboradorNome: string;
+  colaboradorCargo: string;
+  tipo: "Atestado Médico" | "Esquecimento de Ponto" | "Serviço Externo / Outros";
+  dataOcorrencia: string;
+  horarioSugerido?: string;
+  campoBatida?: "entrada1" | "saida1" | "entrada2" | "saida2";
+  descricaoJustificativa: string;
+  comprovanteFotoBase64?: string;
+  diasAfastamento?: number;
+  status: "Pendente" | "Aprovado" | "Recusado";
+  motivoRecusa?: string;
+  dataSolicitacao: string;
+  dataAprovacao?: string;
+  aprovadoPor?: string;
+}> = [
+  {
+    id: "SOLIC_001",
+    colaboradorId: "FUNC_001",
+    colaboradorNome: "Thais Moreira de Souza",
+    colaboradorCargo: "Assistente de coletas",
+    tipo: "Atestado Médico",
+    dataOcorrencia: "15/09/2026",
+    descricaoJustificativa: "Consulta médica oftalmológica de rotina com dilatação de pupila e repouso no período da tarde.",
+    diasAfastamento: 1,
+    status: "Pendente",
+    dataSolicitacao: "15/09/2026 14:30",
+  },
+];
+
+let comprovantesPonto: Array<{
+  id: string;
+  nsr: number;
+  colaboradorId: string;
+  colaboradorNome: string;
+  colaboradorCargo: string;
+  tipoBatida: string;
+  data: string;
+  hora: string;
+  timestamp: string;
+  hashSha256: string;
+  empresa: {
+    razaoSocial: string;
+    cnpj: string;
+    local: string;
+  };
+  geolocalizacao?: {
+    endereco: string;
+    lat?: number;
+    lon?: number;
+  };
+}> = [];
+
 // API Routes
+app.get("/api/solicitacoes", (req, res) => {
+  const { colaboradorId } = req.query;
+  if (colaboradorId) {
+    return res.json(solicitacoesAjustes.filter((s) => s.colaboradorId === colaboradorId));
+  }
+  res.json(solicitacoesAjustes);
+});
+
+app.post("/api/solicitacoes", (req, res) => {
+  const nova = {
+    ...req.body,
+    id: req.body.id || `SOLIC_${Date.now()}`,
+    dataSolicitacao: req.body.dataSolicitacao || new Date().toLocaleString("pt-BR"),
+    status: req.body.status || "Pendente",
+  };
+  solicitacoesAjustes.unshift(nova);
+  res.json({ success: true, solicitacao: nova });
+});
+
+app.put("/api/solicitacoes/:id", (req, res) => {
+  const { id } = req.params;
+  const idx = solicitacoesAjustes.findIndex((s) => s.id === id);
+  if (idx === -1) {
+    return res.status(404).json({ error: "Solicitação não encontrada." });
+  }
+  solicitacoesAjustes[idx] = { ...solicitacoesAjustes[idx], ...req.body };
+  res.json({ success: true, solicitacao: solicitacoesAjustes[idx] });
+});
+
+app.get("/api/comprovantes", (req, res) => {
+  const { colaboradorId } = req.query;
+  if (colaboradorId) {
+    return res.json(comprovantesPonto.filter((c) => c.colaboradorId === colaboradorId));
+  }
+  res.json(comprovantesPonto);
+});
+
+app.post("/api/comprovantes", (req, res) => {
+  const novo = {
+    ...req.body,
+    id: req.body.id || `COMP_${Date.now()}`,
+    nsr: req.body.nsr || (comprovantesPonto.length + 1),
+    timestamp: req.body.timestamp || new Date().toISOString(),
+  };
+  comprovantesPonto.unshift(novo);
+  res.json({ success: true, comprovante: novo });
+});
 app.get("/api/sede", (req, res) => {
   res.json(sedeConfig);
 });
@@ -606,6 +708,8 @@ app.post("/api/reset-dados", (req, res) => {
   colaboradores = [];
   registrosPonto = [];
   fechamentosSalvos = [];
+  solicitacoesAjustes = [];
+  comprovantesPonto = [];
   res.json({ success: true, message: "Todos os dados foram zerados com sucesso." });
 });
 
