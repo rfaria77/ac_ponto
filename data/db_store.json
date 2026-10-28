@@ -1,0 +1,347 @@
+{
+  "colaboradores": [
+    {
+      "id": "FUNC_001",
+      "nome": "Thais Moreira de Souza",
+      "cargo": "Auxiliar de coletas",
+      "departamento": "Operações / Coletas",
+      "salarioBase": 1800,
+      "saldoAnteriorBancoMinutos": 1423,
+      "dataInicioSaldo": "01/09/2026",
+      "observacaoSaldo": "Saldo inicial padrão",
+      "senha": "Rt160320@",
+      "primeiroAcesso": false,
+      "escalaId": "ESC_1793037592396",
+      "horarioTrabalho": {
+        "saida": "17:00",
+        "entrada": "08:00",
+        "sabadoAtivo": false,
+        "almocoRetorno": "13:00",
+        "sabadoEntrada": "08:00",
+        "almocoSaida": "12:00",
+        "diferenciarPorDia": true,
+        "sabadoSaida": "12:00",
+        "diasSemanaConfig": {
+          "Qua": {
+            "entrada": "06:00",
+            "almocoRetorno": "13:00",
+            "ativo": true,
+            "almocoSaida": "11:00",
+            "saida": "17:00"
+          },
+          "Sáb": {
+            "ativo": false,
+            "almocoRetorno": "12:00",
+            "entrada": "08:00",
+            "almocoSaida": "12:00",
+            "saida": "12:00"
+          },
+          "Ter": {
+            "almocoRetorno": "14:00",
+            "ativo": true,
+            "entrada": "08:30",
+            "almocoSaida": "12:00",
+            "saida": "19:00"
+          },
+          "Seg": {
+            "ativo": true,
+            "entrada": "06:00",
+            "almocoRetorno": "13:00",
+            "saida": "17:00",
+            "almocoSaida": "11:00"
+          },
+          "Dom": {
+            "almocoSaida": "12:00",
+            "saida": "12:00",
+            "almocoRetorno": "12:00",
+            "entrada": "08:00",
+            "ativo": false
+          },
+          "Qui": {
+            "saida": "19:00",
+            "almocoRetorno": "14:00",
+            "entrada": "08:30",
+            "ativo": true,
+            "almocoSaida": "12:00"
+          },
+          "Sex": {
+            "saida": "17:00",
+            "entrada": "06:00",
+            "almocoRetorno": "13:00",
+            "almocoSaida": "11:00",
+            "ativo": true
+          }
+        }
+      },
+      "fotoCadastro": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400&auto=format&fit=crop&q=80",
+      "localPermitido": {
+        "nome": "Matriz São Paulo",
+        "lat": -23.55052,
+        "raio": 150,
+        "lon": -46.633308
+      },
+      "mustChangePassword": false,
+      "email": "thais.souza@ac-saude.com.br"
+    },
+    {
+      "mustChangePassword": true,
+      "dataInicioSaldo": "01/09/2026",
+      "escalaId": "ESC_1793037735089",
+      "departamento": "Administrativo",
+      "cargo": "Assistente Administrativo",
+      "id": "FUNC_003",
+      "fotoCadastro": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80",
+      "horarioTrabalho": {
+        "saida": "17:00",
+        "entrada": "07:00",
+        "almocoSaida": "11:00",
+        "almocoRetorno": "12:12",
+        "diferenciarPorDia": false,
+        "sabadoAtivo": false
+      },
+      "primeiroAcesso": true,
+      "nome": "Amanda Inácio Medeiros Silva",
+      "senha": "Aec2026@",
+      "localPermitido": {
+        "lon": -48.690615226128095,
+        "raio": 50,
+        "lat": -18.605299872528335,
+        "nome": "A&C"
+      },
+      "email": "amanda.silva@ac-saude.com.br",
+      "salarioBase": 2160.8,
+      "saldoAnteriorBancoMinutos": 1389,
+      "observacaoSaldo": "Saldo inicial padrão"
+    },
+    {
+      "observacaoSaldo": "Saldo inicial padrão",
+      "fotoCadastro": "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=400&auto=format&fit=crop&q=80",
+      "cargo": "Técnico em segurança do Trabalho JR",
+      "nome": "Denise Cristina Fernandes Costa Felip",
+      "localPermitido": {
+        "lat": -18.598609663591525,
+        "nome": "Matriz JLA",
+        "raio": 50,
+        "lon": -48.67783883030438
+      },
+      "escalaId": "ESC_1793037787020",
+      "departamento": "Segurança do Trabalho",
+      "horarioTrabalho": {
+        "saida": "17:18",
+        "diferenciarPorDia": false,
+        "sabadoAtivo": false,
+        "almocoRetorno": "13:30",
+        "almocoSaida": "12:00",
+        "entrada": "07:00"
+      },
+      "saldoAnteriorBancoMinutos": 1035,
+      "senha": "AC2026@",
+      "primeiroAcesso": true,
+      "id": "FUNC_004",
+      "email": "denise.felip@ac-saude.com.br",
+      "salarioBase": 2500,
+      "mustChangePassword": true,
+      "dataInicioSaldo": "01/09/2026"
+    },
+    {
+      "senha": "Aec2026@",
+      "escalaId": "ESC_1793037592396",
+      "id": "FUNC_1793187899578",
+      "dataInicioSaldo": "01/09/2026",
+      "nome": "Bruna Rocha Maciel",
+      "salarioBase": 1621,
+      "saldoAnteriorBancoMinutos": 0,
+      "primeiroAcesso": true,
+      "departamento": "Segurança do Trabalho",
+      "observacaoSaldo": "Saldo acumulado prévio à implantação do sistema",
+      "cargo": "Auxiliar de Segurança do Trabalho",
+      "horarioTrabalho": {
+        "saida": "17:00",
+        "almocoSaida": "12:00",
+        "sabadoAtivo": false,
+        "diasSemanaConfig": {
+          "Sex": {
+            "almocoRetorno": "13:00",
+            "saida": "17:00",
+            "ativo": true,
+            "entrada": "06:00",
+            "almocoSaida": "11:00"
+          },
+          "Qui": {
+            "saida": "19:00",
+            "entrada": "08:30",
+            "almocoSaida": "12:00",
+            "almocoRetorno": "14:00",
+            "ativo": true
+          },
+          "Dom": {
+            "saida": "12:00",
+            "almocoRetorno": "12:00",
+            "almocoSaida": "12:00",
+            "ativo": false,
+            "entrada": "08:00"
+          },
+          "Seg": {
+            "ativo": true,
+            "almocoRetorno": "13:00",
+            "saida": "17:00",
+            "entrada": "06:00",
+            "almocoSaida": "11:00"
+          },
+          "Qua": {
+            "ativo": true,
+            "almocoRetorno": "13:00",
+            "almocoSaida": "11:00",
+            "saida": "17:00",
+            "entrada": "06:00"
+          },
+          "Sáb": {
+            "entrada": "08:00",
+            "almocoSaida": "12:00",
+            "almocoRetorno": "12:00",
+            "ativo": false,
+            "saida": "12:00"
+          },
+          "Ter": {
+            "saida": "19:00",
+            "ativo": true,
+            "entrada": "08:30",
+            "almocoSaida": "12:00",
+            "almocoRetorno": "14:00"
+          }
+        },
+        "entrada": "08:00",
+        "diferenciarPorDia": true,
+        "almocoRetorno": "13:00"
+      }
+    }
+  ],
+  "escalas": [
+    {
+      "id": "ESC_001",
+      "nome": "Administrativo Geral (08h às 17h)",
+      "tipo": "5x2",
+      "descricao": "Jornada padrão de 40h semanais com 1h de almoço das 12h às 13h e sábados livres.",
+      "diasSemana": "Segunda a Sexta",
+      "cargaSemanalHoras": 40,
+      "horario": {
+        "entrada": "08:00",
+        "almocoSaida": "12:00",
+        "almocoRetorno": "13:00",
+        "saida": "17:00",
+        "sabadoAtivo": false
+      },
+      "toleranciaMinutos": 10,
+      "cor": "sky"
+    },
+    {
+      "id": "ESC_002",
+      "nome": "Segurança do Trabalho (07h30 às 16h30)",
+      "tipo": "5x2",
+      "descricao": "Jornada antecipada para acompanhamento de campo e obras, 40h semanais.",
+      "diasSemana": "Segunda a Sexta",
+      "cargaSemanalHoras": 40,
+      "horario": {
+        "entrada": "07:30",
+        "almocoSaida": "11:30",
+        "almocoRetorno": "12:30",
+        "saida": "16:30",
+        "sabadoAtivo": false
+      },
+      "toleranciaMinutos": 10,
+      "cor": "emerald"
+    },
+    {
+      "id": "ESC_003",
+      "nome": "Comercial & Atendimento (08h30 às 17h30)",
+      "tipo": "5x2",
+      "descricao": "Jornada de suporte comercial com início às 08h30 e término às 17h30.",
+      "diasSemana": "Segunda a Sexta",
+      "cargaSemanalHoras": 40,
+      "horario": {
+        "entrada": "08:30",
+        "almocoSaida": "12:30",
+        "almocoRetorno": "13:30",
+        "saida": "17:30",
+        "sabadoAtivo": false
+      },
+      "toleranciaMinutos": 10,
+      "cor": "purple"
+    },
+    {
+      "id": "ESC_004",
+      "nome": "Operacional com Sábado (44h semanais)",
+      "tipo": "6x1",
+      "descricao": "Jornada integral de segunda a sexta (08h-17h) e sábados das 08h às 12h.",
+      "diasSemana": "Segunda a Sábado",
+      "cargaSemanalHoras": 44,
+      "horario": {
+        "entrada": "08:00",
+        "almocoSaida": "12:00",
+        "almocoRetorno": "13:00",
+        "saida": "17:00",
+        "sabadoAtivo": true,
+        "sabadoEntrada": "08:00",
+        "sabadoSaida": "12:00"
+      },
+      "toleranciaMinutos": 10,
+      "cor": "amber"
+    },
+    {
+      "id": "ESC_005",
+      "nome": "Plantão 12x36 Diurno (07h às 19h)",
+      "tipo": "12x36",
+      "descricao": "Plantão de 12 horas diurnas de trabalho por 36 horas de descanso, 1h de intervalo.",
+      "diasSemana": "12x36 (Dia Sim, Dia Não)",
+      "cargaSemanalHoras": 36,
+      "horario": {
+        "entrada": "07:00",
+        "almocoSaida": "12:00",
+        "almocoRetorno": "13:00",
+        "saida": "19:00",
+        "sabadoAtivo": false
+      },
+      "toleranciaMinutos": 10,
+      "cor": "teal"
+    },
+    {
+      "id": "ESC_006",
+      "nome": "Plantão 12x36 Noturno (19h às 07h)",
+      "tipo": "12x36",
+      "descricao": "Plantão noturno 12x36 com adicional noturno integral das 22h às 05h.",
+      "diasSemana": "12x36 Noturno",
+      "cargaSemanalHoras": 36,
+      "horario": {
+        "entrada": "19:00",
+        "almocoSaida": "00:00",
+        "almocoRetorno": "01:00",
+        "saida": "07:00",
+        "sabadoAtivo": false
+      },
+      "toleranciaMinutos": 10,
+      "cor": "indigo"
+    }
+  ],
+  "solicitacoesAjustes": [
+    {
+      "id": "SOLIC_001",
+      "colaboradorId": "FUNC_001",
+      "colaboradorNome": "Thais Moreira de Souza",
+      "colaboradorCargo": "Assistente de coletas",
+      "tipo": "Atestado Médico",
+      "dataOcorrencia": "15/09/2026",
+      "descricaoJustificativa": "Consulta médica oftalmológica de rotina com dilatação de pupila e repouso no período da tarde.",
+      "diasAfastamento": 1,
+      "status": "Pendente",
+      "dataSolicitacao": "15/09/2026 14:30"
+    }
+  ],
+  "comprovantesPonto": [],
+  "registrosPonto": [],
+  "sedeConfig": {
+    "nome": "Sede Tupaciguara MG — Rua Modesto Alves Prudente, 266, Primavera",
+    "lat": -18.59969,
+    "lon": -48.016335,
+    "raioMaximoMetros": 150
+  }
+}

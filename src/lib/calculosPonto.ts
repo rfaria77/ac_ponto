@@ -6,6 +6,8 @@ export interface BatidaDia {
   saida1: string;   // "12:00"
   entrada2: string; // "13:00"
   saida2: string;   // "17:00"
+  entrada3?: string; // Noite Entrada (ex: "22:00")
+  saida3?: string;   // Noite Saída (ex: "05:00")
   observacao?: string; // "Normal", "DSR", "Feriado", "Atestado", "Falta", etc.
   ehFeriado?: boolean;
   folgaCompensatoria?: boolean;
@@ -239,10 +241,11 @@ export function calcularFechamentoMensal(
       }
     }
 
-    // 1. Calcular tempo trabalhado no período da manhã e da tarde
+    // 1. Calcular tempo trabalhado no período da manhã, tarde e noite
     const duracaoManha = calcularDuracaoMinutos(d.entrada1, d.saida1);
     const duracaoTarde = calcularDuracaoMinutos(d.entrada2, d.saida2);
-    const tempoTrabalhado = duracaoManha + duracaoTarde;
+    const duracaoNoite = (d.entrada3 && d.saida3) ? calcularDuracaoMinutos(d.entrada3, d.saida3) : 0;
+    const tempoTrabalhado = duracaoManha + duracaoTarde + duracaoNoite;
     d.minutosTrabalhados = tempoTrabalhado;
 
     // 2. Calcular intervalo de almoço
@@ -252,7 +255,8 @@ export function calcularFechamentoMensal(
     // 3. Adicional Noturno (22:00 às 05:00)
     const noturnoManha = calcularMinutosNoturnos(d.entrada1, d.saida1);
     const noturnoTarde = calcularMinutosNoturnos(d.entrada2, d.saida2);
-    const totalNoturnoDia = noturnoManha + noturnoTarde;
+    const noturnoNoite = (d.entrada3 && d.saida3) ? calcularMinutosNoturnos(d.entrada3, d.saida3) : 0;
+    const totalNoturnoDia = noturnoManha + noturnoTarde + noturnoNoite;
     d.minutosNoturnos = totalNoturnoDia;
     totalNoturno += totalNoturnoDia;
 
@@ -496,6 +500,8 @@ export function gerarDiasMes(
       saida1: sai1,
       entrada2: ent2,
       saida2: sai2,
+      entrada3: "",
+      saida3: "",
       observacao: obs,
       ehFeriado,
       folgaCompensatoria: false,

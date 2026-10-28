@@ -340,6 +340,7 @@ function salvarDadosEmDisco() {
       escalas,
       solicitacoesAjustes,
       comprovantesPonto,
+      registrosPonto,
       sedeConfig,
     };
     fs.writeFileSync(DB_FILE, JSON.stringify(backup, null, 2), "utf8");
@@ -364,6 +365,9 @@ function carregarDadosDoDisco() {
       }
       if (Array.isArray(dados.comprovantesPonto)) {
         comprovantesPonto = dados.comprovantesPonto;
+      }
+      if (Array.isArray(dados.registrosPonto)) {
+        registrosPonto = dados.registrosPonto;
       }
       if (dados.sedeConfig) {
         sedeConfig = { ...sedeConfig, ...dados.sedeConfig };
@@ -837,6 +841,12 @@ app.post("/api/registrar-ponto", async (req, res) => {
     };
 
     registrosPonto.unshift(registro);
+    salvarDadosEmDisco();
+    if (firestoreDb) {
+      setDoc(doc(firestoreDb, "registros_ponto", registro.id), cleanForFirestore(registro)).catch((e: any) => {
+        console.warn("Erro ao salvar registro no Firestore:", e?.message || e);
+      });
+    }
 
     res.json({
       success: aprovado,

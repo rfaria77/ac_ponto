@@ -85,6 +85,7 @@ import { Logo } from "./components/Logo";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { PWAInstallModal } from "./components/PWAInstallModal";
 import { PainelNotificacoesTurno } from "./components/PainelNotificacoesTurno";
+import { PainelFolhaVisual } from "./components/PainelFolhaVisual";
 import { usePWAInstall } from "./hooks/usePWAInstall";
 import { db, cleanForFirestore } from "./lib/firebaseClient";
 import { collection, doc, setDoc, deleteDoc, onSnapshot } from "firebase/firestore";
@@ -514,7 +515,7 @@ export default function App() {
   const [modalExportarAFDAberta, setModalExportarAFDAberta] = useState<boolean>(false);
   const [tipoExportacaoFiscal, setTipoExportacaoFiscal] = useState<"AFD" | "AFDT">("AFD");
 
-  const [abaAtiva, setAbaAtiva] = useState<"dashboard" | "digitalizar" | "fechamento" | "historico" | "criterios" | "escalas" | "colaboradores" | "baterPonto" | "inconsistencias" | "solicitacoes">("dashboard");
+  const [abaAtiva, setAbaAtiva] = useState<"dashboard" | "painelVisual" | "digitalizar" | "fechamento" | "historico" | "criterios" | "escalas" | "colaboradores" | "baterPonto" | "inconsistencias" | "solicitacoes">("dashboard");
   const [filtroStatusDashboard, setFiltroStatusDashboard] = useState<"todos" | "emTurno" | "almoco" | "concluido" | "aguardando">("todos");
   const [filtroBuscaDashboard, setFiltroBuscaDashboard] = useState<string>("");
   const [filtroDeptoDashboard, setFiltroDeptoDashboard] = useState<string>("todos");
@@ -3409,6 +3410,19 @@ export default function App() {
                   </button>
                   <button
                     onClick={() => {
+                      setAbaAtiva("painelVisual");
+                      setSidebarAbertaMobile(false);
+                    }}
+                    className={`w-full px-3.5 py-3 rounded-xl transition-all flex items-center gap-3 text-left ${
+                      abaAtiva === "painelVisual"
+                        ? "bg-amber-500 text-slate-950 font-black shadow-md shadow-amber-500/30"
+                        : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                    }`}
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-amber-400" /> Folha Visual (Tempo Real)
+                  </button>
+                  <button
+                    onClick={() => {
                       setAbaAtiva("digitalizar");
                       setSidebarAbertaMobile(false);
                     }}
@@ -3572,6 +3586,16 @@ export default function App() {
                 }`}
               >
                 <LayoutDashboard className="w-4 h-4 text-emerald-400" /> Dashboard & Turnos Ativos
+              </button>
+              <button
+                onClick={() => setAbaAtiva("painelVisual")}
+                className={`w-full px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-2.5 text-left ${
+                  abaAtiva === "painelVisual"
+                    ? "bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/30 font-black"
+                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
+                }`}
+              >
+                <FileSpreadsheet className="w-4 h-4 text-amber-400" /> Folha Visual (Tempo Real)
               </button>
               <button
                 onClick={() => setAbaAtiva("digitalizar")}
@@ -3751,6 +3775,7 @@ export default function App() {
               </span>
               <h2 className="text-base sm:text-lg font-black text-white">
                 {abaAtiva === "dashboard" && "Dashboard em Tempo Real & Turnos Ativos"}
+                {abaAtiva === "painelVisual" && "Folha de Ponto Visual (Tempo Real)"}
                 {abaAtiva === "digitalizar" && "Digitalização de Folhas de Ponto (IA)"}
                 {abaAtiva === "fechamento" && "Espelho de Ponto & Fechamento Mensal"}
                 {abaAtiva === "historico" && "Histórico de Fechamentos"}
@@ -3771,6 +3796,14 @@ export default function App() {
                 }`}
               >
                 <LayoutDashboard className="w-3.5 h-3.5 text-emerald-400" /> Dashboard
+              </button>
+              <button
+                onClick={() => setAbaAtiva("painelVisual")}
+                className={`px-3 py-1.5 rounded-lg font-semibold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                  abaAtiva === "painelVisual" ? "bg-amber-500 text-slate-950 font-black shadow-md shadow-amber-500/30" : "bg-slate-900 text-slate-400 hover:text-white"
+                }`}
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-amber-400" /> Folha Visual
               </button>
               <button
                 onClick={() => setAbaAtiva("digitalizar")}
@@ -4388,16 +4421,28 @@ export default function App() {
                           </div>
 
                           {/* Ações Rápidas */}
-                          <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2 text-xs">
+                          <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-1.5 text-xs flex-wrap">
                             <button
                               type="button"
                               onClick={() => {
                                 setPortalColaboradorId(colab.id);
                                 setAbaAtiva("baterPonto");
                               }}
-                              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-semibold transition-colors flex items-center gap-1.5 text-[11px]"
+                              className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-semibold transition-colors flex items-center gap-1 text-[11px]"
                             >
-                              <Clock className="w-3 h-3 text-teal-400" /> Bater Ponto
+                              <Clock className="w-3 h-3 text-teal-400" /> Ponto
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setColaboradorSelecionadoId(colab.id);
+                                setAbaAtiva("painelVisual");
+                              }}
+                              className="px-2.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-slate-950 border border-amber-500/30 font-bold transition-all flex items-center gap-1 text-[11px]"
+                              title="Ver folha de ponto visual idêntica à planilha"
+                            >
+                              <FileSpreadsheet className="w-3 h-3 text-amber-400" /> Folha Visual
                             </button>
 
                             <button
@@ -4406,9 +4451,9 @@ export default function App() {
                                 setColaboradorSelecionadoId(colab.id);
                                 setAbaAtiva("fechamento");
                               }}
-                              className="px-3 py-1.5 rounded-xl bg-sky-600/20 hover:bg-sky-600 text-sky-300 hover:text-white border border-sky-500/30 font-semibold transition-all flex items-center gap-1.5 text-[11px]"
+                              className="px-2.5 py-1.5 rounded-xl bg-sky-600/20 hover:bg-sky-600 text-sky-300 hover:text-white border border-sky-500/30 font-semibold transition-all flex items-center gap-1 text-[11px]"
                             >
-                              <FileText className="w-3 h-3 text-sky-400" /> Ver Espelho
+                              <FileText className="w-3 h-3 text-sky-400" /> Espelho
                             </button>
                           </div>
                         </div>
@@ -4420,6 +4465,16 @@ export default function App() {
             </div>
           );
         })()}
+
+        {/* ================= ABA: PAINEL VISUAL DE BATIDAS (FOLHA DE PONTO REAL-TIME) ================= */}
+        {abaAtiva === "painelVisual" && (
+          <PainelFolhaVisual
+            colaboradores={colaboradores}
+            colaboradorSelecionadoId={colaboradorSelecionadoId || portalColaboradorId || colaboradores[0]?.id}
+            criterios={criterios}
+            onVoltar={() => setAbaAtiva("dashboard")}
+          />
+        )}
 
         {/* ================= ABA: PORTAL DE PONTO (FUNCIONÁRIOS) ================= */}
         {abaAtiva === "baterPonto" && (
@@ -4509,6 +4564,19 @@ export default function App() {
                               </div>
                             );
                           })()}
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setColaboradorSelecionadoId(colabAtual.id);
+                              setAbaAtiva("painelVisual");
+                            }}
+                            className="bg-amber-500/10 hover:bg-amber-500 text-amber-300 hover:text-slate-950 border border-amber-500/30 rounded-2xl px-3.5 py-2.5 flex items-center gap-2 font-bold text-xs transition-all cursor-pointer shadow-sm shrink-0"
+                            title="Ver a folha de ponto visual idêntica à planilha oficial"
+                          >
+                            <FileSpreadsheet className="w-4 h-4" />
+                            <span>Ver Folha Visual</span>
+                          </button>
 
                           {portalSucessoModal && (
                             <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 animate-pulse">
