@@ -5,6 +5,8 @@ import fs from "fs";
 import { fileURLToPath } from "url";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, setDoc, getDocs, collection, deleteDoc } from "firebase/firestore";
 
 dotenv.config();
 
@@ -21,6 +23,35 @@ const ai = new GoogleGenAI({
     },
   },
 });
+
+// Inicialização Firebase Firestore no servidor
+let firestoreDb: any = null;
+try {
+  const configPath = path.join(__dirname, "firebase-applet-config.json");
+  if (fs.existsSync(configPath)) {
+    const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    const fbApp = initializeApp(config, "server-app");
+    firestoreDb = getFirestore(fbApp, config.firestoreDatabaseId);
+    console.log("🔥 Firebase Firestore inicializado no servidor.");
+  }
+} catch (e) {
+  console.warn("Aviso ao conectar Firebase no servidor:", e);
+}
+
+function cleanForFirestore(data: any): any {
+  if (data === null || data === undefined) return null;
+  if (Array.isArray(data)) return data.map(cleanForFirestore);
+  if (typeof data === "object") {
+    const cleaned: Record<string, any> = {};
+    for (const [key, val] of Object.entries(data)) {
+      if (val !== undefined) {
+        cleaned[key] = cleanForFirestore(val);
+      }
+    }
+    return cleaned;
+  }
+  return data;
+}
 
 // Haversine formula for distance in meters
 function calcularDistanciaMetros(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -42,6 +73,7 @@ let sedeConfig = {
   lon: -48.016335,
   raioMaximoMetros: 150.0,
 };
+
 
 let colaboradores: Array<{
   id: string;
@@ -295,6 +327,82 @@ let comprovantesPonto: Array<{
   };
 }> = [];
 
+const DATA_DIR = path.join(__dirname, "data");
+const DB_FILE = path.join(DATA_DIR, "db_store.json");
+
+function salvarDadosEmDisco() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    const backup = {
+      colaboradores,
+      escalas,
+      solicitacoesAjustes,
+      comprovantesPonto,
+      sedeConfig,
+    };
+    fs.writeFileSync(DB_FILE, JSON.stringify(backup, null, 2), "utf8");
+  } catch (err) {
+    console.error("Erro ao salvar dados em disco:", err);
+  }
+}
+
+function carregarDadosDoDisco() {
+  try {
+    if (fs.existsSync(DB_FILE)) {
+      const conteudo = fs.readFileSync(DB_FILE, "utf8");
+      const dados = JSON.parse(conteudo);
+      if (Array.isArray(dados.colaboradores) && dados.colaboradores.length > 0) {
+        colaboradores = dados.colaboradores;
+      }
+      if (Array.isArray(dados.escalas) && dados.escalas.length > 0) {
+        escalas = dados.escalas;
+      }
+      if (Array.isArray(dados.solicitacoesAjustes)) {
+        solicitacoesAjustes = dados.solicitacoesAjustes;
+      }
+      if (Array.isArray(dados.comprovantesPonto)) {
+        comprovantesPonto = dados.comprovantesPonto;
+      }
+      if (dados.sedeConfig) {
+        sedeConfig = { ...sedeConfig, ...dados.sedeConfig };
+      }
+      console.log("📦 Dados persistidos carregados do disco com sucesso!");
+    }
+  } catch (err) {
+    console.warn("Aviso ao carregar dados do disco:", err);
+  }
+}
+
+carregarDadosDoDisco();
+
+// Sincronização inicial com Firestore no boot do servidor
+async function inicializarDadosFirestore() {
+  if (firestoreDb) {
+    try {
+      const snap = await getDocs(collection(firestoreDb, "colaboradores"));
+      if (!snap.empty) {
+        snap.forEach((docSnap: any) => {
+          const d = docSnap.data();
+          const item = { ...d, id: docSnap.id };
+          const idx = colaboradores.findIndex((c) => c.id === item.id);
+          if (idx >= 0) {
+            colaboradores[idx] = { ...colaboradores[idx], ...item };
+          } else {
+            colaboradores.push(item);
+          }
+        });
+        salvarDadosEmDisco();
+        console.log(`🔥 Sincronizado ${colaboradores.length} colaboradores do Firestore no servidor.`);
+      }
+    } catch (e) {
+      console.warn("Aviso na sincronização inicial Firestore:", e);
+    }
+  }
+}
+inicializarDadosFirestore();
+
 // API Routes
 app.get("/api/solicitacoes", (req, res) => {
   const { colaboradorId } = req.query;
@@ -373,6 +481,9 @@ app.post("/api/colaboradores", (req, res) => {
     horarioTrabalho,
     fotoCadastro,
     localPermitido,
+    senha,
+    primeiroAcesso,
+    escalaId,
   } = req.body;
 
   if (!nome || !cargo) {
@@ -388,6 +499,9 @@ app.post("/api/colaboradores", (req, res) => {
     saldoAnteriorBancoMinutos: typeof saldoAnteriorBancoMinutos === "number" ? saldoAnteriorBancoMinutos : 0,
     dataInicioSaldo: dataInicioSaldo || new Date().toLocaleDateString("pt-BR"),
     observacaoSaldo: observacaoSaldo || "",
+    senha: senha || "Aec2026@",
+    primeiroAcesso: primeiroAcesso !== undefined ? Boolean(primeiroAcesso) : true,
+    escalaId: escalaId || undefined,
     horarioTrabalho: horarioTrabalho || {
       entrada: "08:00",
       almocoSaida: "12:00",
@@ -405,18 +519,52 @@ app.post("/api/colaboradores", (req, res) => {
   };
 
   colaboradores.push(novoColaborador);
+  salvarDadosEmDisco();
+  if (firestoreDb) {
+    setDoc(doc(firestoreDb, "colaboradores", novoColaborador.id), cleanForFirestore(novoColaborador)).catch((e: any) => {
+      console.warn("Erro ao salvar no Firestore (server):", e.message);
+    });
+  }
   res.json({ success: true, colaborador: novoColaborador });
 });
 
 app.put("/api/colaboradores/:id", (req, res) => {
   const { id } = req.params;
   const index = colaboradores.findIndex((c) => c.id === id);
+  const dados = req.body;
+
   if (index === -1) {
-    return res.status(404).json({ error: "Colaborador não encontrado." });
+    const novoColab = {
+      id,
+      nome: dados.nome || "Colaborador",
+      cargo: dados.cargo || "Geral",
+      departamento: dados.departamento || "Geral",
+      salarioBase: typeof dados.salarioBase === "number" ? dados.salarioBase : 2450.0,
+      saldoAnteriorBancoMinutos:
+        typeof dados.saldoAnteriorBancoMinutos === "number" ? dados.saldoAnteriorBancoMinutos : 0,
+      dataInicioSaldo: dados.dataInicioSaldo || "01/09/2026",
+      observacaoSaldo: dados.observacaoSaldo || "",
+      escalaId: dados.escalaId !== undefined ? dados.escalaId : undefined,
+      horarioTrabalho: dados.horarioTrabalho || {
+        entrada: "08:00",
+        almocoSaida: "12:00",
+        almocoRetorno: "13:00",
+        saida: "17:00",
+        sabadoAtivo: false,
+      },
+      fotoCadastro: dados.fotoCadastro || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80",
+      senha: dados.senha !== undefined ? dados.senha : "Aec2026@",
+      primeiroAcesso: dados.primeiroAcesso !== undefined ? Boolean(dados.primeiroAcesso) : true,
+    };
+    colaboradores.push(novoColab);
+    salvarDadosEmDisco();
+    if (firestoreDb) {
+      setDoc(doc(firestoreDb, "colaboradores", id), cleanForFirestore(novoColab)).catch(() => {});
+    }
+    return res.json({ success: true, colaborador: novoColab });
   }
 
   const colabExistente = colaboradores[index];
-  const dados = req.body;
 
   colaboradores[index] = {
     ...colabExistente,
@@ -437,13 +585,24 @@ app.put("/api/colaboradores/:id", (req, res) => {
     primeiroAcesso: dados.primeiroAcesso !== undefined ? Boolean(dados.primeiroAcesso) : colabExistente.primeiroAcesso,
   };
 
-  console.log("Colaborador atualizado no servidor:", colaboradores[index]);
+  salvarDadosEmDisco();
+  if (firestoreDb) {
+    setDoc(doc(firestoreDb, "colaboradores", id), cleanForFirestore(colaboradores[index])).catch((e: any) => {
+      console.warn("Erro ao atualizar no Firestore (server):", e.message);
+    });
+  }
+
+  console.log("Colaborador atualizado no servidor e persistido:", colaboradores[index]);
   res.json({ success: true, colaborador: colaboradores[index] });
 });
 
 app.delete("/api/colaboradores/:id", (req, res) => {
   const { id } = req.params;
   colaboradores = colaboradores.filter((c) => c.id !== id);
+  salvarDadosEmDisco();
+  if (firestoreDb) {
+    deleteDoc(doc(firestoreDb, "colaboradores", id)).catch(() => {});
+  }
   res.json({ success: true, mensagem: "Colaborador excluído com sucesso." });
 });
 
@@ -471,6 +630,10 @@ app.post("/api/escalas", (req, res) => {
   };
 
   escalas.push(novaEscala);
+  salvarDadosEmDisco();
+  if (firestoreDb) {
+    setDoc(doc(firestoreDb, "escalas", novaEscala.id), cleanForFirestore(novaEscala)).catch(() => {});
+  }
   res.json({ success: true, escala: novaEscala });
 });
 
@@ -488,6 +651,11 @@ app.put("/api/escalas/:id", (req, res) => {
     horario: dados.horario ? { ...escalas[index].horario, ...dados.horario } : escalas[index].horario,
   };
 
+  salvarDadosEmDisco();
+  if (firestoreDb) {
+    setDoc(doc(firestoreDb, "escalas", id), cleanForFirestore(escalas[index])).catch(() => {});
+  }
+
   res.json({ success: true, escala: escalas[index] });
 });
 
@@ -500,6 +668,10 @@ app.delete("/api/escalas/:id", (req, res) => {
       c.escalaId = undefined;
     }
   });
+  salvarDadosEmDisco();
+  if (firestoreDb) {
+    deleteDoc(doc(firestoreDb, "escalas", id)).catch(() => {});
+  }
   res.json({ success: true, mensagem: "Escala excluída com sucesso." });
 });
 

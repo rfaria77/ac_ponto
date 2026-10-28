@@ -86,7 +86,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { PWAInstallModal } from "./components/PWAInstallModal";
 import { PainelNotificacoesTurno } from "./components/PainelNotificacoesTurno";
 import { usePWAInstall } from "./hooks/usePWAInstall";
-import { db } from "./lib/firebaseClient";
+import { db, cleanForFirestore } from "./lib/firebaseClient";
 import { collection, doc, setDoc, deleteDoc, onSnapshot } from "firebase/firestore";
 import {
   verificarEAlertarTurno,
@@ -954,7 +954,7 @@ export default function App() {
       setEscalas(atualizadas);
       localStorage.setItem("ac_gestor_escalas", JSON.stringify(atualizadas));
       atualizadas.forEach((esc) => {
-        setDoc(doc(db, "escalas", esc.id), esc).catch(() => {});
+        setDoc(doc(db, "escalas", esc.id), cleanForFirestore(esc)).catch(() => {});
       });
 
       fetch(`/api/escalas/${escalaEditando.id}`, {
@@ -987,7 +987,7 @@ export default function App() {
 
         colabsAtualizados.forEach((c) => {
           if (c.escalaId === escalaEditando.id) {
-            setDoc(doc(db, "colaboradores", c.id), c).catch(() => {});
+            setDoc(doc(db, "colaboradores", c.id), cleanForFirestore(c)).catch(() => {});
             fetch(`/api/colaboradores/${c.id}`, {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
@@ -1014,7 +1014,7 @@ export default function App() {
       const lista = [...escalas, nova];
       setEscalas(lista);
       localStorage.setItem("ac_gestor_escalas", JSON.stringify(lista));
-      setDoc(doc(db, "escalas", nova.id), nova).catch(() => {});
+      setDoc(doc(db, "escalas", nova.id), cleanForFirestore(nova)).catch(() => {});
 
       fetch("/api/escalas", {
         method: "POST",
@@ -1038,7 +1038,7 @@ export default function App() {
     const lista = [...escalas, duplicada];
     setEscalas(lista);
     localStorage.setItem("ac_gestor_escalas", JSON.stringify(lista));
-    setDoc(doc(db, "escalas", duplicada.id), duplicada).catch(() => {});
+    setDoc(doc(db, "escalas", duplicada.id), cleanForFirestore(duplicada)).catch(() => {});
     fetch("/api/escalas", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1074,7 +1074,7 @@ export default function App() {
     localStorage.setItem("ac_gestor_colaboradores", JSON.stringify(colabsAtualizados));
     colabsAtualizados.forEach((c) => {
       if (!c.escalaId) {
-        setDoc(doc(db, "colaboradores", c.id), c).catch(() => {});
+        setDoc(doc(db, "colaboradores", c.id), cleanForFirestore(c)).catch(() => {});
       }
     });
 
@@ -1120,7 +1120,7 @@ export default function App() {
     localStorage.setItem("ac_gestor_colaboradores", JSON.stringify(colabsAtualizados));
 
     colabsAtualizados.forEach((c) => {
-      setDoc(doc(db, "colaboradores", c.id), c).catch(() => {});
+      setDoc(doc(db, "colaboradores", c.id), cleanForFirestore(c)).catch(() => {});
       fetch(`/api/colaboradores/${c.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -1158,7 +1158,7 @@ export default function App() {
 
     const alvo = colabsAtualizados.find((c) => c.id === colaboradorId);
     if (alvo) {
-      setDoc(doc(db, "colaboradores", alvo.id), alvo).catch(() => {});
+      setDoc(doc(db, "colaboradores", alvo.id), cleanForFirestore(alvo)).catch(() => {});
       fetch(`/api/colaboradores/${colaboradorId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -1319,7 +1319,9 @@ export default function App() {
       localStorage.setItem("ac_gestor_colaboradores", JSON.stringify(atualizados));
       const alvoMod = atualizados.find((c) => c.id === colaboradorEditando.id);
       if (alvoMod) {
-        setDoc(doc(db, "colaboradores", alvoMod.id), alvoMod).catch(() => {});
+        setDoc(doc(db, "colaboradores", alvoMod.id), cleanForFirestore(alvoMod)).catch((err) => {
+          console.warn("Erro ao persistir colaborador no Firestore:", err);
+        });
       }
 
       // Salvar na API
@@ -1375,7 +1377,9 @@ export default function App() {
       const lista = [...colaboradores, novoColab];
       setColaboradores(lista);
       localStorage.setItem("ac_gestor_colaboradores", JSON.stringify(lista));
-      setDoc(doc(db, "colaboradores", novoColab.id), novoColab).catch(() => {});
+      setDoc(doc(db, "colaboradores", novoColab.id), cleanForFirestore(novoColab)).catch((err) => {
+        console.warn("Erro ao persistir novo colaborador no Firestore:", err);
+      });
 
       fetch("/api/colaboradores", {
         method: "POST",
@@ -1433,7 +1437,9 @@ export default function App() {
     localStorage.setItem("ac_gestor_colaboradores", JSON.stringify(atualizados));
     const alvoAjuste = atualizados.find(c => c.id === colabAjustandoBanco.id);
     if (alvoAjuste) {
-      setDoc(doc(db, "colaboradores", alvoAjuste.id), alvoAjuste).catch(() => {});
+      setDoc(doc(db, "colaboradores", alvoAjuste.id), cleanForFirestore(alvoAjuste)).catch((err) => {
+        console.warn("Erro ao persistir ajuste de banco no Firestore:", err);
+      });
     }
 
     // Salvar na API
@@ -1496,7 +1502,9 @@ export default function App() {
 
     const colabAtualizado = atualizados.find((c) => c.id === id);
     if (colabAtualizado) {
-      setDoc(doc(db, "colaboradores", id), colabAtualizado).catch(() => {});
+      setDoc(doc(db, "colaboradores", id), cleanForFirestore(colabAtualizado)).catch((err) => {
+        console.warn("Erro ao resetar senha no Firestore:", err);
+      });
       fetch(`/api/colaboradores/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -1648,7 +1656,9 @@ export default function App() {
     localStorage.setItem("ac_gestor_colaboradores", JSON.stringify(atualizados));
 
     // Persistência em tempo real no Firestore e na API Node.js
-    setDoc(doc(db, "colaboradores", colab.id), colabAtualizado).catch(() => {});
+    setDoc(doc(db, "colaboradores", colab.id), cleanForFirestore(colabAtualizado)).catch((err) => {
+      console.warn("Erro ao salvar nova senha no Firestore:", err);
+    });
     fetch(`/api/colaboradores/${colab.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -2006,7 +2016,7 @@ export default function App() {
       setModalComprovanteRecente(novoComprovante);
 
       // Persistência em nuvem
-      setDoc(doc(db, "comprovantes_ponto", novoComprovante.id), novoComprovante).catch(() => {});
+      setDoc(doc(db, "comprovantes_ponto", novoComprovante.id), cleanForFirestore(novoComprovante)).catch(() => {});
       fetch("/api/comprovantes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -2050,7 +2060,7 @@ export default function App() {
     setSolicitacoes(atualizadas);
     localStorage.setItem("ac_gestor_solicitacoes", JSON.stringify(atualizadas));
 
-    setDoc(doc(db, "solicitacoes_ajustes", novaSolicitacao.id), novaSolicitacao).catch(() => {});
+    setDoc(doc(db, "solicitacoes_ajustes", novaSolicitacao.id), cleanForFirestore(novaSolicitacao)).catch(() => {});
     fetch("/api/solicitacoes", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -2078,12 +2088,13 @@ export default function App() {
     setSolicitacoes(atualizadas);
     localStorage.setItem("ac_gestor_solicitacoes", JSON.stringify(atualizadas));
 
-    setDoc(doc(db, "solicitacoes_ajustes", solic.id), {
+    const dadosAprovacao = {
       ...solic,
       status: "Aprovado",
       dataAprovacao: new Date().toLocaleString("pt-BR"),
       aprovadoPor: "Administrador DP",
-    }).catch(() => {});
+    };
+    setDoc(doc(db, "solicitacoes_ajustes", solic.id), cleanForFirestore(dadosAprovacao)).catch(() => {});
 
     fetch(`/api/solicitacoes/${solic.id}`, {
       method: "PUT",
@@ -2144,12 +2155,13 @@ export default function App() {
     setSolicitacoes(atualizadas);
     localStorage.setItem("ac_gestor_solicitacoes", JSON.stringify(atualizadas));
 
-    setDoc(doc(db, "solicitacoes_ajustes", id), {
+    const dadosRecusa = {
       status: "Recusado",
       motivoRecusa: motivo || "Recusado pelo gestor",
       dataAprovacao: new Date().toLocaleString("pt-BR"),
       aprovadoPor: "Administrador DP",
-    }, { merge: true }).catch(() => {});
+    };
+    setDoc(doc(db, "solicitacoes_ajustes", id), cleanForFirestore(dadosRecusa), { merge: true }).catch(() => {});
 
     fetch(`/api/solicitacoes/${id}`, {
       method: "PUT",
@@ -2240,14 +2252,22 @@ export default function App() {
     fetch("/api/colaboradores")
       .then((res) => res.json())
       .then((data: Colaborador[]) => {
-        if (Array.isArray(data)) {
-          setColaboradores(data);
-          localStorage.setItem("ac_gestor_colaboradores", JSON.stringify(data));
-          if (data.length > 0) {
-            setPortalColaboradorId((prev) => prev || data[0].id);
-            setColaboradorSelecionadoId((prev) => prev || data[0].id);
-            setFuncionarioLoginId((prev) => prev || data[0].id);
-          }
+        if (Array.isArray(data) && data.length > 0) {
+          const normalizados = data.map(normalizarColaborador);
+          setColaboradores((prev) => {
+            const map = new Map<string, Colaborador>();
+            normalizados.forEach((c) => map.set(c.id, c));
+            prev.forEach((c) => {
+              const base = map.get(c.id);
+              map.set(c.id, base ? { ...base, ...c } : c);
+            });
+            const combinados = Array.from(map.values());
+            localStorage.setItem("ac_gestor_colaboradores", JSON.stringify(combinados));
+            return combinados;
+          });
+          setPortalColaboradorId((prev) => prev || normalizados[0].id);
+          setColaboradorSelecionadoId((prev) => prev || normalizados[0].id);
+          setFuncionarioLoginId((prev) => prev || normalizados[0].id);
         }
       })
       .catch(() => {});
@@ -4460,7 +4480,7 @@ export default function App() {
                   if (!colabAtual) return null;
                   return (
                     <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
-                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
+                      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 border-b border-slate-800 pb-5">
                         <div>
                           <h3 className="text-lg font-bold text-white flex items-center gap-2">
                             <Users className="w-5 h-5 text-sky-400" />
@@ -4470,11 +4490,32 @@ export default function App() {
                             Cargo: {colabAtual.cargo} | Horário Padrão: {colabAtual.horarioTrabalho?.entrada || "08:00"} às {colabAtual.horarioTrabalho?.saida || "17:00"}
                           </p>
                         </div>
-                        {portalSucessoModal && (
-                          <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 animate-pulse">
-                            <CheckCircle2 className="w-4 h-4" /> {portalSucessoModal.tipo.toUpperCase()} registrada às {portalSucessoModal.hora}!
-                          </div>
-                        )}
+                        <div className="flex items-center gap-3 w-full lg:w-auto justify-between lg:justify-end">
+                          {/* Card de Saldo de Banco de Horas */}
+                          {(() => {
+                            const saldoMin = colabAtual.saldoAnteriorBancoMinutos || 0;
+                            const ehPositivo = saldoMin >= 0;
+                            return (
+                              <div className="bg-slate-950 border border-slate-800 rounded-2xl px-4 py-2.5 flex items-center gap-3 shadow-inner">
+                                <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold ${ehPositivo ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-rose-500/10 text-rose-400 border border-rose-500/20"}`}>
+                                  <Clock className="w-4 h-4" />
+                                </div>
+                                <div>
+                                  <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Banco de Horas</div>
+                                  <div className={`text-sm font-mono font-bold ${ehPositivo ? "text-emerald-400" : "text-rose-400"}`}>
+                                    {minutosParaTextoExtenso(saldoMin, true)}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })()}
+
+                          {portalSucessoModal && (
+                            <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 animate-pulse">
+                              <CheckCircle2 className="w-4 h-4" /> {portalSucessoModal.tipo.toUpperCase()} registrada às {portalSucessoModal.hora}!
+                            </div>
+                          )}
+                        </div>
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
