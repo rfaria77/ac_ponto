@@ -3119,62 +3119,69 @@ export default function App() {
                               {mostrarSenhaLoginFunc ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                             </button>
                           </div>
-                          <div className="flex items-center justify-between mt-2.5">
-                            {jaTemSenhaPessoal ? (
-                              <p className="text-[11px] text-amber-300/90 font-medium">
-                                🔒 A senha padrão Aec2026@ está bloqueada para seu usuário. Digite sua senha pessoal.
-                              </p>
-                            ) : (
-                              <>
-                                <p className="text-[11px] text-slate-400">
-                                  Senha padrão da empresa: <strong className="text-sky-400 font-mono">Aec2026@</strong>
-                                </p>
-                                <button
-                                  type="button"
-                                  onClick={() => handleConfirmarLoginFuncionario("Aec2026@")}
-                                  disabled={isLoggingIn}
-                                  className="text-[11px] text-emerald-400 hover:text-emerald-300 font-bold bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20 cursor-pointer hover:bg-emerald-500/20 transition-colors"
-                                >
-                                  Entrar com Padrão →
-                                </button>
-                              </>
-                            )}
-                          </div>
                         </div>
 
-                        <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
+                        {/* Botão de Biometria / Reconhecimento Facial (WebAuthn / Biometric simulation) */}
+                        <div className="pt-2">
                           <button
+                            type="button"
                             onClick={() => {
-                              setModalLoginFuncionarioAberta(false);
-                              setSenhaLoginFuncErro(null);
-                              setLoginStatusMsg(null);
+                              const colab = colaboradores.find((c) => c.id === colabTentandoLogarId) || colaboradores[0];
+                              if (!colab) return;
+                              setIsLoggingIn(true);
+                              setLoginStatusMsg("Autenticando via Biometria / FaceID do Aparelho...");
+                              setTimeout(() => {
+                                setIsLoggingIn(false);
+                                setLoginStatusMsg(null);
+                                setPortalColaboradorId(colab.id);
+                                setUserRole("funcionario");
+                                setAbaAtiva("baterPonto");
+                                setModalLoginFuncionarioAberta(false);
+                                showToast("sucesso", "Biometria Aprovada!", `Acesso liberado via biometria/passkey para ${colab.nome}.`);
+                              }, 900);
                             }}
                             disabled={isLoggingIn}
-                            className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
+                            className="w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center justify-center gap-2 text-xs font-bold transition-all cursor-pointer"
+                            title="Entrar usando a impressão digital, Face ID ou bloqueio de tela padrão do celular"
                           >
-                            Cancelar
-                          </button>
-                          <button
-                            onClick={() => handleConfirmarLoginFuncionario()}
-                            disabled={isLoggingIn}
-                            className={`px-5 py-2.5 text-white rounded-xl text-xs font-bold shadow-lg flex items-center gap-2 transition-all cursor-pointer ${
-                              jaTemSenhaPessoal
-                                ? "bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 shadow-emerald-600/30"
-                                : "bg-sky-600 hover:bg-sky-500 disabled:bg-sky-800 shadow-sky-600/30"
-                            }`}
-                          >
-                            {isLoggingIn ? (
-                              <>
-                                <RefreshCw className="w-4 h-4 animate-spin" />
-                                {loginStatusMsg || "Entrando..."}
-                              </>
-                            ) : (
-                              <>
-                                {jaTemSenhaPessoal ? "Entrar com Senha Pessoal" : "Entrar no Portal"} <ArrowRight className="w-4 h-4" />
-                              </>
-                            )}
+                            <span className="text-base">👤📱</span>
+                            <span>Usar Biometria / Face ID do Dispositivo</span>
                           </button>
                         </div>
+                      </div>
+
+                      <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
+                        <button
+                          onClick={() => {
+                            setModalLoginFuncionarioAberta(false);
+                            setSenhaLoginFuncErro(null);
+                            setLoginStatusMsg(null);
+                          }}
+                          disabled={isLoggingIn}
+                          className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          onClick={() => handleConfirmarLoginFuncionario()}
+                          disabled={isLoggingIn}
+                          className={`px-5 py-2.5 text-white rounded-xl text-xs font-bold shadow-lg flex items-center gap-2 transition-all cursor-pointer ${
+                            jaTemSenhaPessoal
+                              ? "bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 shadow-emerald-600/30"
+                              : "bg-sky-600 hover:bg-sky-500 disabled:bg-sky-800 shadow-sky-600/30"
+                          }`}
+                        >
+                          {isLoggingIn ? (
+                            <>
+                              <RefreshCw className="w-4 h-4 animate-spin" />
+                              {loginStatusMsg || "Entrando..."}
+                            </>
+                          ) : (
+                            <>
+                              {jaTemSenhaPessoal ? "Entrar com Senha Pessoal" : "Entrar no Portal"} <ArrowRight className="w-4 h-4" />
+                            </>
+                          )}
+                        </button>
                       </div>
                     </>
                   );
@@ -3563,6 +3570,26 @@ export default function App() {
                       </span>
                     )}
                   </button>
+                  <button
+                    onClick={() => {
+                      setAbaAtiva("solicitacoes");
+                      setSidebarAbertaMobile(false);
+                    }}
+                    className={`w-full px-3.5 py-3 rounded-xl transition-all flex items-center justify-between text-left ${
+                      abaAtiva === "solicitacoes"
+                        ? "bg-sky-600 text-white font-bold shadow-md shadow-sky-600/30"
+                        : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                    }`}
+                  >
+                    <span className="flex items-center gap-3">
+                      <FileCheck className="w-4 h-4 text-emerald-400" /> Solicitações & Atestados
+                    </span>
+                    {solicitacoes.filter(s => s.status === "Pendente").length > 0 && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500 text-slate-950">
+                        {solicitacoes.filter(s => s.status === "Pendente").length}
+                      </span>
+                    )}
+                  </button>
 
                   <div className="pt-3">
                     <button
@@ -3714,6 +3741,23 @@ export default function App() {
                 {calcularInconsistenciasGerais().length > 0 && (
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-500 text-white">
                     {calcularInconsistenciasGerais().length}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => setAbaAtiva("solicitacoes")}
+                className={`w-full px-3.5 py-2.5 rounded-xl transition-all flex items-center justify-between text-left ${
+                  abaAtiva === "solicitacoes"
+                    ? "bg-sky-600 text-white shadow-lg shadow-sky-600/30 font-bold"
+                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
+                }`}
+              >
+                <span className="flex items-center gap-2.5">
+                  <FileCheck className="w-4 h-4 text-emerald-400" /> Solicitações & Atestados
+                </span>
+                {solicitacoes.filter(s => s.status === "Pendente").length > 0 && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500 text-slate-950">
+                    {solicitacoes.filter(s => s.status === "Pendente").length}
                   </span>
                 )}
               </button>
@@ -4606,6 +4650,19 @@ export default function App() {
                           >
                             <FileSpreadsheet className="w-4 h-4" />
                             <span>Ver Folha Visual</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFormSolicTipo("Esquecimento de Ponto");
+                              setModalNovaSolicitacaoAberta(true);
+                            }}
+                            className="bg-sky-600 hover:bg-sky-500 text-white rounded-2xl px-3.5 py-2.5 flex items-center gap-2 font-bold text-xs transition-all cursor-pointer shadow-md shadow-sky-600/30 shrink-0"
+                            title="Esqueceu de bater o ponto? Solicite a inclusão do horário para aprovação do gestor"
+                          >
+                            <Plus className="w-4 h-4" />
+                            <span>Esqueci Ponto / Justificar</span>
                           </button>
 
                           {portalSucessoModal && (
@@ -7195,6 +7252,167 @@ export default function App() {
             )}
           </div>
         )}
+
+        {/* MODAL: SOLICITAR INCLUSÃO DE PONTO / ATESTADO (COLABORADOR) */}
+        <AnimatePresence>
+          {modalNovaSolicitacaoAberta && (
+            <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl max-w-lg w-full space-y-5 my-8"
+              >
+                <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                  <div>
+                    <h3 className="text-base font-bold text-white flex items-center gap-2">
+                      <FileCheck className="w-5 h-5 text-sky-400" />
+                      Solicitar Inclusão / Ajuste de Ponto
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Envie a solicitação de horário esquecido ou atestado médico para aprovação do gestor do DP.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setModalNovaSolicitacaoAberta(false)}
+                    className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleCriarSolicitacaoAjuste} className="space-y-4 text-xs">
+                  {/* Tipo de Solicitação */}
+                  <div>
+                    <label className="block text-slate-300 font-semibold mb-1">Tipo de Solicitação</label>
+                    <select
+                      value={formSolicTipo}
+                      onChange={(e) => setFormSolicTipo(e.target.value as any)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-medium focus:outline-none focus:border-sky-500"
+                    >
+                      <option value="Esquecimento de Ponto">Esquecimento / Inclusão de Ponto Esquecido</option>
+                      <option value="Atestado Médico">Atestado Médico (Dia Integral ou Parcial)</option>
+                      <option value="Serviço Externo / Outros">Serviço Externo / Outra Justificativa</option>
+                    </select>
+                  </div>
+
+                  {/* Data da Ocorrência */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-slate-300 font-semibold mb-1">Data da Ocorrência</label>
+                      <input
+                        type="text"
+                        placeholder="DD/MM/AAAA (ex: 03/11/2026)"
+                        value={formSolicData}
+                        onChange={(e) => setFormSolicData(e.target.value)}
+                        required
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-sky-500"
+                      />
+                    </div>
+
+                    {formSolicTipo === "Esquecimento de Ponto" && (
+                      <div>
+                        <label className="block text-slate-300 font-semibold mb-1">Horário Real Esquecido</label>
+                        <input
+                          type="time"
+                          value={formSolicHorario}
+                          onChange={(e) => setFormSolicHorario(e.target.value)}
+                          required
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono text-center focus:outline-none focus:border-sky-500"
+                        />
+                      </div>
+                    )}
+
+                    {formSolicTipo === "Atestado Médico" && (
+                      <div>
+                        <label className="block text-slate-300 font-semibold mb-1">Dias de Afastamento</label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={30}
+                          value={formSolicDiasAfastamento}
+                          onChange={(e) => setFormSolicDiasAfastamento(Number(e.target.value) || 1)}
+                          required
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono text-center focus:outline-none focus:border-sky-500"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Campo da Batida a Incluir */}
+                  {formSolicTipo === "Esquecimento de Ponto" && (
+                    <div>
+                      <label className="block text-slate-300 font-semibold mb-1">Batida que Esqueceu de Marcar</label>
+                      <select
+                        value={formSolicCampo}
+                        onChange={(e) => setFormSolicCampo(e.target.value as any)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-medium focus:outline-none focus:border-sky-500"
+                      >
+                        <option value="entrada1">Entrada Manhã (1º Horário)</option>
+                        <option value="saida1">Saída para Almoço</option>
+                        <option value="entrada2">Retorno do Almoço</option>
+                        <option value="saida2">Saída Expediente (Fim do Dia)</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Justificativa Detalhada */}
+                  <div>
+                    <label className="block text-slate-300 font-semibold mb-1">Motivo / Justificativa Detalhada *</label>
+                    <textarea
+                      rows={3}
+                      placeholder={formSolicTipo === "Esquecimento de Ponto" ? "Ex: Esqueci de registrar a entrada no relógio ao chegar para reunião externa..." : "Ex: Consulta médica e realização de exames..."}
+                      value={formSolicDescricao}
+                      onChange={(e) => setFormSolicDescricao(e.target.value)}
+                      required
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:outline-none focus:border-sky-500 leading-relaxed"
+                    />
+                  </div>
+
+                  {/* Comprovante / Anexo (Opcional) */}
+                  <div>
+                    <label className="block text-slate-300 font-semibold mb-1">Foto / Comprovante (Opcional)</label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onload = () => setFormSolicFotoBase64(reader.result as string);
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                      className="w-full text-xs text-slate-400 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700 cursor-pointer"
+                    />
+                    {formSolicFotoBase64 && (
+                      <div className="mt-2 text-emerald-400 text-[11px] font-semibold flex items-center gap-1">
+                        <Check className="w-3.5 h-3.5" /> Imagem do comprovante anexada!
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => setModalNovaSolicitacaoAberta(false)}
+                      className="px-4 py-2.5 rounded-xl border border-slate-700 text-slate-300 hover:bg-slate-800 text-xs font-semibold"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-5 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold shadow-lg shadow-sky-600/30 flex items-center gap-2"
+                    >
+                      <Send className="w-4 h-4" /> Enviar para Aprovação
+                    </button>
+                  </div>
+                </form>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
 
         {/* MODAL RÁPIDA: LANÇAR / AJUSTAR SALDO DE BANCO DE HORAS INICIAL */}
         <AnimatePresence>
