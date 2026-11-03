@@ -407,6 +407,32 @@ async function inicializarDadosFirestore() {
 }
 inicializarDadosFirestore();
 
+// Endpoint para limpar apenas os registros de ponto, mantendo funcionários e banco de horas
+app.post("/api/limpar-registros-ponto", async (req, res) => {
+  try {
+    registrosPonto = [];
+    comprovantesPonto = [];
+    fechamentosSalvos = [];
+    salvarDadosEmDisco();
+
+    if (firestoreDb) {
+      const compSnap = await getDocs(collection(firestoreDb, "comprovantes_ponto"));
+      for (const d of compSnap.docs) {
+        await deleteDoc(doc(firestoreDb, "comprovantes_ponto", d.id));
+      }
+      const regSnap = await getDocs(collection(firestoreDb, "registros_ponto"));
+      for (const d of regSnap.docs) {
+        await deleteDoc(doc(firestoreDb, "registros_ponto", d.id));
+      }
+    }
+
+    res.json({ success: true, message: "Registros de ponto limpos com sucesso. Colaboradores e saldos mantidos." });
+  } catch (err: any) {
+    console.error("Erro ao limpar registros de ponto:", err);
+    res.status(500).json({ error: err.message || "Erro ao limpar registros de ponto." });
+  }
+});
+
 // API Routes
 app.get("/api/solicitacoes", (req, res) => {
   const { colaboradorId } = req.query;

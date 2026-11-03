@@ -452,6 +452,13 @@ const MESES_OPCOES = [
   { valor: "01/2027", rotulo: "01/2027 - Janeiro (2027)" },
 ];
 
+export function obterMesAnoAtual(): string {
+  const agora = new Date();
+  const m = String(agora.getMonth() + 1).padStart(2, "0");
+  const a = agora.getFullYear();
+  return `${m}/${a}`;
+}
+
 export default function App() {
   const [userRole, setUserRole] = useState<"escolha" | "admin" | "funcionario">("escolha");
   const [adminSenhaInput, setAdminSenhaInput] = useState<string>("");
@@ -606,12 +613,15 @@ export default function App() {
     const unsubComp = onSnapshot(collection(db, "comprovantes_ponto"), (snapshot) => {
       const lista: ComprovantePonto[] = [];
       snapshot.forEach((docSnap) => {
-        lista.push({ ...(docSnap.data() as ComprovantePonto), id: docSnap.id });
+        const item = { ...(docSnap.data() as ComprovantePonto), id: docSnap.id };
+        if (item.data === "03/09/2026" && (item.timestampIso?.startsWith("2026-11-03") || docSnap.id.startsWith("COMP_179370"))) {
+          item.data = "03/11/2026";
+          setDoc(doc(db, "comprovantes_ponto", docSnap.id), { data: "03/11/2026" }, { merge: true }).catch(() => {});
+        }
+        lista.push(item);
       });
-      if (lista.length > 0) {
-        setComprovantes(lista);
-        localStorage.setItem("ac_gestor_comprovantes", JSON.stringify(lista));
-      }
+      setComprovantes(lista);
+      localStorage.setItem("ac_gestor_comprovantes", JSON.stringify(lista));
     }, (err) => {
       console.warn("Firestore snapshot comprovantes error:", err);
     });
@@ -668,13 +678,13 @@ export default function App() {
 
   // Portal do Funcionário (Bater Ponto)
   const [portalColaboradorId, setPortalColaboradorId] = useState<string>("");
-  const [portalDiaSelecionado, setPortalDiaSelecionado] = useState<number>(new Date().getDate());
-  const [portalMesAno, setPortalMesAno] = useState<string>("09/2026");
+  const [portalDiaSelecionado, setPortalDiaSelecionado] = useState<number>(() => new Date().getDate());
+  const [portalMesAno, setPortalMesAno] = useState<string>(() => obterMesAnoAtual());
   const [portalSucessoModal, setPortalSucessoModal] = useState<{ tipo: string; hora: string } | null>(null);
   
   // Seleção e parâmetros de upload
   const [colaboradorSelecionadoId, setColaboradorSelecionadoId] = useState<string>("");
-  const [mesAnoInput, setMesAnoInput] = useState<string>("09/2026");
+  const [mesAnoInput, setMesAnoInput] = useState<string>(() => obterMesAnoAtual());
   const [imagemBase64, setImagemBase64] = useState<string | null>(null);
   const [nomeArquivo, setNomeArquivo] = useState<string>("");
   const [estaProcessandoOCR, setEstaProcessandoOCR] = useState<boolean>(false);
@@ -1879,8 +1889,13 @@ export default function App() {
 
       (colaboradores || []).forEach((colab) => {
         if (!colab) return;
+        const agora = new Date();
+        const anoAtual = agora.getFullYear();
+        const mesAtual = agora.getMonth() + 1;
+        const diaAtual = agora.getDate();
+        const mesStr = String(mesAtual).padStart(2, "0");
         const feriados = Array.isArray(criterios?.feriadosFixos) ? criterios.feriadosFixos : FERIADOS_FIXOS_PADRAO;
-        const diasMes = gerarDiasMes(2026, 9, feriados, colab.horarioTrabalho);
+        const diasMes = gerarDiasMes(anoAtual, mesAtual, feriados, colab.horarioTrabalho);
         if (!Array.isArray(diasMes)) return;
 
         diasMes.forEach((d) => {
@@ -1897,18 +1912,18 @@ export default function App() {
               colaboradorId: colab.id,
               colaboradorNome: colab.nome,
               dia: d.dia,
-              dataStr: `${String(d.dia).padStart(2, "0")}/09/2026`,
+              dataStr: `${String(d.dia).padStart(2, "0")}/${mesStr}/${anoAtual}`,
               tipo: "Batida Incompleta (Ímpar)",
               descricao: `Registrou apenas ${qtdBatidas} batida(s) no dia. Possível esquecimento de saída ou retorno do almoço.`,
             });
           }
 
-          if (eDiaUtil && qtdBatidas === 0 && d.dia <= 25) {
+          if (eDiaUtil && qtdBatidas === 0 && d.dia < diaAtual) {
             listaInconsistencias.push({
               colaboradorId: colab.id,
               colaboradorNome: colab.nome,
               dia: d.dia,
-              dataStr: `${String(d.dia).padStart(2, "0")}/09/2026`,
+              dataStr: `${String(d.dia).padStart(2, "0")}/${mesStr}/${anoAtual}`,
               tipo: "Falta Injustificada",
               descricao: `Nenhum registro de ponto encontrado em dia útil de expediente.`,
             });
@@ -1932,26 +1947,37 @@ export default function App() {
 
     const agora = new Date();
     const horaStr = `${String(agora.getHours()).padStart(2, "0")}:${String(agora.getMinutes()).padStart(2, "0")}`;
+    const diaHoje = agora.getDate();
+    const mesHoje = agora.getMonth() + 1;
+    const anoHoje = agora.getFullYear();
+    const mesAnoHoje = `${String(mesHoje).padStart(2, "0")}/${anoHoje}`;
+
+    // Para funcionários (ou por padrão no portal), utilizar sempre a data atualizada de hoje
+    const diaAlvo = userRole === "funcionario" ? diaHoje : (portalDiaSelecionado || diaHoje);
+    const mesAnoAlvo = userRole === "funcionario" ? mesAnoHoje : (portalMesAno || mesAnoHoje);
+    const [mesStr, anoStr] = mesAnoAlvo.includes("/") ? mesAnoAlvo.split("/") : [String(mesHoje), String(anoHoje)];
+    const mesNum = parseInt(mesStr, 10) || mesHoje;
+    const anoNum = parseInt(anoStr, 10) || anoHoje;
+    const mesAno = `${String(mesNum).padStart(2, "0")}/${anoNum}`;
 
     let dias: BatidaDia[] = [];
     let salario = colab.salarioBase;
     let saldoAnt = colab.saldoAnteriorBancoMinutos;
-    let mesAno = portalMesAno;
 
-    if (fechamentoAtual && fechamentoAtual.colaboradorId === colab.id) {
+    if (fechamentoAtual && fechamentoAtual.colaboradorId === colab.id && fechamentoAtual.mesAno === mesAno) {
       dias = [...fechamentoAtual.dias];
-      mesAno = fechamentoAtual.mesAno;
       salario = fechamentoAtual.salarioBase;
       saldoAnt = fechamentoAtual.saldoAnteriorBancoMinutos;
     } else {
-      const [mesStr, anoStr] = portalMesAno.includes("/") ? portalMesAno.split("/") : ["09", "2026"];
-      dias = gerarDiasMes(parseInt(anoStr, 10) || 2026, parseInt(mesStr, 10) || 9, criterios.feriadosFixos, colab.horarioTrabalho);
+      dias = gerarDiasMes(anoNum, mesNum, criterios.feriadosFixos, colab.horarioTrabalho);
     }
 
-    const diaIndex = dias.findIndex((d) => d.dia === portalDiaSelecionado);
+    let diaIndex = dias.findIndex((d) => d.dia === diaAlvo);
     if (diaIndex === -1) {
-      showToast("erro", "Dia Inválido", "Selecione um dia válido do mês.");
-      return;
+      diaIndex = dias.findIndex((d) => d.dia === diaHoje);
+    }
+    if (diaIndex === -1) {
+      diaIndex = 0;
     }
 
     dias[diaIndex] = {
@@ -2200,35 +2226,38 @@ export default function App() {
     setModalExportarAFDAberta(false);
   };
 
-  // Zerar todos os dados para iniciar do zero
-  const handleZerarDadosApp = async () => {
+  // Limpar somente as batidas e registros de ponto para início oficial hoje (preservando funcionários e banco de horas)
+  const handleLimparRegistrosPonto = async () => {
     if (
       !window.confirm(
-        "Atenção: Deseja realmente zerar todos os colaboradores, batidas de ponto e fechamentos para iniciar o uso do app do zero? Esta ação é irreversível."
+        "Deseja limpar todos os registros de ponto anteriores para iniciar o uso oficial do app a partir de hoje? Todos os dados dos funcionários e saldos do banco de horas serão preservados."
       )
     ) {
       return;
     }
 
     try {
-      await fetch("/api/reset-dados", { method: "POST" });
+      await fetch("/api/limpar-registros-ponto", { method: "POST" });
     } catch (e) {
       // ignore
     }
 
-    localStorage.removeItem("ac_gestor_colaboradores");
+    localStorage.removeItem("ac_gestor_comprovantes");
     localStorage.removeItem("ac_gestor_fechamentos");
     localStorage.removeItem("ac_gestor_pontos");
 
-    setColaboradores([]);
+    // Limpa caches locais da folha visual
+    Object.keys(localStorage).forEach((k) => {
+      if (k.startsWith("folha_visual_")) {
+        localStorage.removeItem(k);
+      }
+    });
+
+    setComprovantes([]);
     setFechamentosSalvos([]);
     setFechamentoAtual(null);
-    setFuncionarioLoginId("");
-    setColabTentandoLogarId("");
-    setPortalColaboradorId("");
-    setColaboradorSelecionadoId("");
 
-    showToast("sucesso", "Dados Zerados com Sucesso!", "Todos os colaboradores e fechamentos foram limpos. O app está pronto para uso do zero.");
+    showToast("sucesso", "Pontos Limpos com Sucesso!", "Registros de ponto zerados. Funcionários e saldos do banco de horas permanecem intactos.");
   };
 
   // Carregar dados iniciais da API e LocalStorage
@@ -4735,7 +4764,9 @@ export default function App() {
                   <div className="text-3xl font-extrabold text-rose-400 mt-1">
                     {calcularInconsistenciasGerais().length}
                   </div>
-                  <div className="text-[11px] text-slate-500 mt-1">Competência Setembro / 2026</div>
+                  <div className="text-[11px] text-slate-500 mt-1">
+                    Competência {new Date().toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}
+                  </div>
                 </div>
               </div>
             </div>
@@ -6261,11 +6292,11 @@ export default function App() {
                 <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
                   <button
                     type="button"
-                    onClick={handleZerarDadosApp}
+                    onClick={handleLimparRegistrosPonto}
                     className="px-3.5 py-2.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/20 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all"
-                    title="Zerar todos os colaboradores e registros do app para iniciar do zero"
+                    title="Limpar somente as batidas e registros de ponto para iniciar hoje, mantendo funcionários e banco de horas"
                   >
-                    <Trash2 className="w-3.5 h-3.5" /> Zerar / Iniciar do Zero
+                    <Trash2 className="w-3.5 h-3.5" /> Limpar Batidas de Ponto
                   </button>
 
                   <button

@@ -72,9 +72,9 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
     }
   }, [colabIdProp]);
 
-  // Competência Mês/Ano (Padrão: Setembro 2026, ou mês atual)
-  const [ano, setAno] = useState<number>(2026);
-  const [mes, setMes] = useState<number>(9); // 1-12
+  // Competência Mês/Ano (Padrão: Mês e ano atuais atualizados em tempo real)
+  const [ano, setAno] = useState<number>(() => new Date().getFullYear());
+  const [mes, setMes] = useState<number>(() => new Date().getMonth() + 1); // 1-12 (Mês atual em tempo real)
 
   // Grade de dias da folha
   const [diasFolha, setDiasFolha] = useState<BatidaDia[]>([]);
@@ -133,68 +133,106 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
     if (!colaboradorAtual) return;
 
     const unsubComp = onSnapshot(collection(db, "comprovantes_ponto"), (snapshot) => {
-      let houveAlteracao = false;
-      const novasBatidas: any[] = [];
+      const comprovantesColab: any[] = [];
+      const novasAlteracoes: any[] = [];
+
+      snapshot.docs.forEach((docSnap) => {
+        const comp = docSnap.data();
+        if (comp.colaboradorId === colaboradorAtual.id) {
+          let dataCorrigida = comp.data;
+          if (dataCorrigida === "03/09/2026" && (comp.timestampIso?.startsWith("2026-11-03") || docSnap.id.startsWith("COMP_179370"))) {
+            dataCorrigida = "03/11/2026";
+          }
+          comprovantesColab.push({ ...comp, data: dataCorrigida });
+        }
+      });
 
       snapshot.docChanges().forEach((change) => {
         if (change.type === "added" || change.type === "modified") {
           const comp = change.doc.data();
           if (comp.colaboradorId === colaboradorAtual.id) {
-            novasBatidas.push(comp);
-            houveAlteracao = true;
+            let dataCorrigida = comp.data;
+            if (dataCorrigida === "03/09/2026" && (comp.timestampIso?.startsWith("2026-11-03") || change.doc.id.startsWith("COMP_179370"))) {
+              dataCorrigida = "03/11/2026";
+            }
+            novasAlteracoes.push({ ...comp, data: dataCorrigida });
           }
         }
       });
 
-      if (houveAlteracao && novasBatidas.length > 0) {
-        setDiasFolha((prevDias) => {
-          const novosDias = [...prevDias];
-          novasBatidas.forEach((comp) => {
-            // comp.data formato: "DD/MM/YYYY"
-            if (!comp.data) return;
-            const partesData = comp.data.split("/");
-            if (partesData.length === 3) {
-              const diaComp = parseInt(partesData[0], 10);
-              const mesComp = parseInt(partesData[1], 10);
-              const anoComp = parseInt(partesData[2], 10);
+      setDiasFolha(() => {
+        const base = gerarDiasMes(ano, mes, criterios.feriadosFixos);
+        const novosDias = base.map((d) => ({
+          ...d,
+          entrada1: "",
+          saida1: "",
+          entrada2: "",
+          saida2: "",
+          entrada3: "",
+          saida3: "",
+        }));
 
-              if (mesComp === mes && anoComp === ano) {
-                const idx = novosDias.findIndex((d) => d.dia === diaComp);
-                if (idx !== -1) {
-                  const horaLimpa = (comp.hora || "").slice(0, 5); // "HH:MM"
-                  const tipo = (comp.tipoBatida || "").toLowerCase();
+        comprovantesColab.forEach((comp) => {
+          if (!comp.data) return;
+          const partesData = comp.data.split("/");
+          if (partesData.length === 3) {
+            const diaComp = parseInt(partesData[0], 10);
+            const mesComp = parseInt(partesData[1], 10);
+            const anoComp = parseInt(partesData[2], 10);
 
-                  if (tipo.includes("entrada 1") || tipo === "entrada1") {
-                    novosDias[idx].entrada1 = horaLimpa;
-                    setCelulaAtualizada({ dia: diaComp, campo: "entrada1" });
-                  } else if (tipo.includes("almoço") && tipo.includes("saída")) {
-                    novosDias[idx].saida1 = horaLimpa;
-                    setCelulaAtualizada({ dia: diaComp, campo: "saida1" });
-                  } else if (tipo.includes("almoço") && tipo.includes("retorno")) {
-                    novosDias[idx].entrada2 = horaLimpa;
-                    setCelulaAtualizada({ dia: diaComp, campo: "entrada2" });
-                  } else if (tipo.includes("saída") || tipo.includes("expediente")) {
-                    novosDias[idx].saida2 = horaLimpa;
-                    setCelulaAtualizada({ dia: diaComp, campo: "saida2" });
-                  }
+            if (mesComp === mes && anoComp === ano) {
+              const idx = novosDias.findIndex((d) => d.dia === diaComp);
+              if (idx !== -1) {
+                const horaLimpa = (comp.hora || "").slice(0, 5); // "HH:MM"
+                const tipo = (comp.tipoBatida || "").toLowerCase();
+
+                if (tipo.includes("entrada 1") || tipo === "entrada1") {
+                  novosDias[idx].entrada1 = horaLimpa;
+                } else if (tipo.includes("almoço") && tipo.includes("saída")) {
+                  novosDias[idx].saida1 = horaLimpa;
+                } else if (tipo.includes("almoço") && tipo.includes("retorno")) {
+                  novosDias[idx].entrada2 = horaLimpa;
+                } else if (tipo.includes("saída") || tipo.includes("expediente")) {
+                  novosDias[idx].saida2 = horaLimpa;
                 }
+              }
+            }
+          }
+        });
+
+        // Destaque visual se houver batida em tempo real
+        if (novasAlteracoes.length > 0) {
+          novasAlteracoes.forEach((comp) => {
+            if (!comp.data) return;
+            const partes = comp.data.split("/");
+            if (partes.length === 3 && parseInt(partes[1], 10) === mes && parseInt(partes[2], 10) === ano) {
+              const diaComp = parseInt(partes[0], 10);
+              const tipo = (comp.tipoBatida || "").toLowerCase();
+              if (tipo.includes("entrada 1") || tipo === "entrada1") {
+                setCelulaAtualizada({ dia: diaComp, campo: "entrada1" });
+              } else if (tipo.includes("almoço") && tipo.includes("saída")) {
+                setCelulaAtualizada({ dia: diaComp, campo: "saida1" });
+              } else if (tipo.includes("almoço") && tipo.includes("retorno")) {
+                setCelulaAtualizada({ dia: diaComp, campo: "entrada2" });
+              } else if (tipo.includes("saída") || tipo.includes("expediente")) {
+                setCelulaAtualizada({ dia: diaComp, campo: "saida2" });
               }
             }
           });
 
-          const chaveStorage = `folha_visual_${colaboradorAtual.id}_${ano}_${mes}`;
-          localStorage.setItem(chaveStorage, JSON.stringify(novosDias));
-          return novosDias;
-        });
+          setUltimoRegistroTempoReal(new Date().toLocaleTimeString("pt-BR"));
+          setTotalBatidasRecebidas((prev) => prev + novasAlteracoes.length);
 
-        setUltimoRegistroTempoReal(new Date().toLocaleTimeString("pt-BR"));
-        setTotalBatidasRecebidas((prev) => prev + novasBatidas.length);
+          setTimeout(() => {
+            setCelulaAtualizada(null);
+          }, 4000);
+        }
 
-        // Remove o destaque da célula após 4 segundos
-        setTimeout(() => {
-          setCelulaAtualizada(null);
-        }, 4000);
-      }
+        const chaveStorage = `folha_visual_${colaboradorAtual.id}_${ano}_${mes}`;
+        localStorage.setItem(chaveStorage, JSON.stringify(novosDias));
+
+        return novosDias;
+      });
     }, (err) => {
       console.warn("Aviso listener visual comprovantes:", err);
     });
