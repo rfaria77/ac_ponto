@@ -61,6 +61,7 @@ import {
   QrCode,
   Share2,
   Stethoscope,
+  FileCheck2,
   FileUp,
   Receipt,
   Send,
@@ -5485,13 +5486,51 @@ export default function App() {
                             )}
                           </td>
                           <td className="py-2 px-3 font-sans">
-                            <input
-                              type="text"
-                              value={d.observacao || ""}
-                              onChange={(e) => handleAtualizarBatidaDia(index, "observacao", e.target.value)}
-                              placeholder="Observação"
-                              className="w-full bg-transparent border-0 text-slate-300 text-xs focus:ring-1 focus:ring-sky-500 rounded px-1"
-                            />
+                            <div className="space-y-1">
+                              <input
+                                type="text"
+                                value={d.observacao || ""}
+                                onChange={(e) => handleAtualizarBatidaDia(index, "observacao", e.target.value)}
+                                placeholder="Observação ou Atestado"
+                                className="w-full bg-slate-950 border border-slate-800 text-slate-200 text-xs focus:ring-1 focus:ring-emerald-500 rounded px-2 py-1"
+                              />
+                              <div className="flex items-center gap-1 pt-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    handleAtualizarBatidaDia(index, "observacao", "Atestado Médico (Dia Integral Abonado)");
+                                    handleAtualizarBatidaDia(index, "entrada1", "");
+                                    handleAtualizarBatidaDia(index, "saida1", "");
+                                    handleAtualizarBatidaDia(index, "entrada2", "");
+                                    handleAtualizarBatidaDia(index, "saida2", "");
+                                  }}
+                                  className="px-1.5 py-0.5 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white rounded border border-emerald-500/30 text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer"
+                                  title="Abona o dia inteiro (Art. 473 CLT) - Sem desconto no salário e sem débito no banco"
+                                >
+                                  <Stethoscope className="w-2.5 h-2.5" /> Atestado Dia
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    handleAtualizarBatidaDia(index, "observacao", "Atestado Parcial / Consulta (Abonado)");
+                                  }}
+                                  className="px-1.5 py-0.5 bg-sky-600/20 hover:bg-sky-600 text-sky-300 hover:text-white rounded border border-sky-500/30 text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer"
+                                  title="Abona período parcial / consulta - Sem desconto e sem débito"
+                                >
+                                  <FileCheck2 className="w-2.5 h-2.5" /> Atestado Parcial
+                                </button>
+                                {(d.observacao || "").length > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAtualizarBatidaDia(index, "observacao", "")}
+                                    className="px-1 py-0.5 text-slate-500 hover:text-rose-400 text-[10px]"
+                                    title="Limpar observação"
+                                  >
+                                    ✕
+                                  </button>
+                                )}
+                              </div>
+                            </div>
                           </td>
                           <td className="py-2 px-2 text-center">
                             <input

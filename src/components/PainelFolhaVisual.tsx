@@ -532,13 +532,13 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
   };
 
   // Alternar rapidamente status de atestado direto na edição do dia
-  const handleToggleAtestadoDia = (marcar: boolean) => {
+  const handleToggleAtestadoDia = (tipoAtestado: "dia" | "parcial" | "nenhum") => {
     if (!diaEditando || !colaboradorAtual) return;
 
-    if (marcar) {
+    if (tipoAtestado === "dia") {
       const diaAtualizado: BatidaDia = {
         ...diaEditando,
-        observacao: "Atestado Médico (Abonado)",
+        observacao: "Atestado Médico (Dia Integral Abonado)",
         entrada1: "",
         saida1: "",
         entrada2: "",
@@ -574,7 +574,53 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
         colaboradorNome: colaboradorAtual.nome,
         tipo: "Atestado Médico" as const,
         dataOcorrencia: dataStr,
-        descricao: "Atestado Médico lançado pelo gestor na folha visual (Dia Abonado)",
+        descricao: "Atestado Médico (Dia Integral Abonado) lançado na folha visual",
+        status: "Aprovado" as const,
+        dataSolicitacao: new Date().toLocaleDateString("pt-BR"),
+        horarioSugerido: "08:00",
+        campoAfetado: "entrada1" as const,
+        diasAfastamento: 1,
+      };
+
+      setDoc(doc(db, "solicitacoes_ajustes", novoAtest.id), cleanForFirestore(novoAtest)).catch(() => {});
+      fetch("/api/solicitacoes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(novoAtest),
+      }).catch(() => {});
+
+      setModalEdicaoAberta(false);
+      setDiaEditando(null);
+    } else if (tipoAtestado === "parcial") {
+      const diaAtualizado: BatidaDia = {
+        ...diaEditando,
+        observacao: "Atestado Parcial / Consulta (Abonado)",
+      };
+      setDiaEditando(diaAtualizado);
+
+      const novosDias = diasFolha.map((d) => (d.dia === diaEditando.dia ? diaAtualizado : d));
+      setDiasFolha(novosDias);
+
+      const chaveStorage = `folha_visual_${colaboradorAtual.id}_${ano}_${mes}`;
+      localStorage.setItem(chaveStorage, JSON.stringify(novosDias));
+
+      setDoc(doc(db, "folhas_ponto", `${colaboradorAtual.id}_${ano}_${mes}`), cleanForFirestore({
+        colaboradorId: colaboradorAtual.id,
+        colaboradorNome: colaboradorAtual.nome,
+        ano,
+        mes,
+        dias: novosDias,
+        atualizadoEm: new Date().toISOString(),
+      })).catch(() => {});
+
+      const dataStr = `${String(diaEditando.dia).padStart(2, "0")}/${String(mes).padStart(2, "0")}/${ano}`;
+      const novoAtest = {
+        id: `ATEST_PARC_${diaEditando.dia}_${colaboradorAtual.id}_${Date.now()}`,
+        colaboradorId: colaboradorAtual.id,
+        colaboradorNome: colaboradorAtual.nome,
+        tipo: "Atestado Parcial" as const,
+        dataOcorrencia: dataStr,
+        descricao: "Declaração de Comparecimento / Atestado Parcial",
         status: "Aprovado" as const,
         dataSolicitacao: new Date().toLocaleDateString("pt-BR"),
         horarioSugerido: "08:00",
@@ -1185,34 +1231,47 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
               </button>
             </div>
 
-            {/* SEÇÃO RÁPIDA DE ATESTADO MÉDICO */}
+            {/* SEÇÃO RÁPIDA DE ATESTADO MÉDICO: ATESTADO DO DIA VS ATESTADO PARCIAL */}
             {diaEditando.observacao?.toLowerCase().includes("atestado") ? (
               <div className="p-3.5 rounded-2xl bg-emerald-950/60 border border-emerald-500/40 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5 text-xs text-emerald-300">
                   <HeartPulse className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>Este dia está <strong>Abonado por Atestado Médico</strong> (0 débito no banco).</span>
+                  <span>Este dia está <strong>{diaEditando.observacao}</strong> (Sem débito no banco).</span>
                 </div>
                 <button
                   type="button"
-                  onClick={() => handleToggleAtestadoDia(false)}
+                  onClick={() => handleToggleAtestadoDia("nenhum")}
                   className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 transition-colors shrink-0 cursor-pointer"
                 >
                   ↺ Reabrir Horários
                 </button>
               </div>
             ) : (
-              <div className="p-3 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-3">
-                <div className="text-xs text-slate-300">
-                  <span>Deseja abonar este dia sem desconto no salário e sem debitar no banco?</span>
+              <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-2.5">
+                <div className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                  <HeartPulse className="w-4 h-4" />
+                  <span>Abono Legal (CLT Art. 473) — Sem Desconto e Sem Débito no Banco:</span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleToggleAtestadoDia(true)}
-                  className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
-                >
-                  <HeartPulse className="w-3.5 h-3.5" />
-                  <span>Marcar como Atestado</span>
-                </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleAtestadoDia("dia")}
+                    className="py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    title="Abona o dia inteiro (Art. 473 CLT)"
+                  >
+                    <Stethoscope className="w-3.5 h-3.5" />
+                    <span>Atestado do Dia (Integral)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleAtestadoDia("parcial")}
+                    className="py-2 px-3 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    title="Abona horas específicas ou período parcial de consulta"
+                  >
+                    <FileCheck2 className="w-3.5 h-3.5" />
+                    <span>Atestado Parcial (Horas)</span>
+                  </button>
+                </div>
               </div>
             )}
 
