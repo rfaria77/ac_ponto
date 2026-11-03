@@ -34,7 +34,7 @@ import {
   calcularDuracaoMinutos,
 } from "../lib/calculosPonto";
 import { db, cleanForFirestore } from "../lib/firebaseClient";
-import { collection, doc, setDoc, onSnapshot } from "firebase/firestore";
+import { collection, doc, setDoc, deleteDoc, onSnapshot } from "firebase/firestore";
 import jsPDF from "jspdf";
 
 export interface ColaboradorVisual {
@@ -230,6 +230,10 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
                   novosDias[idx].entrada2 = horaLimpa;
                 } else if (tipo.includes("saída") || tipo.includes("expediente")) {
                   novosDias[idx].saida2 = horaLimpa;
+                } else if (tipo.includes("noite") && tipo.includes("entrada")) {
+                  novosDias[idx].entrada3 = horaLimpa;
+                } else if (tipo.includes("noite") && tipo.includes("saída")) {
+                  novosDias[idx].saida3 = horaLimpa;
                 }
               }
             }
@@ -403,7 +407,7 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
   };
 
   // Salvar alteração de batida manual
-  const handleSalvarEdicaoDia = (e: React.FormEvent) => {
+  const handleSalvarEdicaoDia = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!diaEditando || !colaboradorAtual) return;
 
@@ -413,7 +417,7 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
     const chaveStorage = `folha_visual_${colaboradorAtual.id}_${ano}_${mes}`;
     localStorage.setItem(chaveStorage, JSON.stringify(novosDias));
 
-    // Salva no Firestore
+    // 1. Salva o estado completo da folha (legado/cache)
     setDoc(doc(db, "folhas_ponto", `${colaboradorAtual.id}_${ano}_${mes}`), cleanForFirestore({
       colaboradorId: colaboradorAtual.id,
       colaboradorNome: colaboradorAtual.nome,
@@ -422,6 +426,48 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
       dias: novosDias,
       atualizadoEm: new Date().toISOString(),
     })).catch(() => {});
+
+    // 2. INTEGRAÇÃO: Salva batidas individuais no Firestore para persistência real e sincronização com o Espelho
+    const camposBatida = ["entrada1", "saida1", "entrada2", "saida2", "entrada3", "saida3"] as const;
+    const dataStr = `${String(diaEditando.dia).padStart(2, "0")}/${String(mes).padStart(2, "0")}/${ano}`;
+
+    for (const campo of camposBatida) {
+      const valor = diaEditando[campo];
+      // ID determinístico para evitar duplicatas ao editar o mesmo dia/campo
+      const punchId = `COMP_MANUAL_${colaboradorAtual.id}_${dataStr.replace(/\//g, "")}_${campo}`;
+
+      if (valor && valor.length === 5) { // "HH:MM"
+        const mapaNomes: Record<string, string> = {
+          entrada1: "Entrada 1",
+          saida1: "Saída Almoço",
+          entrada2: "Retorno Almoço",
+          saida2: "Saída Expediente",
+          entrada3: "Entrada Noite",
+          saida3: "Saída Noite",
+        };
+
+        const novoComprovante = {
+          id: punchId,
+          colaboradorId: colaboradorAtual.id,
+          colaboradorNome: colaboradorAtual.nome,
+          colaboradorCargo: colaboradorAtual.cargo,
+          tipoBatida: mapaNomes[campo],
+          data: dataStr,
+          hora: valor,
+          timestampIso: new Date().toISOString(),
+          origem: "Ajuste Manual Visual",
+          empresa: {
+            razaoSocial: "A&C CONTROLES E SERVICOS LTDA",
+            cnpj: "04.567.890/0001-23",
+          }
+        };
+
+        await setDoc(doc(db, "comprovantes_ponto", punchId), cleanForFirestore(novoComprovante)).catch(console.warn);
+      } else if (!valor || valor.trim() === "") {
+        // Se o valor for removido manualmente, deleta o registro correspondente no Firestore
+        await deleteDoc(doc(db, "comprovantes_ponto", punchId)).catch(() => {});
+      }
+    }
 
     setModalEdicaoAberta(false);
     setDiaEditando(null);

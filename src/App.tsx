@@ -2492,7 +2492,7 @@ export default function App() {
     showToast("sucesso", "Exemplo Carregado", "Folha de ponto de exemplo carregada e apurada conforme as regras.");
   };
 
-  const handleAtualizarBatidaDia = (index: number, campo: keyof BatidaDia, valor: any) => {
+  const handleAtualizarBatidaDia = async (index: number, campo: keyof BatidaDia, valor: any) => {
     if (!fechamentoAtual) return;
     const novosDias = [...fechamentoAtual.dias];
     novosDias[index] = { ...novosDias[index], [campo]: valor };
@@ -2509,6 +2509,46 @@ export default function App() {
     });
 
     setFechamentoAtual(recalculado);
+
+    // INTEGRAÇÃO: Se for um campo de batida, salva ou deleta no Firestore para sincronizar com a Folha Visual
+    const camposPermitidos = ["entrada1", "saida1", "entrada2", "saida2", "entrada3", "saida3"] as const;
+    if (camposPermitidos.includes(campo as any)) {
+      const dataStr = novosDias[index].dataStr; // Ex: "01/10/2026"
+      const punchId = `COMP_MANUAL_${colab.id}_${dataStr.replace(/\//g, "")}_${campo}`;
+
+      if (typeof valor === "string" && valor.length === 5) {
+        const mapaNomes: Record<string, string> = {
+          entrada1: "Entrada 1",
+          saida1: "Saída Almoço",
+          entrada2: "Retorno Almoço",
+          saida2: "Saída Expediente",
+          entrada3: "Entrada Noite",
+          saida3: "Saída Noite",
+        };
+
+        const novoComprovante = {
+          id: punchId,
+          colaboradorId: colab.id,
+          colaboradorNome: colab.nome,
+          colaboradorCargo: colab.cargo,
+          tipoBatida: mapaNomes[campo],
+          data: dataStr,
+          hora: valor,
+          timestampIso: new Date().toISOString(),
+          origem: "Ajuste Manual Espelho",
+          empresa: {
+            razaoSocial: DADOS_EMPRESA_PADRAO.razaoSocial,
+            cnpj: DADOS_EMPRESA_PADRAO.cnpj,
+            local: DADOS_EMPRESA_PADRAO.localidade,
+          }
+        };
+
+        setDoc(doc(db, "comprovantes_ponto", punchId), cleanForFirestore(novoComprovante)).catch(console.warn);
+      } else if (!valor || valor.trim() === "" || valor === "--:--") {
+        // Se o valor for removido, deleta do Firestore
+        deleteDoc(doc(db, "comprovantes_ponto", punchId)).catch(() => {});
+      }
+    }
   };
 
   const handleSalvarFechamento = async () => {
@@ -5442,6 +5482,8 @@ export default function App() {
                       <th className="py-3 px-3">Saída Almoço</th>
                       <th className="py-3 px-3">Retorno Almoço</th>
                       <th className="py-3 px-3">Saída 2</th>
+                      <th className="py-3 px-3">Entrada Noite</th>
+                      <th className="py-3 px-3">Saída Noite</th>
                       <th className="py-3 px-3 text-center">Trabalhado</th>
                       <th className="py-3 px-3 text-center">Banco (1:1)</th>
                       <th className="py-3 px-3 text-center">HE 50%</th>
@@ -5503,6 +5545,24 @@ export default function App() {
                               onChange={(e) => handleAtualizarBatidaDia(index, "saida2", e.target.value)}
                               placeholder="--:--"
                               className="w-16 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-white text-center focus:border-sky-500 focus:outline-none"
+                            />
+                          </td>
+                          <td className="py-2 px-2">
+                            <input
+                              type="text"
+                              value={d.entrada3 || ""}
+                              onChange={(e) => handleAtualizarBatidaDia(index, "entrada3", e.target.value)}
+                              placeholder="--:--"
+                              className="w-16 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-indigo-300 text-center focus:border-indigo-500 focus:outline-none"
+                            />
+                          </td>
+                          <td className="py-2 px-2">
+                            <input
+                              type="text"
+                              value={d.saida3 || ""}
+                              onChange={(e) => handleAtualizarBatidaDia(index, "saida3", e.target.value)}
+                              placeholder="--:--"
+                              className="w-16 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-indigo-300 text-center focus:border-indigo-500 focus:outline-none"
                             />
                           </td>
                           <td className="py-2 px-3 text-center text-white font-bold">

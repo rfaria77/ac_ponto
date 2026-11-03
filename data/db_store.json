@@ -13,65 +13,65 @@
       "primeiroAcesso": false,
       "escalaId": "ESC_1793037592396",
       "horarioTrabalho": {
-        "sabadoSaida": "12:00",
-        "saida": "17:00",
-        "diferenciarPorDia": true,
-        "sabadoAtivo": false,
-        "sabadoEntrada": "08:00",
         "almocoRetorno": "13:00",
-        "entrada": "08:00",
+        "sabadoAtivo": false,
+        "almocoSaida": "12:00",
         "diasSemanaConfig": {
-          "Ter": {
-            "entrada": "08:30",
-            "saida": "19:00",
+          "Qui": {
+            "almocoRetorno": "14:00",
             "ativo": true,
             "almocoSaida": "12:00",
+            "entrada": "08:30",
+            "saida": "19:00"
+          },
+          "Ter": {
+            "saida": "19:00",
+            "entrada": "08:30",
+            "almocoSaida": "12:00",
+            "ativo": true,
             "almocoRetorno": "14:00"
           },
-          "Seg": {
+          "Qua": {
             "almocoSaida": "11:00",
-            "almocoRetorno": "13:00",
-            "entrada": "06:00",
-            "ativo": true,
-            "saida": "17:00"
-          },
-          "Sáb": {
-            "almocoRetorno": "12:00",
-            "entrada": "08:00",
-            "almocoSaida": "12:00",
-            "ativo": false,
-            "saida": "12:00"
-          },
-          "Sex": {
             "saida": "17:00",
             "ativo": true,
             "almocoRetorno": "13:00",
+            "entrada": "06:00"
+          },
+          "Sáb": {
+            "ativo": false,
+            "almocoSaida": "12:00",
+            "entrada": "08:00",
+            "almocoRetorno": "12:00",
+            "saida": "12:00"
+          },
+          "Seg": {
+            "almocoRetorno": "13:00",
+            "saida": "17:00",
+            "ativo": true,
             "almocoSaida": "11:00",
             "entrada": "06:00"
           },
-          "Qua": {
-            "saida": "17:00",
-            "almocoRetorno": "13:00",
-            "entrada": "06:00",
-            "ativo": true,
-            "almocoSaida": "11:00"
-          },
           "Dom": {
-            "almocoRetorno": "12:00",
-            "entrada": "08:00",
-            "ativo": false,
-            "saida": "12:00",
-            "almocoSaida": "12:00"
-          },
-          "Qui": {
             "almocoSaida": "12:00",
+            "saida": "12:00",
+            "entrada": "08:00",
+            "almocoRetorno": "12:00",
+            "ativo": false
+          },
+          "Sex": {
+            "almocoRetorno": "13:00",
             "ativo": true,
-            "almocoRetorno": "14:00",
-            "entrada": "08:30",
-            "saida": "19:00"
+            "entrada": "06:00",
+            "almocoSaida": "11:00",
+            "saida": "17:00"
           }
         },
-        "almocoSaida": "12:00"
+        "saida": "17:00",
+        "sabadoSaida": "12:00",
+        "sabadoEntrada": "08:00",
+        "diferenciarPorDia": true,
+        "entrada": "08:00"
       },
       "fotoCadastro": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400&auto=format&fit=crop&q=80",
       "localPermitido": {
@@ -92,14 +92,14 @@
       "id": "FUNC_003",
       "fotoCadastro": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80",
       "horarioTrabalho": {
-        "saida": "17:00",
-        "entrada": "07:00",
-        "almocoSaida": "11:00",
-        "almocoRetorno": "12:12",
-        "sabadoSaida": "12:00",
-        "sabadoEntrada": "08:00",
         "diferenciarPorDia": false,
-        "sabadoAtivo": false
+        "saida": "17:00",
+        "sabadoEntrada": "08:00",
+        "sabadoAtivo": false,
+        "almocoSaida": "11:00",
+        "entrada": "07:00",
+        "sabadoSaida": "12:00",
+        "almocoRetorno": "12:12"
       },
       "primeiroAcesso": false,
       "nome": "Amanda Inácio Medeiros Silva",
@@ -129,14 +129,14 @@
       "escalaId": "ESC_1793037787020",
       "departamento": "Segurança do Trabalho",
       "horarioTrabalho": {
-        "entrada": "07:00",
         "saida": "17:18",
-        "diferenciarPorDia": false,
-        "sabadoEntrada": "08:00",
-        "almocoRetorno": "13:30",
-        "sabadoAtivo": false,
+        "sabadoSaida": "12:00",
         "almocoSaida": "12:00",
-        "sabadoSaida": "12:00"
+        "sabadoAtivo": false,
+        "entrada": "07:00",
+        "sabadoEntrada": "08:00",
+        "diferenciarPorDia": false,
+        "almocoRetorno": "13:30"
       },
       "saldoAnteriorBancoMinutos": 1035,
       "senha": "123456De",
@@ -160,65 +160,65 @@
       "observacaoSaldo": "Saldo acumulado prévio à implantação do sistema",
       "cargo": "Auxiliar de Segurança do Trabalho",
       "horarioTrabalho": {
-        "almocoSaida": "12:00",
-        "sabadoAtivo": false,
-        "diferenciarPorDia": true,
-        "saida": "17:00",
-        "entrada": "08:00",
-        "sabadoSaida": "12:00",
-        "almocoRetorno": "13:00",
-        "sabadoEntrada": "08:00",
         "diasSemanaConfig": {
-          "Qui": {
-            "almocoRetorno": "14:00",
-            "saida": "19:00",
-            "entrada": "08:30",
-            "almocoSaida": "12:00",
-            "ativo": true
-          },
           "Dom": {
-            "saida": "12:00",
             "almocoSaida": "12:00",
-            "entrada": "08:00",
+            "saida": "12:00",
+            "ativo": false,
             "almocoRetorno": "12:00",
-            "ativo": false
-          },
-          "Qua": {
-            "almocoSaida": "11:00",
-            "saida": "17:00",
-            "almocoRetorno": "13:00",
-            "entrada": "06:00",
-            "ativo": true
+            "entrada": "08:00"
           },
           "Sex": {
             "almocoSaida": "11:00",
-            "almocoRetorno": "13:00",
             "ativo": true,
             "entrada": "06:00",
-            "saida": "17:00"
-          },
-          "Sáb": {
-            "entrada": "08:00",
-            "saida": "12:00",
-            "almocoRetorno": "12:00",
-            "ativo": false,
-            "almocoSaida": "12:00"
+            "saida": "17:00",
+            "almocoRetorno": "13:00"
           },
           "Seg": {
-            "almocoRetorno": "13:00",
+            "saida": "17:00",
+            "ativo": true,
+            "almocoSaida": "11:00",
+            "entrada": "06:00",
+            "almocoRetorno": "13:00"
+          },
+          "Qua": {
+            "saida": "17:00",
             "entrada": "06:00",
             "almocoSaida": "11:00",
-            "saida": "17:00",
-            "ativo": true
+            "ativo": true,
+            "almocoRetorno": "13:00"
+          },
+          "Qui": {
+            "almocoSaida": "12:00",
+            "ativo": true,
+            "entrada": "08:30",
+            "almocoRetorno": "14:00",
+            "saida": "19:00"
+          },
+          "Sáb": {
+            "ativo": false,
+            "almocoSaida": "12:00",
+            "almocoRetorno": "12:00",
+            "saida": "12:00",
+            "entrada": "08:00"
           },
           "Ter": {
             "saida": "19:00",
-            "almocoSaida": "12:00",
             "almocoRetorno": "14:00",
-            "ativo": true,
-            "entrada": "08:30"
+            "almocoSaida": "12:00",
+            "entrada": "08:30",
+            "ativo": true
           }
-        }
+        },
+        "diferenciarPorDia": true,
+        "almocoRetorno": "13:00",
+        "saida": "17:00",
+        "sabadoEntrada": "08:00",
+        "sabadoSaida": "12:00",
+        "sabadoAtivo": false,
+        "almocoSaida": "12:00",
+        "entrada": "08:00"
       }
     }
   ],
