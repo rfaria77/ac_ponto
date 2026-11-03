@@ -32,6 +32,7 @@ import {
   minutosParaTextoExtenso,
   horaParaMinutos,
   calcularDuracaoMinutos,
+  sincronizarBatidasComDias,
 } from "../lib/calculosPonto";
 import { db, cleanForFirestore } from "../lib/firebaseClient";
 import { collection, doc, setDoc, deleteDoc, onSnapshot } from "firebase/firestore";
@@ -53,7 +54,9 @@ interface PainelFolhaVisualProps {
   colaboradores: ColaboradorVisual[];
   colaboradorSelecionadoId?: string;
   criterios: CriteriosApuracao;
-  onRegistrarPontoRapido?: (colabId: string, tipo: string) => void;
+  comprovantes: any[];
+  solicitacoes: any[];
+  onShowToast?: (tipo: "sucesso" | "erro" | "aviso", titulo: string, msg: string, acao?: { rotulo: string; onClick: () => void }) => void;
   onVoltar?: () => void;
 }
 
@@ -61,7 +64,9 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
   colaboradores,
   colaboradorSelecionadoId: colabIdProp,
   criterios,
-  onRegistrarPontoRapido,
+  comprovantes,
+  solicitacoes,
+  onShowToast,
   onVoltar,
 }) => {
   // Colaborador Selecionado
@@ -79,8 +84,38 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
   const [ano, setAno] = useState<number>(() => new Date().getFullYear());
   const [mes, setMes] = useState<number>(() => new Date().getMonth() + 1); // 1-12 (Mês atual em tempo real)
 
-  // Grade de dias da folha
-  const [diasFolha, setDiasFolha] = useState<BatidaDia[]>([]);
+  const colaboradorAtual = useMemo(() => {
+    return colaboradores.find((c) => c.id === colabId) || colaboradores[0] || null;
+  }, [colaboradores, colabId]);
+
+  const atestadosColab = useMemo(() => {
+    if (!colaboradorAtual) return [];
+    return solicitacoes.filter((item) => 
+      item.colaboradorId === colaboradorAtual.id &&
+      (item.status === "Aprovado" || item.status === "Abonado") &&
+      item.tipo?.includes("Atestado")
+    );
+  }, [colaboradorAtual?.id, solicitacoes]);
+
+  const diasFolha = useMemo(() => {
+    if (!colaboradorAtual) return [];
+    const base = gerarDiasMes(ano, mes, criterios.feriadosFixos);
+    const sincronizados = sincronizarBatidasComDias(
+      base,
+      comprovantes,
+      solicitacoes,
+      colaboradorAtual.id,
+      mes,
+      ano
+    );
+
+    // Salva no localStorage para cache rápido
+    const chaveStorage = `folha_visual_${colaboradorAtual.id}_${ano}_${mes}`;
+    localStorage.setItem(chaveStorage, JSON.stringify(sincronizados));
+    
+    return sincronizados;
+  }, [colaboradorAtual?.id, ano, mes, solicitacoes, comprovantes, criterios]);
+
   const [celulaAtualizada, setCelulaAtualizada] = useState<{ dia: number; campo: string } | null>(null);
   const [ultimoRegistroTempoReal, setUltimoRegistroTempoReal] = useState<string | null>(null);
   const [totalBatidasRecebidas, setTotalBatidasRecebidas] = useState<number>(0);
@@ -94,245 +129,36 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   });
   const [atestadoQtdDias, setAtestadoQtdDias] = useState<number>(1);
-  const [atestadoTipo, setAtestadoTipo] = useState<string>("Atestado Médico (Dia Integral)");
+  const [atestadoTipo, setAtestadoTipo] = useState<string>("integral");
   const [atestadoCidMotivo, setAtestadoCidMotivo] = useState<string>("");
-  const [atestadosColab, setAtestadosColab] = useState<any[]>([]);
 
-  const colaboradorAtual = useMemo(() => {
-    return colaboradores.find((c) => c.id === colabId) || colaboradores[0] || null;
-  }, [colaboradores, colabId]);
 
-  // Listener para atestados médicos do colaborador atual no Firestore
+
+  const prevComprovantesLength = React.useRef(comprovantes.length);
   useEffect(() => {
-    if (!colaboradorAtual) return;
-    const unsubSolic = onSnapshot(collection(db, "solicitacoes_ajustes"), (snapshot) => {
-      const lista: any[] = [];
-      snapshot.forEach((docSnap) => {
-        const item = { ...(docSnap.data() as any), id: docSnap.id };
-        if (
-          item.colaboradorId === colaboradorAtual.id &&
-          (item.status === "Aprovado" || item.status === "Abonado") &&
-          item.tipo?.includes("Atestado")
-        ) {
-          lista.push(item);
-        }
-      });
-      setAtestadosColab(lista);
-    }, (err) => {
-      console.warn("Aviso listener atestados:", err);
-    });
-    return () => unsubSolic();
-  }, [colaboradorAtual?.id]);
+    if (comprovantes.length > prevComprovantesLength.current) {
+      const novaBatida = comprovantes[0]; // Assume que as novas estão no topo ou apenas pega a última processada
+      if (novaBatida && novaBatida.colaboradorId === colaboradorAtual?.id) {
+        const partes = (novaBatida.data || "").split("/");
+        if (partes.length === 3 && parseInt(partes[1], 10) === mes && parseInt(partes[2], 10) === ano) {
+          const diaComp = parseInt(partes[0], 10);
+          const tipo = (novaBatida.tipoBatida || "").toLowerCase();
+          let campo = "";
+          if (tipo.includes("entrada 1") || tipo === "entrada1") campo = "entrada1";
+          else if (tipo.includes("almoço") && tipo.includes("saída")) campo = "saida1";
+          else if (tipo.includes("almoço") && tipo.includes("retorno")) campo = "entrada2";
+          else if (tipo.includes("saída") || tipo.includes("expediente")) campo = "saida2";
 
-  // Gera ou recarrega a folha para o colaborador e mês selecionados
-  useEffect(() => {
-    if (!colaboradorAtual) return;
-
-    // Tenta obter do localStorage primeiro para persistência local
-    const chaveStorage = `folha_visual_${colaboradorAtual.id}_${ano}_${mes}`;
-    const salvo = localStorage.getItem(chaveStorage);
-
-    let diasIniciais: BatidaDia[];
-    if (salvo) {
-      try {
-        diasIniciais = JSON.parse(salvo);
-      } catch (e) {
-        const base = gerarDiasMes(ano, mes, criterios.feriadosFixos);
-        diasIniciais = base.map((d) => ({
-          ...d,
-          entrada1: "",
-          saida1: "",
-          entrada2: "",
-          saida2: "",
-          entrada3: "",
-          saida3: "",
-        }));
-      }
-    } else {
-      const base = gerarDiasMes(ano, mes, criterios.feriadosFixos);
-      diasIniciais = base.map((d) => ({
-        ...d,
-        entrada1: "",
-        saida1: "",
-        entrada2: "",
-        saida2: "",
-        entrada3: "",
-        saida3: "",
-      }));
-    }
-
-    setDiasFolha(diasIniciais);
-  }, [colaboradorAtual?.id, ano, mes, criterios]);
-
-  // Listener em tempo real com Firestore: sincroniza sempre que houver novas batidas
-  useEffect(() => {
-    if (!colaboradorAtual) return;
-
-    const unsubComp = onSnapshot(collection(db, "comprovantes_ponto"), (snapshot) => {
-      const comprovantesColab: any[] = [];
-      const novasAlteracoes: any[] = [];
-
-      snapshot.docs.forEach((docSnap) => {
-        const comp = docSnap.data();
-        if (comp.colaboradorId === colaboradorAtual.id) {
-          let dataCorrigida = comp.data;
-          if (dataCorrigida === "03/09/2026" && (comp.timestampIso?.startsWith("2026-11-03") || docSnap.id.startsWith("COMP_179370"))) {
-            dataCorrigida = "03/11/2026";
-          }
-          comprovantesColab.push({ ...comp, data: dataCorrigida });
-        }
-      });
-
-      snapshot.docChanges().forEach((change) => {
-        if (change.type === "added" || change.type === "modified") {
-          const comp = change.doc.data();
-          if (comp.colaboradorId === colaboradorAtual.id) {
-            let dataCorrigida = comp.data;
-            if (dataCorrigida === "03/09/2026" && (comp.timestampIso?.startsWith("2026-11-03") || change.doc.id.startsWith("COMP_179370"))) {
-              dataCorrigida = "03/11/2026";
-            }
-            novasAlteracoes.push({ ...comp, data: dataCorrigida });
-          }
-        }
-      });
-
-      setDiasFolha(() => {
-        const base = gerarDiasMes(ano, mes, criterios.feriadosFixos);
-        const novosDias = base.map((d) => ({
-          ...d,
-          entrada1: "",
-          saida1: "",
-          entrada2: "",
-          saida2: "",
-          entrada3: "",
-          saida3: "",
-        }));
-
-        comprovantesColab.forEach((comp) => {
-          if (!comp.data) return;
-          const partesData = comp.data.split("/");
-          if (partesData.length === 3) {
-            const diaComp = parseInt(partesData[0], 10);
-            const mesComp = parseInt(partesData[1], 10);
-            const anoComp = parseInt(partesData[2], 10);
-
-            if (mesComp === mes && anoComp === ano) {
-              const idx = novosDias.findIndex((d) => d.dia === diaComp);
-              if (idx !== -1) {
-                const horaLimpa = (comp.hora || "").slice(0, 5); // "HH:MM"
-                const tipo = (comp.tipoBatida || "").toLowerCase();
-
-                if (tipo.includes("entrada 1") || tipo === "entrada1") {
-                  novosDias[idx].entrada1 = horaLimpa;
-                } else if (tipo.includes("almoço") && tipo.includes("saída")) {
-                  novosDias[idx].saida1 = horaLimpa;
-                } else if (tipo.includes("almoço") && tipo.includes("retorno")) {
-                  novosDias[idx].entrada2 = horaLimpa;
-                } else if (tipo.includes("saída") || tipo.includes("expediente")) {
-                  novosDias[idx].saida2 = horaLimpa;
-                } else if (tipo.includes("noite") && tipo.includes("entrada")) {
-                  novosDias[idx].entrada3 = horaLimpa;
-                } else if (tipo.includes("noite") && tipo.includes("saída")) {
-                  novosDias[idx].saida3 = horaLimpa;
-                }
-              }
-            }
-          }
-        });
-
-        // Aplica os atestados médicos cadastrados e aprovados para o colaborador no mês
-        atestadosColab.forEach((atest) => {
-          if (!atest.dataOcorrencia) return;
-          let diaIni = 1;
-          let mesAtest = mes;
-          let anoAtest = ano;
-
-          if (atest.dataOcorrencia.includes("/")) {
-            const p = atest.dataOcorrencia.split("/");
-            diaIni = parseInt(p[0], 10);
-            mesAtest = parseInt(p[1], 10);
-            anoAtest = parseInt(p[2], 10);
-          } else if (atest.dataOcorrencia.includes("-")) {
-            const p = atest.dataOcorrencia.split("-");
-            anoAtest = parseInt(p[0], 10);
-            mesAtest = parseInt(p[1], 10);
-            diaIni = parseInt(p[2], 10);
-          }
-
-          if (mesAtest === mes && anoAtest === ano) {
-            const qtdDias = Number(atest.diasAfastamento) || 1;
-            for (let i = 0; i < qtdDias; i++) {
-              const diaAlvo = diaIni + i;
-              const idx = novosDias.findIndex((d) => d.dia === diaAlvo);
-              if (idx !== -1) {
-                novosDias[idx].observacao = "Atestado Médico (Abonado)";
-                novosDias[idx].entrada1 = "";
-                novosDias[idx].saida1 = "";
-                novosDias[idx].entrada2 = "";
-                novosDias[idx].saida2 = "";
-                novosDias[idx].entrada3 = "";
-                novosDias[idx].saida3 = "";
-              }
-            }
-          }
-        });
-
-        // Destaque visual se houver batida em tempo real
-        if (novasAlteracoes.length > 0) {
-          novasAlteracoes.forEach((comp) => {
-            if (!comp.data) return;
-            const partes = comp.data.split("/");
-            if (partes.length === 3 && parseInt(partes[1], 10) === mes && parseInt(partes[2], 10) === ano) {
-              const diaComp = parseInt(partes[0], 10);
-              const tipo = (comp.tipoBatida || "").toLowerCase();
-              if (tipo.includes("entrada 1") || tipo === "entrada1") {
-                setCelulaAtualizada({ dia: diaComp, campo: "entrada1" });
-              } else if (tipo.includes("almoço") && tipo.includes("saída")) {
-                setCelulaAtualizada({ dia: diaComp, campo: "saida1" });
-              } else if (tipo.includes("almoço") && tipo.includes("retorno")) {
-                setCelulaAtualizada({ dia: diaComp, campo: "entrada2" });
-              } else if (tipo.includes("saída") || tipo.includes("expediente")) {
-                setCelulaAtualizada({ dia: diaComp, campo: "saida2" });
-              }
-            }
-          });
-
-          setUltimoRegistroTempoReal(new Date().toLocaleTimeString("pt-BR"));
-          setTotalBatidasRecebidas((prev) => prev + novasAlteracoes.length);
-
-          setTimeout(() => {
-            setCelulaAtualizada(null);
-          }, 4000);
-        }
-
-        const chaveStorage = `folha_visual_${colaboradorAtual.id}_${ano}_${mes}`;
-        localStorage.setItem(chaveStorage, JSON.stringify(novosDias));
-
-        return novosDias;
-      });
-    }, (err) => {
-      console.warn("Aviso listener visual comprovantes:", err);
-    });
-
-    // Também escuta registros_ponto gerais
-    const unsubRegs = onSnapshot(collection(db, "registros_ponto"), (snapshot) => {
-      snapshot.docChanges().forEach((change) => {
-        if (change.type === "added") {
-          const reg = change.doc.data();
-          if (reg.colaboradorId === colaboradorAtual.id && reg.status === "AProvado") {
+          if (campo) {
+            setCelulaAtualizada({ dia: diaComp, campo });
             setUltimoRegistroTempoReal(new Date().toLocaleTimeString("pt-BR"));
+            setTimeout(() => setCelulaAtualizada(null), 4000);
           }
         }
-      });
-    }, (err) => {
-      console.warn("Aviso listener visual registros:", err);
-    });
-
-    return () => {
-      unsubComp();
-      unsubRegs();
-    };
-  }, [colaboradorAtual?.id, mes, ano, atestadosColab]);
+      }
+    }
+    prevComprovantesLength.current = comprovantes.length;
+  }, [comprovantes, colaboradorAtual?.id, mes, ano]);
 
   // Apuração do mês atual em tempo real
   const resumoMes: ResumoMensalFechamento = useMemo(() => {
@@ -377,33 +203,87 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
   }, [diasFolha, colaboradorAtual, mes, ano, criterios]);
 
   // Zerar todas as batidas da folha do mês atual
-  const handleZerarBatidasMes = () => {
+  const handleZerarBatidasMes = async () => {
     if (!colaboradorAtual) return;
-    const diasBase = gerarDiasMes(ano, mes, criterios.feriadosFixos);
-    const diasLimpos = diasBase.map((d) => ({
-      ...d,
-      entrada1: "",
-      saida1: "",
-      entrada2: "",
-      saida2: "",
-      entrada3: "",
-      saida3: "",
-    }));
+    
+    // 1. Deleta batidas (comprovantes) do Firestore para este mês
+    const compsParaDeletar = comprovantes.filter(c => {
+      if (c.colaboradorId !== colaboradorAtual.id) return false;
+      const data = c.data || "";
+      let mesC = 0, anoC = 0;
+      if (data.includes("/")) {
+        const p = data.split("/");
+        mesC = parseInt(p[1], 10);
+        anoC = parseInt(p[2], 10);
+      } else if (data.includes("-")) {
+        const p = data.split("-");
+        if (p[0].length === 4) { // YYYY-MM-DD
+          mesC = parseInt(p[1], 10);
+          anoC = parseInt(p[0], 10);
+        } else { // DD-MM-YYYY
+          mesC = parseInt(p[1], 10);
+          anoC = parseInt(p[2], 10);
+        }
+      }
+      return mesC === mes && anoC === ano;
+    });
 
-    setDiasFolha(diasLimpos);
+    const promessasDelecao: Promise<void>[] = [];
+    for (const c of compsParaDeletar) {
+      promessasDelecao.push(deleteDoc(doc(db, "comprovantes_ponto", c.id)));
+    }
+
+    // 2. Deleta atestados (solicitacoes) do Firestore para este mês
+    const solicsParaDeletar = solicitacoes.filter(s => {
+      if (s.colaboradorId !== colaboradorAtual.id) return false;
+      const data = s.dataOcorrencia || "";
+      let mesS = 0, anoS = 0;
+      if (data.includes("/")) {
+        const p = data.split("/");
+        mesS = parseInt(p[1], 10);
+        anoS = parseInt(p[2], 10);
+      } else if (data.includes("-")) {
+        const p = data.split("-");
+        if (p[0].length === 4) { // YYYY-MM-DD
+          mesS = parseInt(p[1], 10);
+          anoS = parseInt(p[0], 10);
+        } else { // DD-MM-YYYY
+          mesS = parseInt(p[1], 10);
+          anoS = parseInt(p[2], 10);
+        }
+      }
+      return mesS === mes && anoS === ano;
+    });
+
+    for (const s of solicsParaDeletar) {
+      promessasDelecao.push(deleteDoc(doc(db, "solicitacoes_ajustes", s.id)));
+    }
+
+    // 3. Deleta o documento de cache da folha (limpeza completa do banco)
+    promessasDelecao.push(deleteDoc(doc(db, "folhas_ponto", `${colaboradorAtual.id}_${ano}_${mes}`)));
+
+    // Executa todas as deleções
+    await Promise.all(promessasDelecao).catch(console.warn);
+
+    // Limpa localStorage local
     const chaveStorage = `folha_visual_${colaboradorAtual.id}_${ano}_${mes}`;
     localStorage.removeItem(chaveStorage);
-    localStorage.removeItem(`folha_visual_${colaboradorAtual.id}_2025_5`);
-
-    // Sincroniza estado zerado no Firestore
-    setDoc(doc(db, "folhas_ponto", `${colaboradorAtual.id}_${ano}_${mes}`), cleanForFirestore({
-      colaboradorId: colaboradorAtual.id,
-      colaboradorNome: colaboradorAtual.nome,
-      ano,
-      mes,
-      dias: diasLimpos,
-      atualizadoEm: new Date().toISOString(),
-    })).catch(() => {});
+    
+    if (onShowToast) {
+      onShowToast("sucesso", "Folha Zerada", "Todos os dados do mês foram removidos do banco de dados.", {
+        rotulo: "Desfazer",
+        onClick: async () => {
+          // Restaura batidas
+          for (const c of compsParaDeletar) {
+            await setDoc(doc(db, "comprovantes_ponto", c.id), cleanForFirestore(c)).catch(() => {});
+          }
+          // Restaura atestados
+          for (const s of solicsParaDeletar) {
+            await setDoc(doc(db, "solicitacoes_ajustes", s.id), cleanForFirestore(s)).catch(() => {});
+          }
+        }
+      });
+    }
   };
 
   // Salvar alteração de batida manual
@@ -411,23 +291,10 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
     e.preventDefault();
     if (!diaEditando || !colaboradorAtual) return;
 
-    const novosDias = diasFolha.map((d) => (d.dia === diaEditando.dia ? { ...diaEditando } : d));
-    setDiasFolha(novosDias);
+    // Estado anterior para desfazer
+    const diaAnterior = diasFolha.find(d => d.dia === diaEditando.dia);
 
-    const chaveStorage = `folha_visual_${colaboradorAtual.id}_${ano}_${mes}`;
-    localStorage.setItem(chaveStorage, JSON.stringify(novosDias));
-
-    // 1. Salva o estado completo da folha (legado/cache)
-    setDoc(doc(db, "folhas_ponto", `${colaboradorAtual.id}_${ano}_${mes}`), cleanForFirestore({
-      colaboradorId: colaboradorAtual.id,
-      colaboradorNome: colaboradorAtual.nome,
-      ano,
-      mes,
-      dias: novosDias,
-      atualizadoEm: new Date().toISOString(),
-    })).catch(() => {});
-
-    // 2. INTEGRAÇÃO: Salva batidas individuais no Firestore para persistência real e sincronização com o Espelho
+    // 1. INTEGRAÇÃO: Salva batidas individuais no Firestore para persistência real e sincronização com o Espelho
     const camposBatida = ["entrada1", "saida1", "entrada2", "saida2", "entrada3", "saida3"] as const;
     const dataStr = `${String(diaEditando.dia).padStart(2, "0")}/${String(mes).padStart(2, "0")}/${ano}`;
 
@@ -471,6 +338,39 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
 
     setModalEdicaoAberta(false);
     setDiaEditando(null);
+
+    // Notificação com Desfazer
+    if (onShowToast) {
+      onShowToast("sucesso", "Batidas Salvas", `Os horários do dia ${diaEditando.dia} foram atualizados.`, {
+        rotulo: "Desfazer",
+        onClick: async () => {
+          if (!diaAnterior) return;
+          // Reverte no Firestore (batidas individuais)
+          for (const campo of camposBatida) {
+            const valAnt = diaAnterior[campo];
+            const punchId = `COMP_MANUAL_${colaboradorAtual.id}_${dataStr.replace(/\//g, "")}_${campo}`;
+            if (valAnt && valAnt.length === 5) {
+               // Restaurar valor anterior (simplificado: apenas salva o antigo)
+               // Para um desfazer real robusto, precisaríamos de mais metadados, 
+               // mas salvar o valor anterior sobre o ID determinístico funciona.
+               const mapaNomes: Record<string, string> = {
+                entrada1: "Entrada 1", saida1: "Saída Almoço", entrada2: "Retorno Almoço", 
+                saida2: "Saída Expediente", entrada3: "Entrada Noite", saida3: "Saída Noite",
+              };
+              await setDoc(doc(db, "comprovantes_ponto", punchId), cleanForFirestore({
+                id: punchId, colaboradorId: colaboradorAtual.id, colaboradorNome: colaboradorAtual.nome,
+                colaboradorCargo: colaboradorAtual.cargo, tipoBatida: mapaNomes[campo],
+                data: dataStr, hora: valAnt, timestampIso: new Date().toISOString(),
+                origem: "Desfazer Ajuste Manual",
+                empresa: { razaoSocial: "A&C CONTROLES E SERVICOS LTDA", cnpj: "04.567.890/0001-23" }
+              })).catch(() => {});
+            } else {
+              await deleteDoc(doc(db, "comprovantes_ponto", punchId)).catch(() => {});
+            }
+          }
+        }
+      });
+    }
   };
 
   // Formatação de Horas no formato HH:MM:SS ou HH:MM para os boxes do topo
@@ -521,58 +421,6 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
       });
     } catch (e) {}
 
-    // 3. Atualiza diasFolha marcando os dias do atestado como "Atestado Médico (Abonado)"
-    let diaIni = 1;
-    let mesAtest = mes;
-    let anoAtest = ano;
-
-    if (atestadoDataInicio.includes("-")) {
-      const p = atestadoDataInicio.split("-");
-      anoAtest = parseInt(p[0], 10);
-      mesAtest = parseInt(p[1], 10);
-      diaIni = parseInt(p[2], 10);
-    } else if (atestadoDataInicio.includes("/")) {
-      const p = atestadoDataInicio.split("/");
-      diaIni = parseInt(p[0], 10);
-      mesAtest = parseInt(p[1], 10);
-      anoAtest = parseInt(p[2], 10);
-    }
-
-    if (mesAtest === mes && anoAtest === ano) {
-      const novosDias = diasFolha.map((d) => {
-        if (d.dia >= diaIni && d.dia < diaIni + diasQtd) {
-          return {
-            ...d,
-            observacao: "Atestado Médico (Abonado)",
-            entrada1: "",
-            saida1: "",
-            entrada2: "",
-            saida2: "",
-            entrada3: "",
-            saida3: "",
-            minutosTrabalhados: 0,
-            minutosBancoCredito: 0,
-            minutosBancoDebito: 0,
-            ehFalta: false,
-          };
-        }
-        return d;
-      });
-
-      setDiasFolha(novosDias);
-      const chaveStorage = `folha_visual_${colaboradorAtual.id}_${ano}_${mes}`;
-      localStorage.setItem(chaveStorage, JSON.stringify(novosDias));
-
-      setDoc(doc(db, "folhas_ponto", `${colaboradorAtual.id}_${ano}_${mes}`), cleanForFirestore({
-        colaboradorId: colaboradorAtual.id,
-        colaboradorNome: colaboradorAtual.nome,
-        ano,
-        mes,
-        dias: novosDias,
-        atualizadoEm: new Date().toISOString(),
-      })).catch(() => {});
-    }
-
     setModalAtestadoAberta(false);
     setAtestadoCidMotivo("");
   };
@@ -596,21 +444,6 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
         minutosBancoDebito: 0,
       };
       setDiaEditando(diaAtualizado);
-
-      const novosDias = diasFolha.map((d) => (d.dia === diaEditando.dia ? diaAtualizado : d));
-      setDiasFolha(novosDias);
-
-      const chaveStorage = `folha_visual_${colaboradorAtual.id}_${ano}_${mes}`;
-      localStorage.setItem(chaveStorage, JSON.stringify(novosDias));
-
-      setDoc(doc(db, "folhas_ponto", `${colaboradorAtual.id}_${ano}_${mes}`), cleanForFirestore({
-        colaboradorId: colaboradorAtual.id,
-        colaboradorNome: colaboradorAtual.nome,
-        ano,
-        mes,
-        dias: novosDias,
-        atualizadoEm: new Date().toISOString(),
-      })).catch(() => {});
 
       // Registra também nas solicitações/ajustes
       const dataStr = `${String(diaEditando.dia).padStart(2, "0")}/${String(mes).padStart(2, "0")}/${ano}`;
@@ -637,28 +470,16 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
 
       setModalEdicaoAberta(false);
       setDiaEditando(null);
+
+      if (onShowToast) {
+        onShowToast("sucesso", "Atestado Lançado", `Dia ${diaEditando.dia} abonado com sucesso.`, {
+          rotulo: "Desfazer",
+          onClick: async () => {
+             await deleteDoc(doc(db, "solicitacoes_ajustes", novoAtest.id)).catch(() => {});
+          }
+        });
+      }
     } else if (tipoAtestado === "parcial") {
-      const diaAtualizado: BatidaDia = {
-        ...diaEditando,
-        observacao: "Atestado Parcial / Consulta (Abonado)",
-      };
-      setDiaEditando(diaAtualizado);
-
-      const novosDias = diasFolha.map((d) => (d.dia === diaEditando.dia ? diaAtualizado : d));
-      setDiasFolha(novosDias);
-
-      const chaveStorage = `folha_visual_${colaboradorAtual.id}_${ano}_${mes}`;
-      localStorage.setItem(chaveStorage, JSON.stringify(novosDias));
-
-      setDoc(doc(db, "folhas_ponto", `${colaboradorAtual.id}_${ano}_${mes}`), cleanForFirestore({
-        colaboradorId: colaboradorAtual.id,
-        colaboradorNome: colaboradorAtual.nome,
-        ano,
-        mes,
-        dias: novosDias,
-        atualizadoEm: new Date().toISOString(),
-      })).catch(() => {});
-
       const dataStr = `${String(diaEditando.dia).padStart(2, "0")}/${String(mes).padStart(2, "0")}/${ano}`;
       const novoAtest = {
         id: `ATEST_PARC_${diaEditando.dia}_${colaboradorAtual.id}_${Date.now()}`,
@@ -683,27 +504,43 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
 
       setModalEdicaoAberta(false);
       setDiaEditando(null);
+
+      if (onShowToast) {
+        onShowToast("sucesso", "Atestado Parcial", `Horas do dia ${diaEditando.dia} justificadas.`, {
+          rotulo: "Desfazer",
+          onClick: async () => {
+             await deleteDoc(doc(db, "solicitacoes_ajustes", novoAtest.id)).catch(() => {});
+          }
+        });
+      }
     } else {
-      const diaAtualizado: BatidaDia = {
-        ...diaEditando,
-        observacao: "",
-      };
-      setDiaEditando(diaAtualizado);
+      // Remover atestado deste dia: Deleta da coleção de solicitações
+      const dataStr = `${String(diaEditando.dia).padStart(2, "0")}/${String(mes).padStart(2, "0")}/${ano}`;
+      
+      // Filtra solicitações que coincidem com este dia para deletar
+      const aDeletar = solicitacoes.filter(s => 
+        s.colaboradorId === colaboradorAtual.id && 
+        s.dataOcorrencia === dataStr && 
+        s.tipo?.includes("Atestado")
+      );
 
-      const novosDias = diasFolha.map((d) => (d.dia === diaEditando.dia ? diaAtualizado : d));
-      setDiasFolha(novosDias);
+      for (const s of aDeletar) {
+        deleteDoc(doc(db, "solicitacoes_ajustes", s.id)).catch(console.warn);
+      }
 
-      const chaveStorage = `folha_visual_${colaboradorAtual.id}_${ano}_${mes}`;
-      localStorage.setItem(chaveStorage, JSON.stringify(novosDias));
+      setModalEdicaoAberta(false);
+      setDiaEditando(null);
 
-      setDoc(doc(db, "folhas_ponto", `${colaboradorAtual.id}_${ano}_${mes}`), cleanForFirestore({
-        colaboradorId: colaboradorAtual.id,
-        colaboradorNome: colaboradorAtual.nome,
-        ano,
-        mes,
-        dias: novosDias,
-        atualizadoEm: new Date().toISOString(),
-      })).catch(() => {});
+      if (onShowToast) {
+        onShowToast("sucesso", "Horários Reabertos", `O abono do dia ${diaEditando.dia} foi removido.`, {
+          rotulo: "Desfazer",
+          onClick: async () => {
+             for (const s of aDeletar) {
+               await setDoc(doc(db, "solicitacoes_ajustes", s.id), cleanForFirestore(s)).catch(() => {});
+             }
+          }
+        });
+      }
     }
   };
 

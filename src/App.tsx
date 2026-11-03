@@ -105,6 +105,7 @@ import {
   FERIADOS_FIXOS_PADRAO,
   calcularFechamentoMensal,
   gerarDiasMes,
+  sincronizarBatidasComDias,
   minutosParaTextoExtenso,
   minutosParaHora,
   minutosParaDecimal,
@@ -501,7 +502,7 @@ export default function App() {
     if (salvo) {
       try {
         const parsed = JSON.parse(salvo);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) return parsed;
       } catch (e) {}
     }
     return SOLICITACOES_INICIAIS;
@@ -532,7 +533,7 @@ export default function App() {
     if (salvo) {
       try {
         const parsed = JSON.parse(salvo);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed)) {
           return parsed.map(normalizarColaborador);
         }
       } catch (e) {}
@@ -603,10 +604,8 @@ export default function App() {
       snapshot.forEach((docSnap) => {
         lista.push({ ...(docSnap.data() as SolicitacaoAjuste), id: docSnap.id });
       });
-      if (lista.length > 0) {
-        setSolicitacoes(lista);
-        localStorage.setItem("ac_gestor_solicitacoes", JSON.stringify(lista));
-      }
+      setSolicitacoes(lista);
+      localStorage.setItem("ac_gestor_solicitacoes", JSON.stringify(lista));
     }, (err) => {
       console.warn("Firestore snapshot solicitacoes error:", err);
     });
@@ -696,7 +695,12 @@ export default function App() {
   const [fechamentosSalvos, setFechamentosSalvos] = useState<FechamentoArmazenado[]>([]);
   const [filtroHistorico, setFiltroHistorico] = useState<string>("");
   const [filtroColaboradores, setFiltroColaboradores] = useState<string>("");
-  const [toast, setToast] = useState<{ tipo: "sucesso" | "erro" | "aviso"; titulo: string; msg: string } | null>(null);
+  const [toast, setToast] = useState<{ 
+    tipo: "sucesso" | "erro" | "aviso"; 
+    titulo: string; 
+    msg: string;
+    acao?: { rotulo: string; onClick: () => void };
+  } | null>(null);
 
   // Sub-visão dentro da aba Colaboradores
   const [subAbaColaborador, setSubAbaColaborador] = useState<"lista" | "novo">("lista");
@@ -752,9 +756,14 @@ export default function App() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const showToast = (tipo: "sucesso" | "erro" | "aviso", titulo: string, msg: string) => {
-    setToast({ tipo, titulo, msg });
-    setTimeout(() => setToast(null), 4500);
+  const showToast = (
+    tipo: "sucesso" | "erro" | "aviso",
+    titulo: string,
+    msg: string,
+    acao?: { rotulo: string; onClick: () => void }
+  ) => {
+    setToast({ tipo, titulo, msg, acao });
+    setTimeout(() => setToast((curr) => (curr?.titulo === titulo && curr?.msg === msg ? null : curr)), 5000);
   };
 
   // Ouvinte de mensagens do Service Worker (ex: quando o usuário clica na notificação do sistema)
@@ -777,6 +786,47 @@ export default function App() {
       navigator.serviceWorker.removeEventListener("message", handleSwMessage);
     };
   }, []);
+
+  // Sincronização Reativa do Fechamento (Espelho) com a fonte de dados global
+  useEffect(() => {
+    if (!fechamentoAtual) return;
+
+    const [mesStr, anoStr] = fechamentoAtual.mesAno.split("/");
+    const mes = parseInt(mesStr, 10);
+    const ano = parseInt(anoStr, 10);
+    const colab = colaboradores.find((c) => c.id === fechamentoAtual.colaboradorId);
+    
+    if (!colab) return;
+
+    // 1. Gera a grade base para o mês/ano
+    const base = gerarDiasMes(ano, mes, criterios.feriadosFixos, colab.horarioTrabalho);
+    
+    // 2. Sincroniza com batidas e atestados do estado global
+    const diasSincronizados = sincronizarBatidasComDias(
+      base,
+      comprovantes,
+      solicitacoes,
+      colab.id,
+      mes,
+      ano
+    );
+
+    // 3. Recalcula o fechamento completo
+    const novoFechamento = calcularFechamentoMensal(diasSincronizados, criterios, {
+      colaboradorNome: colab.nome,
+      colaboradorCargo: colab.cargo,
+      colaboradorId: colab.id,
+      mesAno: fechamentoAtual.mesAno,
+      salarioBase: colab.salarioBase,
+      saldoAnteriorBancoMinutos: colab.saldoAnteriorBancoMinutos,
+      horarioNominal: colab.horarioTrabalho,
+    });
+
+    // Só atualiza se houver mudança real (evita loop infinito se a referência mudar mas os dados não)
+    if (JSON.stringify(novoFechamento.dias) !== JSON.stringify(fechamentoAtual.dias)) {
+      setFechamentoAtual(novoFechamento);
+    }
+  }, [comprovantes, solicitacoes, colaboradores, criterios, fechamentoAtual?.colaboradorId, fechamentoAtual?.mesAno]);
 
   // Monitor em segundo plano para disparar alertas de entrada e saída
   useEffect(() => {
@@ -3366,10 +3416,22 @@ export default function App() {
               ) : (
                 <Info className="w-5 h-5 text-amber-400 shrink-0" />
               )}
-              <div className="text-xs">
+              <div className="flex-1 text-xs">
                 <strong className="block font-bold">{toast.titulo}</strong>
                 <span className="opacity-90">{toast.msg}</span>
               </div>
+              {toast.acao && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    toast.acao?.onClick();
+                    setToast(null);
+                  }}
+                  className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-[10px] font-black uppercase tracking-wider transition-colors shrink-0 border border-white/10"
+                >
+                  {toast.acao.rotulo}
+                </button>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -3401,10 +3463,22 @@ export default function App() {
             ) : (
               <Info className="w-5 h-5 text-amber-400 shrink-0" />
             )}
-            <div className="text-xs">
+            <div className="flex-1 text-xs">
               <strong className="block font-bold">{toast.titulo}</strong>
               <span className="opacity-90">{toast.msg}</span>
             </div>
+            {toast.acao && (
+              <button
+                type="button"
+                onClick={() => {
+                  toast.acao?.onClick();
+                  setToast(null);
+                }}
+                className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-[10px] font-black uppercase tracking-wider transition-colors shrink-0 border border-white/10"
+              >
+                {toast.acao.rotulo}
+              </button>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -4590,6 +4664,9 @@ export default function App() {
             colaboradores={colaboradores}
             colaboradorSelecionadoId={colaboradorSelecionadoId || portalColaboradorId || colaboradores[0]?.id}
             criterios={criterios}
+            comprovantes={comprovantes}
+            solicitacoes={solicitacoes}
+            onShowToast={showToast}
             onVoltar={() => setAbaAtiva("dashboard")}
           />
         )}

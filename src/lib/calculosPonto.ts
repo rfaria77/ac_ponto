@@ -478,18 +478,21 @@ export function gerarDiasMes(
       obs = "DSR";
     } else if (ehSabado) {
       if (horarioPadrao?.sabadoAtivo) {
-        ent1 = horarioPadrao.sabadoEntrada || "08:00";
-        sai2 = horarioPadrao.sabadoSaida || "12:00";
+        ent1 = horarioPadrao.sabadoEntrada || "";
+        sai2 = horarioPadrao.sabadoSaida || "";
         obs = "Sábado trabalhado (Banco 1:1)";
       } else {
         obs = "Folga";
       }
+    } else if (horarioPadrao) {
+      // Dia útil normal com horário padrão fornecido
+      ent1 = horarioPadrao.entrada || "";
+      sai1 = horarioPadrao.almocoSaida || "";
+      ent2 = horarioPadrao.almocoRetorno || "";
+      sai2 = horarioPadrao.saida || "";
     } else {
-      // Dia útil normal
-      ent1 = horarioPadrao?.entrada || "08:00";
-      sai1 = horarioPadrao?.almocoSaida || "12:00";
-      ent2 = horarioPadrao?.almocoRetorno || "13:00";
-      sai2 = horarioPadrao?.saida || "17:00";
+      // Dia útil normal sem horário padrão (folha em branco)
+      obs = "Normal";
     }
 
     dias.push({
@@ -509,4 +512,104 @@ export function gerarDiasMes(
   }
 
   return dias;
+}
+
+/**
+ * Unifica e sincroniza batidas (punches) e solicitações (atestados) em uma grade de dias.
+ * Usado para garantir que a Folha Visual e o Espelho usem a mesma fonte de verdade.
+ */
+export function sincronizarBatidasComDias(
+  dias: BatidaDia[],
+  comprovantes: any[],
+  solicitacoes: any[],
+  colaboradorId: string,
+  mes: number,
+  ano: number
+): BatidaDia[] {
+  const novosDias = dias.map(d => ({ ...d }));
+
+  // 1. Mapeia Comprovantes (Batidas)
+  comprovantes.forEach((comp) => {
+    if (comp.colaboradorId === colaboradorId) {
+      let dataCorrigida = comp.data;
+      if (dataCorrigida === "03/09/2026" && comp.timestampIso?.startsWith("2026-11-03")) {
+        dataCorrigida = "03/11/2026";
+      }
+
+      if (!dataCorrigida) return;
+      const partesData = dataCorrigida.split("/");
+      if (partesData.length === 3) {
+        const diaComp = parseInt(partesData[0], 10);
+        const mesComp = parseInt(partesData[1], 10);
+        const anoComp = parseInt(partesData[2], 10);
+
+        if (mesComp === mes && anoComp === ano) {
+          const idx = novosDias.findIndex((d) => d.dia === diaComp);
+          if (idx !== -1) {
+            const horaLimpa = (comp.hora || "").slice(0, 5);
+            const tipo = (comp.tipoBatida || "").toLowerCase();
+
+            if (tipo.includes("entrada 1") || tipo === "entrada1") {
+              novosDias[idx].entrada1 = horaLimpa;
+            } else if (tipo.includes("almoço") && tipo.includes("saída")) {
+              novosDias[idx].saida1 = horaLimpa;
+            } else if (tipo.includes("almoço") && tipo.includes("retorno")) {
+              novosDias[idx].entrada2 = horaLimpa;
+            } else if (tipo.includes("saída") || tipo.includes("expediente")) {
+              novosDias[idx].saida2 = horaLimpa;
+            } else if (tipo.includes("noite") && tipo.includes("entrada")) {
+              novosDias[idx].entrada3 = horaLimpa;
+            } else if (tipo.includes("noite") && tipo.includes("saída")) {
+              novosDias[idx].saida3 = horaLimpa;
+            }
+          }
+        }
+      }
+    }
+  });
+
+  // 2. Mapeia Solicitações (Atestados)
+  solicitacoes.forEach((atest) => {
+    if (
+      atest.colaboradorId === colaboradorId &&
+      (atest.status === "Aprovado" || atest.status === "Abonado") &&
+      atest.tipo?.includes("Atestado")
+    ) {
+      if (!atest.dataOcorrencia) return;
+      let diaIni = 1;
+      let mesAtest = mes;
+      let anoAtest = ano;
+
+      if (atest.dataOcorrencia.includes("/")) {
+        const p = atest.dataOcorrencia.split("/");
+        diaIni = parseInt(p[0], 10);
+        mesAtest = parseInt(p[1], 10);
+        anoAtest = parseInt(p[2], 10);
+      } else if (atest.dataOcorrencia.includes("-")) {
+        const p = atest.dataOcorrencia.split("-");
+        anoAtest = parseInt(p[0], 10);
+        mesAtest = parseInt(p[1], 10);
+        diaIni = parseInt(p[2], 10);
+      }
+
+      if (mesAtest === mes && anoAtest === ano) {
+        const qtdDias = Number(atest.diasAfastamento) || 1;
+        for (let i = 0; i < qtdDias; i++) {
+          const diaAlvo = diaIni + i;
+          const idx = novosDias.findIndex((d) => d.dia === diaAlvo);
+          if (idx !== -1) {
+            novosDias[idx].observacao = "Atestado Médico (Abonado)";
+            novosDias[idx].entrada1 = "";
+            novosDias[idx].saida1 = "";
+            novosDias[idx].entrada2 = "";
+            novosDias[idx].saida2 = "";
+            novosDias[idx].entrada3 = "";
+            novosDias[idx].saida3 = "";
+          }
+        }
+      }
+    }
+  });
+
+  return novosDias;
 }
