@@ -18,6 +18,9 @@ import {
   Trash2,
   Search,
   Filter,
+  HeartPulse,
+  Stethoscope,
+  FileCheck2,
 } from "lucide-react";
 import {
   BatidaDia,
@@ -84,9 +87,42 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
   const [modalEdicaoAberta, setModalEdicaoAberta] = useState<boolean>(false);
   const [diaEditando, setDiaEditando] = useState<BatidaDia | null>(null);
 
+  // Estados para Lançamento Rápido de Atestado Médico
+  const [modalAtestadoAberta, setModalAtestadoAberta] = useState<boolean>(false);
+  const [atestadoDataInicio, setAtestadoDataInicio] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
+  const [atestadoQtdDias, setAtestadoQtdDias] = useState<number>(1);
+  const [atestadoTipo, setAtestadoTipo] = useState<string>("Atestado Médico (Dia Integral)");
+  const [atestadoCidMotivo, setAtestadoCidMotivo] = useState<string>("");
+  const [atestadosColab, setAtestadosColab] = useState<any[]>([]);
+
   const colaboradorAtual = useMemo(() => {
     return colaboradores.find((c) => c.id === colabId) || colaboradores[0] || null;
   }, [colaboradores, colabId]);
+
+  // Listener para atestados médicos do colaborador atual no Firestore
+  useEffect(() => {
+    if (!colaboradorAtual) return;
+    const unsubSolic = onSnapshot(collection(db, "solicitacoes_ajustes"), (snapshot) => {
+      const lista: any[] = [];
+      snapshot.forEach((docSnap) => {
+        const item = { ...(docSnap.data() as any), id: docSnap.id };
+        if (
+          item.colaboradorId === colaboradorAtual.id &&
+          (item.status === "Aprovado" || item.status === "Abonado") &&
+          item.tipo?.includes("Atestado")
+        ) {
+          lista.push(item);
+        }
+      });
+      setAtestadosColab(lista);
+    }, (err) => {
+      console.warn("Aviso listener atestados:", err);
+    });
+    return () => unsubSolic();
+  }, [colaboradorAtual?.id]);
 
   // Gera ou recarrega a folha para o colaborador e mês selecionados
   useEffect(() => {
@@ -200,6 +236,43 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
           }
         });
 
+        // Aplica os atestados médicos cadastrados e aprovados para o colaborador no mês
+        atestadosColab.forEach((atest) => {
+          if (!atest.dataOcorrencia) return;
+          let diaIni = 1;
+          let mesAtest = mes;
+          let anoAtest = ano;
+
+          if (atest.dataOcorrencia.includes("/")) {
+            const p = atest.dataOcorrencia.split("/");
+            diaIni = parseInt(p[0], 10);
+            mesAtest = parseInt(p[1], 10);
+            anoAtest = parseInt(p[2], 10);
+          } else if (atest.dataOcorrencia.includes("-")) {
+            const p = atest.dataOcorrencia.split("-");
+            anoAtest = parseInt(p[0], 10);
+            mesAtest = parseInt(p[1], 10);
+            diaIni = parseInt(p[2], 10);
+          }
+
+          if (mesAtest === mes && anoAtest === ano) {
+            const qtdDias = Number(atest.diasAfastamento) || 1;
+            for (let i = 0; i < qtdDias; i++) {
+              const diaAlvo = diaIni + i;
+              const idx = novosDias.findIndex((d) => d.dia === diaAlvo);
+              if (idx !== -1) {
+                novosDias[idx].observacao = "Atestado Médico (Abonado)";
+                novosDias[idx].entrada1 = "";
+                novosDias[idx].saida1 = "";
+                novosDias[idx].entrada2 = "";
+                novosDias[idx].saida2 = "";
+                novosDias[idx].entrada3 = "";
+                novosDias[idx].saida3 = "";
+              }
+            }
+          }
+        });
+
         // Destaque visual se houver batida em tempo real
         if (novasAlteracoes.length > 0) {
           novasAlteracoes.forEach((comp) => {
@@ -255,7 +328,7 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
       unsubComp();
       unsubRegs();
     };
-  }, [colaboradorAtual?.id, mes, ano]);
+  }, [colaboradorAtual?.id, mes, ano, atestadosColab]);
 
   // Apuração do mês atual em tempo real
   const resumoMes: ResumoMensalFechamento = useMemo(() => {
@@ -362,8 +435,199 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
     return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00`;
   };
 
+  // Salvar novo Atestado Médico diretamente da Folha Visual
+  const handleSalvarNovoAtestado = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!colaboradorAtual) return;
+
+    const idAtestado = `SOLIC_ATEST_${Date.now()}`;
+    const diasQtd = Math.max(1, parseInt(String(atestadoQtdDias), 10) || 1);
+
+    const novoAtestado = {
+      id: idAtestado,
+      colaboradorId: colaboradorAtual.id,
+      colaboradorNome: colaboradorAtual.nome,
+      tipo: "Atestado Médico" as const,
+      dataOcorrencia: atestadoDataInicio, // YYYY-MM-DD ou DD/MM/YYYY
+      descricao: `Atestado Médico: ${atestadoCidMotivo || "Consulta / Afastamento Legal CLT Art. 473"}`,
+      status: "Aprovado" as const,
+      dataSolicitacao: new Date().toLocaleDateString("pt-BR"),
+      horarioSugerido: "08:00",
+      campoAfetado: "entrada1" as const,
+      diasAfastamento: diasQtd,
+      tipoAtestado: atestadoTipo,
+      cid: atestadoCidMotivo || undefined,
+    };
+
+    // 1. Salva no Firestore solicitacoes_ajustes
+    try {
+      await setDoc(doc(db, "solicitacoes_ajustes", idAtestado), cleanForFirestore(novoAtestado));
+    } catch (err) {
+      console.warn("Erro ao salvar atestado no Firestore:", err);
+    }
+
+    // 2. Salva no servidor local para persistência em disco
+    try {
+      await fetch("/api/solicitacoes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(novoAtestado),
+      });
+    } catch (e) {}
+
+    // 3. Atualiza diasFolha marcando os dias do atestado como "Atestado Médico (Abonado)"
+    let diaIni = 1;
+    let mesAtest = mes;
+    let anoAtest = ano;
+
+    if (atestadoDataInicio.includes("-")) {
+      const p = atestadoDataInicio.split("-");
+      anoAtest = parseInt(p[0], 10);
+      mesAtest = parseInt(p[1], 10);
+      diaIni = parseInt(p[2], 10);
+    } else if (atestadoDataInicio.includes("/")) {
+      const p = atestadoDataInicio.split("/");
+      diaIni = parseInt(p[0], 10);
+      mesAtest = parseInt(p[1], 10);
+      anoAtest = parseInt(p[2], 10);
+    }
+
+    if (mesAtest === mes && anoAtest === ano) {
+      const novosDias = diasFolha.map((d) => {
+        if (d.dia >= diaIni && d.dia < diaIni + diasQtd) {
+          return {
+            ...d,
+            observacao: "Atestado Médico (Abonado)",
+            entrada1: "",
+            saida1: "",
+            entrada2: "",
+            saida2: "",
+            entrada3: "",
+            saida3: "",
+            minutosTrabalhados: 0,
+            minutosBancoCredito: 0,
+            minutosBancoDebito: 0,
+            ehFalta: false,
+          };
+        }
+        return d;
+      });
+
+      setDiasFolha(novosDias);
+      const chaveStorage = `folha_visual_${colaboradorAtual.id}_${ano}_${mes}`;
+      localStorage.setItem(chaveStorage, JSON.stringify(novosDias));
+
+      setDoc(doc(db, "folhas_ponto", `${colaboradorAtual.id}_${ano}_${mes}`), cleanForFirestore({
+        colaboradorId: colaboradorAtual.id,
+        colaboradorNome: colaboradorAtual.nome,
+        ano,
+        mes,
+        dias: novosDias,
+        atualizadoEm: new Date().toISOString(),
+      })).catch(() => {});
+    }
+
+    setModalAtestadoAberta(false);
+    setAtestadoCidMotivo("");
+  };
+
+  // Alternar rapidamente status de atestado direto na edição do dia
+  const handleToggleAtestadoDia = (marcar: boolean) => {
+    if (!diaEditando || !colaboradorAtual) return;
+
+    if (marcar) {
+      const diaAtualizado: BatidaDia = {
+        ...diaEditando,
+        observacao: "Atestado Médico (Abonado)",
+        entrada1: "",
+        saida1: "",
+        entrada2: "",
+        saida2: "",
+        entrada3: "",
+        saida3: "",
+        minutosTrabalhados: 0,
+        minutosBancoCredito: 0,
+        minutosBancoDebito: 0,
+      };
+      setDiaEditando(diaAtualizado);
+
+      const novosDias = diasFolha.map((d) => (d.dia === diaEditando.dia ? diaAtualizado : d));
+      setDiasFolha(novosDias);
+
+      const chaveStorage = `folha_visual_${colaboradorAtual.id}_${ano}_${mes}`;
+      localStorage.setItem(chaveStorage, JSON.stringify(novosDias));
+
+      setDoc(doc(db, "folhas_ponto", `${colaboradorAtual.id}_${ano}_${mes}`), cleanForFirestore({
+        colaboradorId: colaboradorAtual.id,
+        colaboradorNome: colaboradorAtual.nome,
+        ano,
+        mes,
+        dias: novosDias,
+        atualizadoEm: new Date().toISOString(),
+      })).catch(() => {});
+
+      // Registra também nas solicitações/ajustes
+      const dataStr = `${String(diaEditando.dia).padStart(2, "0")}/${String(mes).padStart(2, "0")}/${ano}`;
+      const novoAtest = {
+        id: `ATEST_DIA_${diaEditando.dia}_${colaboradorAtual.id}_${Date.now()}`,
+        colaboradorId: colaboradorAtual.id,
+        colaboradorNome: colaboradorAtual.nome,
+        tipo: "Atestado Médico" as const,
+        dataOcorrencia: dataStr,
+        descricao: "Atestado Médico lançado pelo gestor na folha visual (Dia Abonado)",
+        status: "Aprovado" as const,
+        dataSolicitacao: new Date().toLocaleDateString("pt-BR"),
+        horarioSugerido: "08:00",
+        campoAfetado: "entrada1" as const,
+        diasAfastamento: 1,
+      };
+
+      setDoc(doc(db, "solicitacoes_ajustes", novoAtest.id), cleanForFirestore(novoAtest)).catch(() => {});
+      fetch("/api/solicitacoes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(novoAtest),
+      }).catch(() => {});
+
+      setModalEdicaoAberta(false);
+      setDiaEditando(null);
+    } else {
+      const diaAtualizado: BatidaDia = {
+        ...diaEditando,
+        observacao: "",
+      };
+      setDiaEditando(diaAtualizado);
+
+      const novosDias = diasFolha.map((d) => (d.dia === diaEditando.dia ? diaAtualizado : d));
+      setDiasFolha(novosDias);
+
+      const chaveStorage = `folha_visual_${colaboradorAtual.id}_${ano}_${mes}`;
+      localStorage.setItem(chaveStorage, JSON.stringify(novosDias));
+
+      setDoc(doc(db, "folhas_ponto", `${colaboradorAtual.id}_${ano}_${mes}`), cleanForFirestore({
+        colaboradorId: colaboradorAtual.id,
+        colaboradorNome: colaboradorAtual.nome,
+        ano,
+        mes,
+        dias: novosDias,
+        atualizadoEm: new Date().toISOString(),
+      })).catch(() => {});
+    }
+  };
+
   // Cálculo individual do dia para coluna TOTAL e EXTRAS
   const calcularValoresLinha = (d: BatidaDia) => {
+    const obs = (d.observacao || "").toLowerCase();
+    const ehAtestado = obs.includes("atestado") || obs.includes("médico") || obs.includes("abonado");
+
+    if (ehAtestado) {
+      return {
+        totalStr: "Abonado",
+        extrasStr: "00:00",
+        ehAtestado: true,
+      };
+    }
+
     const durManha = calcularDuracaoMinutos(d.entrada1, d.saida1);
     const durTarde = calcularDuracaoMinutos(d.entrada2, d.saida2);
     const durNoite = (d.entrada3 && d.saida3) ? calcularDuracaoMinutos(d.entrada3, d.saida3) : 0;
@@ -379,6 +643,7 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
     return {
       totalStr: totalMin > 0 ? minutosParaHora(totalMin) : "",
       extrasStr: extraMin > 0 ? minutosParaHora(extraMin) : (totalMin > 0 ? "00:00" : ""),
+      ehAtestado: false,
     };
   };
 
@@ -580,6 +845,17 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
             )}
           </div>
 
+          {/* Botão Lançar Atestado Médico */}
+          <button
+            type="button"
+            onClick={() => setModalAtestadoAberta(true)}
+            className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-600/30 transition-all flex items-center gap-1.5 cursor-pointer"
+            title="Lançar atestado médico para abonar dias deste colaborador sem descontar no banco de horas"
+          >
+            <HeartPulse className="w-3.5 h-3.5" />
+            <span>+ Lançar Atestado</span>
+          </button>
+
           {/* Botão Zerar Folha */}
           <button
             type="button"
@@ -748,7 +1024,7 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
               {/* CORPO DA TABELA: 1 LINHA PARA CADA DIA DO MÊS (1 a 31) */}
               <tbody className="divide-y divide-black text-xs font-medium">
                 {diasFolha.map((d) => {
-                  const { totalStr, extrasStr } = calcularValoresLinha(d);
+                  const { totalStr, extrasStr, ehAtestado } = calcularValoresLinha(d);
                   const dataFormatada = `${String(d.dia).padStart(2, "0")}/${String(mes).padStart(2, "0")}/${ano}`;
                   const ehHoje =
                     new Date().getDate() === d.dia &&
@@ -768,9 +1044,9 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
                         setModalEdicaoAberta(true);
                       }}
                       className={`hover:bg-amber-50 cursor-pointer transition-colors group ${
-                        ehHoje ? "bg-emerald-50/70" : ""
+                        ehAtestado ? "bg-emerald-50/60" : ehHoje ? "bg-emerald-50/70" : ""
                       }`}
-                      title="Clique na linha para editar horários deste dia"
+                      title={ehAtestado ? "Dia abonado por atestado médico (Clique para ver/editar)" : "Clique na linha para editar horários deste dia"}
                     >
                       {/* COLUNA DATA */}
                       <td className="border-r-2 border-black py-1 px-2 text-center font-bold text-gray-900 whitespace-nowrap bg-gray-50/80 group-hover:bg-amber-100/50">
@@ -785,59 +1061,78 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
                         </div>
                       </td>
 
-                      {/* MANHÃ - ENTRADA */}
-                      <td
-                        className={`border-r border-black py-1 px-2 font-mono text-center ${
-                          celulaEntrada1Atualizada ? "bg-amber-300 font-bold animate-pulse text-black" : ""
-                        }`}
-                      >
-                        {d.entrada1 || ""}
-                      </td>
+                      {/* SE FOR ATESTADO MÉDICO: EXIBE FAIXA DE ABONO INTEGRAL */}
+                      {ehAtestado ? (
+                        <td
+                          colSpan={6}
+                          className="border-r-2 border-black py-1.5 px-3 bg-emerald-50 text-emerald-950 font-bold text-xs tracking-wide"
+                        >
+                          <div className="flex items-center justify-center gap-2">
+                            <HeartPulse className="w-4 h-4 text-emerald-600 inline" />
+                            <span>🏥 Atestado Médico — Dia Abonado Integralmente (Sem Débito no Banco)</span>
+                          </div>
+                        </td>
+                      ) : (
+                        <>
+                          {/* MANHÃ - ENTRADA */}
+                          <td
+                            className={`border-r border-black py-1 px-2 font-mono text-center ${
+                              celulaEntrada1Atualizada ? "bg-amber-300 font-bold animate-pulse text-black" : ""
+                            }`}
+                          >
+                            {d.entrada1 || ""}
+                          </td>
 
-                      {/* MANHÃ - SAÍDA */}
-                      <td
-                        className={`border-r-2 border-black py-1 px-2 font-mono text-center ${
-                          celulaSaida1Atualizada ? "bg-amber-300 font-bold animate-pulse text-black" : ""
-                        }`}
-                      >
-                        {d.saida1 || ""}
-                      </td>
+                          {/* MANHÃ - SAÍDA */}
+                          <td
+                            className={`border-r-2 border-black py-1 px-2 font-mono text-center ${
+                              celulaSaida1Atualizada ? "bg-amber-300 font-bold animate-pulse text-black" : ""
+                            }`}
+                          >
+                            {d.saida1 || ""}
+                          </td>
 
-                      {/* TARDE - ENTRADA */}
-                      <td
-                        className={`border-r border-black py-1 px-2 font-mono text-center ${
-                          celulaEntrada2Atualizada ? "bg-amber-300 font-bold animate-pulse text-black" : ""
-                        }`}
-                      >
-                        {d.entrada2 || ""}
-                      </td>
+                          {/* TARDE - ENTRADA */}
+                          <td
+                            className={`border-r border-black py-1 px-2 font-mono text-center ${
+                              celulaEntrada2Atualizada ? "bg-amber-300 font-bold animate-pulse text-black" : ""
+                            }`}
+                          >
+                            {d.entrada2 || ""}
+                          </td>
 
-                      {/* TARDE - SAÍDA */}
-                      <td
-                        className={`border-r-2 border-black py-1 px-2 font-mono text-center ${
-                          celulaSaida2Atualizada ? "bg-amber-300 font-bold animate-pulse text-black" : ""
-                        }`}
-                      >
-                        {d.saida2 || ""}
-                      </td>
+                          {/* TARDE - SAÍDA */}
+                          <td
+                            className={`border-r-2 border-black py-1 px-2 font-mono text-center ${
+                              celulaSaida2Atualizada ? "bg-amber-300 font-bold animate-pulse text-black" : ""
+                            }`}
+                          >
+                            {d.saida2 || ""}
+                          </td>
 
-                      {/* NOITE - ENTRADA */}
-                      <td className="border-r border-black py-1 px-2 font-mono text-center">
-                        {d.entrada3 || ""}
-                      </td>
+                          {/* NOITE - ENTRADA */}
+                          <td className="border-r border-black py-1 px-2 font-mono text-center">
+                            {d.entrada3 || ""}
+                          </td>
 
-                      {/* NOITE - SAÍDA */}
-                      <td className="border-r-2 border-black py-1 px-2 font-mono text-center">
-                        {d.saida3 || ""}
-                      </td>
+                          {/* NOITE - SAÍDA */}
+                          <td className="border-r-2 border-black py-1 px-2 font-mono text-center">
+                            {d.saida3 || ""}
+                          </td>
+                        </>
+                      )}
 
-                      {/* TOTAL: COLUNA COM FUNDO AZUL SUAVE #D9E8F5 */}
-                      <td className="border-r-2 border-black py-1 px-2 font-mono font-bold text-center bg-[#D9E8F5] text-black">
+                      {/* TOTAL: COLUNA COM FUNDO AZUL SUAVE #D9E8F5 (OU VERDE SE ABONADO) */}
+                      <td className={`border-r-2 border-black py-1 px-2 font-mono font-bold text-center ${
+                        ehAtestado ? "bg-emerald-100 text-emerald-950" : "bg-[#D9E8F5] text-black"
+                      }`}>
                         {totalStr}
                       </td>
 
-                      {/* EXTRAS: COLUNA COM FUNDO PÊSSEGO/ÂMBAR #FCEFD2 */}
-                      <td className="py-1 px-2 font-mono font-bold text-center bg-[#FCEFD2] text-black">
+                      {/* EXTRAS: COLUNA COM FUNDO PÊSSEGO/ÂMBAR #FCEFD2 (OU VERDE SE ABONADO) */}
+                      <td className={`py-1 px-2 font-mono font-bold text-center ${
+                        ehAtestado ? "bg-emerald-50 text-emerald-950" : "bg-[#FCEFD2] text-black"
+                      }`}>
                         {extrasStr}
                       </td>
                     </tr>
@@ -856,7 +1151,7 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
             </div>
             <div className="flex items-center gap-2">
               <span className="text-[11px] text-gray-600 font-medium">
-                💡 Dica: Clique em qualquer dia para alterar horários manualmente
+                💡 Dica: Clique em qualquer dia para alterar horários ou abonar via atestado
               </span>
             </div>
           </div>
@@ -889,6 +1184,37 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
                 ✕
               </button>
             </div>
+
+            {/* SEÇÃO RÁPIDA DE ATESTADO MÉDICO */}
+            {diaEditando.observacao?.toLowerCase().includes("atestado") ? (
+              <div className="p-3.5 rounded-2xl bg-emerald-950/60 border border-emerald-500/40 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 text-xs text-emerald-300">
+                  <HeartPulse className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>Este dia está <strong>Abonado por Atestado Médico</strong> (0 débito no banco).</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleToggleAtestadoDia(false)}
+                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 transition-colors shrink-0 cursor-pointer"
+                >
+                  ↺ Reabrir Horários
+                </button>
+              </div>
+            ) : (
+              <div className="p-3 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-3">
+                <div className="text-xs text-slate-300">
+                  <span>Deseja abonar este dia sem desconto no salário e sem debitar no banco?</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleToggleAtestadoDia(true)}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
+                >
+                  <HeartPulse className="w-3.5 h-3.5" />
+                  <span>Marcar como Atestado</span>
+                </button>
+              </div>
+            )}
 
             <form onSubmit={handleSalvarEdicaoDia} className="space-y-4">
               {/* MANHÃ */}
@@ -991,6 +1317,130 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
                   className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold shadow-lg shadow-amber-500/20 cursor-pointer"
                 >
                   Salvar Batidas
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: LANÇAR NOVO ATESTADO MÉDICO */}
+      {modalAtestadoAberta && colaboradorAtual && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-5 text-white animate-fade-in">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                  <HeartPulse className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">
+                    Lançar Atestado Médico (Abono CLT)
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Colaborador: <strong className="text-emerald-400">{colaboradorAtual.nome}</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalAtestadoAberta(false)}
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Banner de Garantia Legal (Sem desconto salarial e Sem débito de banco) */}
+            <div className="p-3.5 rounded-2xl bg-emerald-950/50 border border-emerald-500/30 text-xs text-emerald-300 space-y-1">
+              <div className="font-bold flex items-center gap-1.5 text-emerald-400">
+                <FileCheck2 className="w-4 h-4" />
+                <span>Regra de Abono Integral Conforme CLT:</span>
+              </div>
+              <p className="text-[11px] leading-relaxed text-emerald-200/90">
+                O período do atestado é <strong>integralmente abonado</strong>. O colaborador <strong>NÃO</strong> terá desconto salarial no dia e <strong>NÃO</strong> terá desconto/débito no saldo do banco de horas.
+              </p>
+            </div>
+
+            <form onSubmit={handleSalvarNovoAtestado} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Data de Início */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Data de Início do Afastamento
+                  </label>
+                  <input
+                    type="date"
+                    value={atestadoDataInicio}
+                    onChange={(e) => setAtestadoDataInicio(e.target.value)}
+                    required
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                {/* Quantidade de Dias */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Quantidade de Dias
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={60}
+                    value={atestadoQtdDias}
+                    onChange={(e) => setAtestadoQtdDias(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                    required
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono text-center focus:outline-none focus:border-emerald-500"
+                  />
+                  <span className="text-[10px] text-slate-400 block mt-0.5 text-center">
+                    {atestadoQtdDias === 1 ? "1 dia abonado" : `${atestadoQtdDias} dias abonados consecutivos`}
+                  </span>
+                </div>
+              </div>
+
+              {/* Tipo de Afastamento */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Tipo de Afastamento
+                </label>
+                <select
+                  value={atestadoTipo}
+                  onChange={(e) => setAtestadoTipo(e.target.value as any)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                >
+                  <option value="integral">Atestado Médico (Dia Integral Abonado - Art. 473 CLT)</option>
+                  <option value="parcial">Declaração de Comparecimento / Horas (Consulta)</option>
+                </select>
+              </div>
+
+              {/* CID ou Motivo Médico */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  CID ou Motivo da Justificativa (Opcional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ex: Consulta médica, repouso por 1 dia, CID J00..."
+                  value={atestadoCidMotivo}
+                  onChange={(e) => setAtestadoCidMotivo(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setModalAtestadoAberta(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-600/30 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <HeartPulse className="w-4 h-4" />
+                  <span>Abonar Dia(s) na Folha</span>
                 </button>
               </div>
             </form>

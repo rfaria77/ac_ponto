@@ -450,6 +450,10 @@ app.post("/api/solicitacoes", (req, res) => {
     status: req.body.status || "Pendente",
   };
   solicitacoesAjustes.unshift(nova);
+  salvarDadosEmDisco();
+  if (firestoreDb) {
+    setDoc(doc(firestoreDb, "solicitacoes_ajustes", nova.id), cleanForFirestore(nova)).catch(() => {});
+  }
   res.json({ success: true, solicitacao: nova });
 });
 
@@ -460,7 +464,21 @@ app.put("/api/solicitacoes/:id", (req, res) => {
     return res.status(404).json({ error: "Solicitação não encontrada." });
   }
   solicitacoesAjustes[idx] = { ...solicitacoesAjustes[idx], ...req.body };
+  salvarDadosEmDisco();
+  if (firestoreDb) {
+    setDoc(doc(firestoreDb, "solicitacoes_ajustes", id), cleanForFirestore(solicitacoesAjustes[idx])).catch(() => {});
+  }
   res.json({ success: true, solicitacao: solicitacoesAjustes[idx] });
+});
+
+app.delete("/api/solicitacoes/:id", (req, res) => {
+  const { id } = req.params;
+  solicitacoesAjustes = solicitacoesAjustes.filter((s) => s.id !== id);
+  salvarDadosEmDisco();
+  if (firestoreDb) {
+    deleteDoc(doc(firestoreDb, "solicitacoes_ajustes", id)).catch(() => {});
+  }
+  res.json({ success: true, message: "Atestado/solicitação removido com sucesso." });
 });
 
 app.get("/api/comprovantes", (req, res) => {
