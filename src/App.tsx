@@ -2449,14 +2449,18 @@ export default function App() {
       const data = await res.json();
       if (data.success && data.fechamento) {
         setFechamentoAtual(data.fechamento);
-        showToast("sucesso", "Folha Processada com Sucesso!", "Batidas extraídas e fechamento mensal calculado conforme os critérios.");
+        if (data.ocrSucesso) {
+          showToast("sucesso", "IA Gemini Vision Processou a Folha!", data.mensagemOcr || `Extrato de ${data.diasLidosCount || 0} dias lido com sucesso.`);
+        } else {
+          showToast("aviso", "Grade Padrão Aplicada", data.mensagemOcr || "A imagem não pôde ser lida por OCR. Aplicada grade base da escala do funcionário.");
+        }
         setAbaAtiva("fechamento");
       } else {
         throw new Error(data.error || "Não foi possível processar a folha de ponto.");
       }
     } catch (err: any) {
       console.warn("Fallback para processamento local:", err);
-      // Fallback robusto local caso a API não esteja com chave externa
+      // Fallback robusto local caso a API não esteja acessível
       const [mesStr, anoStr] = mesAnoInput.includes("/") ? mesAnoInput.split("/") : ["10", "2026"];
       const diasMes = gerarDiasMes(parseInt(anoStr, 10) || 2026, parseInt(mesStr, 10) || 10, criterios.feriadosFixos, colab.horarioTrabalho);
       
@@ -2471,7 +2475,7 @@ export default function App() {
       });
 
       setFechamentoAtual(fech);
-      showToast("sucesso", "Folha Estruturada com Sucesso", "Grade mensal gerada e calculada conforme os critérios.");
+      showToast("sucesso", "Folha Estruturada", "Grade mensal gerada com sucesso.");
       setAbaAtiva("fechamento");
     } finally {
       setEstaProcessandoOCR(false);

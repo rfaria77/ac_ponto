@@ -995,6 +995,7 @@ app.post("/api/recalcular-fechamento", (req, res) => {
 });
 
 // Processar folha escaneada usando Gemini Vision AI
+// Processar folha escaneada usando Gemini Vision AI
 app.post("/api/processar-folha-ponto", async (req, res) => {
   try {
     const {
@@ -1016,36 +1017,77 @@ app.post("/api/processar-folha-ponto", async (req, res) => {
       dias?: BatidaDia[];
     } = {};
 
-    if (imageBase64 && imageBase64.startsWith("data:")) {
-      try {
+    let mimeType = "image/jpeg";
+    let base64Data = "";
+    let leuImagemSucesso = false;
+
+    if (imageBase64 && typeof imageBase64 === "string") {
+      if (imageBase64.startsWith("data:")) {
         const matches = imageBase64.match(/^data:(.+);base64,(.+)$/);
-        let mimeType = "image/jpeg";
-        let base64Data = imageBase64;
         if (matches && matches.length === 3) {
           mimeType = matches[1];
           base64Data = matches[2];
+          leuImagemSucesso = true;
         }
+      } else if (imageBase64.startsWith("http://") || imageBase64.startsWith("https://")) {
+        try {
+          const fetchImg = await fetch(imageBase64);
+          const contentType = fetchImg.headers.get("content-type");
+          if (contentType) mimeType = contentType;
+          const buf = await fetchImg.arrayBuffer();
+          base64Data = Buffer.from(buf).toString("base64");
+          leuImagemSucesso = true;
+        } catch (fetchErr) {
+          console.warn("Aviso ao carregar imagem via URL externa:", fetchErr);
+        }
+      } else {
+        // Tenta ler do sistema de arquivos local (ex: /public/assets/... ou public/assets/...)
+        const localPath = imageBase64.startsWith("/")
+          ? path.join(__dirname, imageBase64)
+          : path.join(__dirname, "public", imageBase64);
+        if (fs.existsSync(localPath)) {
+          try {
+            const buf = fs.readFileSync(localPath);
+            base64Data = buf.toString("base64");
+            if (localPath.endsWith(".png")) mimeType = "image/png";
+            else if (localPath.endsWith(".pdf")) mimeType = "application/pdf";
+            else mimeType = "image/jpeg";
+            leuImagemSucesso = true;
+          } catch (fsErr) {
+            console.warn("Aviso ao ler arquivo local:", fsErr);
+          }
+        }
+      }
+    }
 
+    let erroOcrMensagem = "";
+
+    if (leuImagemSucesso && base64Data) {
+      try {
         const promptOCR = `
-Você é um especialista em Departamento Pessoal (DP) e auditoria de Cartões de Ponto / Folhas de Ponto escaneadas e impressas no Brasil.
-Analise detalhadamente a imagem da folha de ponto enviada.
+Você é um auditor de Departamento Pessoal (DP) especializado em OCR de Folhas e Cartões de Ponto (manuscritos ou impressos) no Brasil.
+Examine atentamente toda a imagem da folha de ponto enviada.
 
-Sua tarefa é fazer o OCR e estruturar com máxima precisão todos os dias e batidas de ponto:
-1. "colaboradorNome": Nome completo do funcionário na folha (se visível).
-2. "cargo": Função / cargo do colaborador (se visível).
-3. "mesAno": Mês e ano de referência no formato "MM/AAAA" (ex: "09/2026" ou "10/2026").
-4. "dias": Lista com cada dia do mês (1 a 31) contendo:
-   - "dia": número do dia (1..31).
+Sua missão é extrair exatamente as informações e batidas diárias visíveis:
+1. "colaboradorNome": Nome do colaborador impresso ou escrito na folha (se presente).
+2. "cargo": Cargo ou função (se presente).
+3. "mesAno": Mês/Ano de referência (ex: "09/2026" ou "10/2026").
+4. "dias": Array contendo cada dia do mês visível (1 a 31) com:
+   - "dia": número inteiro do dia (ex: 1, 2, 3... 31).
    - "diaSemana": "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb" ou "Dom".
-   - "entrada1": Horário no formato "HH:MM" (Entrada da manhã). Se não trabalhou, use "".
-   - "saida1": Horário no formato "HH:MM" (Saída para almoço). Se não houve, use "".
-   - "entrada2": Horário no formato "HH:MM" (Retorno do almoço). Se não houve, use "".
-   - "saida2": Horário no formato "HH:MM" (Saída da tarde/final). Se não trabalhou, use "".
-   - "observacao": Se tiver anotações manuscritas ou impressas como "Folga", "DSR", "Feriado", "Atestado", "Falta", "Normal".
-   - "ehFeriado": true se for feriado, false caso contrário.
+   - "entrada1": Horário exato escrito no formato "HH:MM" (Entrada 1). Se o dia estiver em branco ou sem batida, retorne "".
+   - "saida1": Horário exato "HH:MM" (Saída Almoço). Se em branco, retorne "".
+   - "entrada2": Horário exato "HH:MM" (Retorno Almoço). Se em branco, retorne "".
+   - "saida2": Horário exato "HH:MM" (Saída Expediente). Se em branco, retorne "".
+   - "observacao": Texto manuscrito ou anotação (ex: "Atestado", "Falta", "DSR", "Folga", "Feriado", "Normal").
+   - "ehFeriado": true se for feriado marcado no cartão, false caso contrário.
    - "folgaCompensatoria": false por padrão.
 
-Retorne estritamente um JSON válido.
+REGRA ABSOLUTA:
+NÃO preencha com horários de escala padrão (ex: 08:00, 12:00, 17:00) se a linha do dia estiver em branco no papel!
+Se um dia no cartão de ponto estiver em branco (sem batida nem manuscrito), retorne entrada1="", saida1="", entrada2="", saida2="". Extraia SOMENTE os horários realmente escritos/impressos.
+
+Retorne estritamente um JSON válido no formato do schema.
 `;
 
         const response = await ai.models.generateContent({
@@ -1066,13 +1108,16 @@ Retorne estritamente um JSON válido.
         });
 
         if (response.text) {
-          const parsed = JSON.parse(response.text);
-          dadosExtraidos = parsed;
+          const textoLimpo = response.text.replace(/```json/gi, "").replace(/```/gi, "").trim();
+          dadosExtraidos = JSON.parse(textoLimpo);
         }
       } catch (geminiErr: any) {
-        console.warn("Aviso na chamada Gemini OCR:", geminiErr?.message || geminiErr);
+        console.warn("Aviso no processamento Gemini Vision OCR:", geminiErr?.message || geminiErr);
+        erroOcrMensagem = geminiErr?.message || "O Gemini Vision não pôde processar a imagem fornecida.";
       }
     }
+
+    const ocrSucesso = Boolean(dadosExtraidos.dias && Array.isArray(dadosExtraidos.dias) && dadosExtraidos.dias.length > 0);
 
     // Determinar mês e ano de referência
     const mesAnoFinal = mesAnoManual || dadosExtraidos.mesAno || "10/2026";
@@ -1081,20 +1126,22 @@ Retorne estritamente um JSON válido.
     const mes = parseInt(mesStr, 10) || 10;
     const criteriosUsados = criteriosCustom || criteriosArmazenados;
 
-    // Gerar a grade completa do mês e mesclar com o que foi extraído pelo OCR
+    // Gerar a grade base do mês
     const gradeBase = gerarDiasMes(ano, mes, criteriosUsados.feriadosFixos, horarioNominal);
+
+    // Se o OCR funcionou, substitui as batidas pelos valores extraídos da imagem (mesmo se em branco)
     const diasMesclados: BatidaDia[] = gradeBase.map((diaBase) => {
-      if (dadosExtraidos.dias && Array.isArray(dadosExtraidos.dias)) {
+      if (ocrSucesso && dadosExtraidos.dias) {
         const diaEncontrado = dadosExtraidos.dias.find((d: any) => Number(d.dia) === diaBase.dia);
         if (diaEncontrado) {
           return {
             ...diaBase,
-            entrada1: diaEncontrado.entrada1 !== undefined ? diaEncontrado.entrada1 : diaBase.entrada1,
-            saida1: diaEncontrado.saida1 !== undefined ? diaEncontrado.saida1 : diaBase.saida1,
-            entrada2: diaEncontrado.entrada2 !== undefined ? diaEncontrado.entrada2 : diaBase.entrada2,
-            saida2: diaEncontrado.saida2 !== undefined ? diaEncontrado.saida2 : diaBase.saida2,
-            observacao: diaEncontrado.observacao || diaBase.observacao,
-            ehFeriado: Boolean(diaEncontrado.ehFeriado),
+            entrada1: typeof diaEncontrado.entrada1 === "string" ? diaEncontrado.entrada1 : "",
+            saida1: typeof diaEncontrado.saida1 === "string" ? diaEncontrado.saida1 : "",
+            entrada2: typeof diaEncontrado.entrada2 === "string" ? diaEncontrado.entrada2 : "",
+            saida2: typeof diaEncontrado.saida2 === "string" ? diaEncontrado.saida2 : "",
+            observacao: diaEncontrado.observacao || (diaBase.ehFeriado ? diaBase.observacao : (diaBase.diaSemana === "Dom" ? "DSR" : (diaBase.diaSemana === "Sáb" && !horarioNominal?.sabadoAtivo ? "Folga" : "Normal"))),
+            ehFeriado: diaEncontrado.ehFeriado !== undefined ? Boolean(diaEncontrado.ehFeriado) : diaBase.ehFeriado,
             folgaCompensatoria: Boolean(diaEncontrado.folgaCompensatoria),
           };
         }
@@ -1117,6 +1164,11 @@ Retorne estritamente um JSON válido.
 
     res.json({
       success: true,
+      ocrSucesso,
+      diasLidosCount: dadosExtraidos.dias?.length || 0,
+      mensagemOcr: ocrSucesso
+        ? `Leitura OCR concluída com sucesso via Gemini Vision! Extraídos dados de ${dadosExtraidos.dias?.length} dias da folha.`
+        : (erroOcrMensagem || "Imagem não pôde ser lida por OCR. Aplicada grade base padrão do colaborador."),
       dadosExtraidos,
       fechamento,
     });
