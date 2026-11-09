@@ -772,12 +772,43 @@ export default function App() {
 
     const handleSwMessage = (event: MessageEvent) => {
       if (event.data && event.data.type === "NOTIFICATION_CLICKED") {
+        const { action, data } = event.data;
         setAbaAtiva("baterPonto");
-        showToast(
-          "aviso",
-          "⏰ Lembrete de Ponto",
-          "Você abriu a notificação de horário. Registre sua marcação de ponto!"
-        );
+
+        if (action === "bater_ponto") {
+          const mapaCampos: Record<string, "entrada1" | "saida1" | "entrada2" | "saida2"> = {
+            entrada: "entrada1",
+            almocoSaida: "saida1",
+            almocoRetorno: "entrada2",
+            saida: "saida2",
+          };
+
+          const campoAlvo = data?.tipo ? mapaCampos[data.tipo] : null;
+
+          if (campoAlvo) {
+            showToast(
+              "sucesso",
+              "⏱️ Ponto Rápido",
+              `Você clicou para registrar sua ${data.tipo}. Deseja confirmar?`,
+              {
+                rotulo: "Confirmar Agora",
+                onClick: () => handlePortalBaterPonto(campoAlvo),
+              }
+            );
+          } else {
+            showToast(
+              "aviso",
+              "⏰ Lembrete de Ponto",
+              "Registre sua marcação de ponto agora!"
+            );
+          }
+        } else {
+          showToast(
+            "aviso",
+            "⏰ Lembrete de Ponto",
+            "Você abriu a notificação de horário. Registre sua marcação de ponto!"
+          );
+        }
       }
     };
 

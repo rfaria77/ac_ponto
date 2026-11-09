@@ -1,5 +1,9 @@
-// Ponto A&C - Service Worker Principal
+// Ponto A&C - Service Worker Principal (InjectManifest)
 // Suporte a PWA, notificações push e alertas de ponto
+import { precacheAndRoute } from 'workbox-precaching';
+
+// Workbox injetará o manifesto de precache aqui
+precacheAndRoute(self.__WB_MANIFEST);
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
