@@ -56,6 +56,7 @@ interface PainelFolhaVisualProps {
   criterios: CriteriosApuracao;
   comprovantes: any[];
   solicitacoes: any[];
+  userRole?: "admin" | "funcionario" | "escolha";
   onShowToast?: (tipo: "sucesso" | "erro" | "aviso", titulo: string, msg: string, acao?: { rotulo: string; onClick: () => void }) => void;
   onVoltar?: () => void;
 }
@@ -66,6 +67,7 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
   criterios,
   comprovantes,
   solicitacoes,
+  userRole,
   onShowToast,
   onVoltar,
 }) => {
@@ -75,10 +77,10 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
   });
 
   useEffect(() => {
-    if (colabIdProp && colabIdProp !== colabId) {
+    if (colabIdProp && (userRole === "funcionario" || colabIdProp !== colabId)) {
       setColabId(colabIdProp);
     }
-  }, [colabIdProp]);
+  }, [colabIdProp, userRole]);
 
   // Competência Mês/Ano (Padrão: Mês e ano atuais atualizados em tempo real)
   const [ano, setAno] = useState<number>(() => new Date().getFullYear());
@@ -711,19 +713,26 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
             </div>
           </div>
 
-          <div className="w-full sm:w-auto">
-            <select
-              value={colabId}
-              onChange={(e) => setColabId(e.target.value)}
-              className="w-full sm:w-64 bg-slate-950 border border-slate-700 hover:border-amber-500 text-white font-medium text-xs sm:text-sm rounded-xl px-3 py-2.5 transition-colors focus:outline-none focus:border-amber-500"
-            >
-              {colaboradores.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.nome} ({c.cargo})
-                </option>
-              ))}
-            </select>
-          </div>
+          {userRole === "funcionario" ? (
+            <div className="w-full sm:w-auto px-4 py-2 bg-slate-950 border border-amber-500/30 rounded-xl flex items-center gap-2 text-xs sm:text-sm">
+              <span className="text-slate-400 font-medium">Folha Individual:</span>
+              <strong className="text-amber-300 font-bold">{colaboradorAtual?.nome}</strong>
+            </div>
+          ) : (
+            <div className="w-full sm:w-auto">
+              <select
+                value={colabId}
+                onChange={(e) => setColabId(e.target.value)}
+                className="w-full sm:w-64 bg-slate-950 border border-slate-700 hover:border-amber-500 text-white font-medium text-xs sm:text-sm rounded-xl px-3 py-2.5 transition-colors focus:outline-none focus:border-amber-500"
+              >
+                {colaboradores.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.nome} ({c.cargo})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* Controles de Mês, Ano e Status Ao Vivo */}

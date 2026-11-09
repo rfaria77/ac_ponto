@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   ChevronDown,
   ChevronUp,
+  CalendarClock,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { HorarioTrabalhoColab } from "../lib/calculosPonto";
@@ -33,6 +34,8 @@ import {
 interface PainelNotificacoesTurnoProps {
   colaboradorId?: string;
   colaboradorNome?: string;
+  nomeEscala?: string;
+  tipoEscala?: string;
   horarioTrabalho?: HorarioTrabalhoColab;
   onNotificacaoEnviada?: (titulo: string, msg: string) => void;
 }
@@ -40,6 +43,8 @@ interface PainelNotificacoesTurnoProps {
 export const PainelNotificacoesTurno: React.FC<PainelNotificacoesTurnoProps> = ({
   colaboradorId,
   colaboradorNome = "Colaborador",
+  nomeEscala,
+  tipoEscala,
   horarioTrabalho,
   onNotificacaoEnviada,
 }) => {
@@ -134,16 +139,21 @@ export const PainelNotificacoesTurno: React.FC<PainelNotificacoesTurnoProps> = (
             )}
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-base sm:text-lg font-bold text-white tracking-tight">
                 Notificações de Horário de Ponto
               </h3>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-500/20 text-sky-300 border border-sky-500/30">
                 PWA Push
               </span>
+              {nomeEscala && (
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                  <CalendarClock className="w-3 h-3" /> Escala: {nomeEscala}
+                </span>
+              )}
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              Avisos no celular e computador nos horários de entrada, almoço e saída de {colaboradorNome}.
+              Avisos automáticos no celular e computador sincronizados rigorosamente com a escala de trabalho de {colaboradorNome}.
             </p>
           </div>
         </div>

@@ -448,9 +448,16 @@ export async function verificarEAlertarTurno(
   colaboradorId: string,
   colaboradorNome: string,
   horario?: HorarioTrabalhoColab,
-  config?: ConfiguracaoNotificacoes
+  configOuNomeEscala?: ConfiguracaoNotificacoes | string,
+  nomeEscalaParam?: string
 ): Promise<LembreteTurnoItem | null> {
-  const cfg = config || obterConfiguracaoNotificacoes(colaboradorId);
+  const cfg =
+    typeof configOuNomeEscala === "object" && configOuNomeEscala !== null
+      ? configOuNomeEscala
+      : obterConfiguracaoNotificacoes(colaboradorId);
+  const nomeEscala =
+    typeof configOuNomeEscala === "string" ? configOuNomeEscala : nomeEscalaParam;
+
   if (!cfg.ativo) return null;
 
   const permissao = obterPermissaoNotificacao();
@@ -474,8 +481,10 @@ export async function verificarEAlertarTurno(
       if (!jaDisparou) {
         localStorage.setItem(storageKey, new Date().toISOString());
 
+        const sufixoEscala = nomeEscala ? ` (${nomeEscala})` : "";
+
         await dispararNotificacaoPWA({
-          titulo: `⏰ Ponto A&C — ${item.titulo}`,
+          titulo: `⏰ Ponto A&C — ${item.titulo}${sufixoEscala}`,
           mensagem: `${colaboradorNome}: ${item.mensagem}`,
           tipo: item.id,
           tag: `turno_${item.id}_${colaboradorId}`,

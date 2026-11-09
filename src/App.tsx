@@ -66,6 +66,8 @@ import {
   Receipt,
   Send,
   MessageSquare,
+  Fingerprint,
+  ScanFace,
 } from "lucide-react";
 import {
   ComprovantePonto,
@@ -96,6 +98,16 @@ import {
   solicitarPermissaoNotificacao,
   enviarNotificacaoTeste,
 } from "./utils/notificacoesPWA";
+import {
+  isBiometriaPlataformaSuportada,
+  temBiometriaCadastrada,
+  obterDadosBiometriaCadastrada,
+  cadastrarBiometriaAparelho,
+  autenticarComBiometriaAparelho,
+  removerBiometriaAparelho,
+  obterNomeDispositivo,
+  RegistroBiometriaLocal,
+} from "./utils/biometriaWebAuthn";
 import {
   BatidaDia,
   CriteriosApuracao,
@@ -372,6 +384,47 @@ export function normalizarEscala(raw: any): EscalaTrabalho {
   };
 }
 
+export function resolverEscalaEHorarioColaborador(
+  colab: Colaborador | undefined,
+  escalasList: EscalaTrabalho[]
+): {
+  escala: EscalaTrabalho | undefined;
+  nomeEscala: string;
+  tipoEscala: string;
+  horario: HorarioTrabalhoColab;
+} {
+  const padrao: HorarioTrabalhoColab = {
+    entrada: "08:00",
+    almocoSaida: "12:00",
+    almocoRetorno: "13:00",
+    saida: "17:00",
+    sabadoAtivo: false,
+    sabadoEntrada: "08:00",
+    sabadoSaida: "12:00",
+  };
+
+  if (!colab) {
+    return {
+      escala: undefined,
+      nomeEscala: "Escala Administrativa Geral",
+      tipoEscala: "5x2",
+      horario: padrao,
+    };
+  }
+
+  const escalaEncontrada = escalasList.find((e) => e.id === colab.escalaId);
+  const horarioResolvido = escalaEncontrada?.horario || colab.horarioTrabalho || padrao;
+  const nomeEscalaResolvido = escalaEncontrada?.nome || "Escala Individual";
+  const tipoEscalaResolvido = escalaEncontrada?.tipo || "5x2";
+
+  return {
+    escala: escalaEncontrada,
+    nomeEscala: nomeEscalaResolvido,
+    tipoEscala: tipoEscalaResolvido,
+    horario: horarioResolvido,
+  };
+}
+
 const COLABORADORES_INICIAIS: Colaborador[] = [
   {
     id: "FUNC_001",
@@ -481,6 +534,16 @@ export default function App() {
   const [mostrarNovaSenha, setMostrarNovaSenha] = useState<boolean>(false);
   const [mostrarConfirmaNovaSenha, setMostrarConfirmaNovaSenha] = useState<boolean>(false);
   const [sidebarAbertaMobile, setSidebarAbertaMobile] = useState<boolean>(false);
+
+  // Estados para Biometria e Reconhecimento Facial (WebAuthn / Passkey)
+  const [biometriaSuportada, setBiometriaSuportada] = useState<boolean>(false);
+  const [biometriaTick, setBiometriaTick] = useState<number>(0);
+
+  useEffect(() => {
+    isBiometriaPlataformaSuportada().then((disp) => {
+      setBiometriaSuportada(disp);
+    });
+  }, []);
 
   // Estados para Comprovantes Digitais (Portaria 671 MTE)
   const [comprovantes, setComprovantes] = useState<ComprovantePonto[]>(() => {
@@ -766,6 +829,31 @@ export default function App() {
     setTimeout(() => setToast((curr) => (curr?.titulo === titulo && curr?.msg === msg ? null : curr)), 5000);
   };
 
+  const handleLogout = () => {
+    setUserRole("escolha");
+    setPortalColaboradorId("");
+    setFuncionarioLoginId("");
+    setColabTentandoLogarId("");
+    setSenhaLoginFuncInput("");
+    setAdminSenhaInput("");
+    setAdminLoginErro(false);
+    setSenhaLoginFuncErro(null);
+    setLoginStatusMsg(null);
+    setModalLoginFuncionarioAberta(false);
+    setModalAlterarSenhaAberta(false);
+    setAbaAtiva("dashboard");
+    showToast("aviso", "Sessão Encerrada", "Você saiu do sistema.");
+  };
+
+  // Trava de segurança: Colaborador logado só pode acessar o Terminal de Ponto ou a sua própria Folha Visual
+  useEffect(() => {
+    if (userRole === "funcionario") {
+      if (abaAtiva !== "baterPonto" && abaAtiva !== "painelVisual") {
+        setAbaAtiva("baterPonto");
+      }
+    }
+  }, [userRole, abaAtiva]);
+
   // Ouvinte de mensagens do Service Worker (ex: quando o usuário clica na notificação do sistema)
   useEffect(() => {
     if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
@@ -859,7 +947,7 @@ export default function App() {
     }
   }, [comprovantes, solicitacoes, colaboradores, criterios, fechamentoAtual?.colaboradorId, fechamentoAtual?.mesAno]);
 
-  // Monitor em segundo plano para disparar alertas de entrada e saída
+  // Monitor em segundo plano para disparar alertas de entrada e saída conforme escala padrão
   useEffect(() => {
     const monitorarTurno = async () => {
       const colabAlvoId =
@@ -872,7 +960,8 @@ export default function App() {
       if (!colab) return;
 
       try {
-        const alerta = await verificarEAlertarTurno(colab.id, colab.nome, colab.horarioTrabalho);
+        const { nomeEscala, horario } = resolverEscalaEHorarioColaborador(colab, escalas);
+        const alerta = await verificarEAlertarTurno(colab.id, colab.nome, horario, nomeEscala);
         if (alerta) {
           showToast("aviso", `⏰ ${alerta.titulo}`, `${colab.nome}: ${alerta.mensagem}`);
         }
@@ -884,7 +973,7 @@ export default function App() {
     monitorarTurno();
     const interval = setInterval(monitorarTurno, 30000); // Executa a cada 30 segundos
     return () => clearInterval(interval);
-  }, [userRole, portalColaboradorId, colaboradores]);
+  }, [userRole, portalColaboradorId, colaboradores, escalas]);
 
 
   // Selecionar escala no formulário do colaborador e preencher horários automaticamente
@@ -1612,25 +1701,25 @@ export default function App() {
     setSenhaLoginFuncErro(null);
     setLoginStatusMsg(null);
 
-    const colab = colaboradores.find((c) => c.id === colabTentandoLogarId) || colaboradores[0];
-    if (!colab) {
-      setSenhaLoginFuncErro("Colaborador não selecionado. Selecione seu nome.");
+    if (!colabTentandoLogarId) {
+      setSenhaLoginFuncErro("Por favor, selecione seu nome na lista para entrar.");
       return;
     }
 
-    let senhaDigitada = (typeof senhaSobrescrever === "string" ? senhaSobrescrever : (senhaLoginFuncInput || "")).trim();
+    const colab = colaboradores.find((c) => c.id === colabTentandoLogarId);
+    if (!colab) {
+      setSenhaLoginFuncErro("Colaborador não encontrado. Selecione seu nome na lista.");
+      return;
+    }
+
+    const senhaDigitada = (typeof senhaSobrescrever === "string" ? senhaSobrescrever : (senhaLoginFuncInput || "")).trim();
     
     // Identifica se o colaborador ainda está no Primeiro Acesso
     const ehPrimeiroAcesso = colab.primeiroAcesso === true || (colab.senha || "Aec2026@").trim().toLowerCase() === "aec2026@";
 
     if (!senhaDigitada) {
-      if (ehPrimeiroAcesso) {
-        senhaDigitada = "Aec2026@";
-        setSenhaLoginFuncInput("Aec2026@");
-      } else {
-        setSenhaLoginFuncErro("Por favor, digite a sua senha pessoal de acesso.");
-        return;
-      }
+      setSenhaLoginFuncErro("Por favor, digite a sua senha de acesso para continuar.");
+      return;
     }
 
     setIsLoggingIn(true);
@@ -1714,6 +1803,62 @@ export default function App() {
         showToast("erro", "Senha Incorreta", "No primeiro acesso, utilize a senha inicial: Aec2026@.");
       }
     }, 250);
+  };
+
+  // Login Seguro com Biometria do Dispositivo (Face ID / Touch ID / Digital Android via WebAuthn)
+  const handleLoginComBiometria = async (colab: Colaborador) => {
+    setIsLoggingIn(true);
+    setSenhaLoginFuncErro(null);
+    setLoginStatusMsg("Solicitando Face ID / Biometria do seu aparelho...");
+
+    try {
+      const res = await autenticarComBiometriaAparelho(colab.id);
+      if (res.sucesso) {
+        setLoginStatusMsg("Biometria confirmada! Abrindo seu portal...");
+        setTimeout(() => {
+          setPortalColaboradorId(colab.id);
+          setUserRole("funcionario");
+          setAbaAtiva("baterPonto");
+          setModalLoginFuncionarioAberta(false);
+          setSenhaLoginFuncInput("");
+          setSenhaLoginFuncErro(null);
+          setLoginStatusMsg(null);
+          setIsLoggingIn(false);
+          showToast("sucesso", "Biometria Confirmada!", `Acesso biométrico liberado para ${colab.nome}.`);
+        }, 300);
+      } else {
+        setIsLoggingIn(false);
+        setLoginStatusMsg(null);
+        setSenhaLoginFuncErro(res.mensagem);
+        showToast("aviso", "Autenticação Biométrica", res.mensagem);
+      }
+    } catch (e: any) {
+      setIsLoggingIn(false);
+      setLoginStatusMsg(null);
+      setSenhaLoginFuncErro("Erro ao autenticar com a biometria. Digite sua senha pessoal.");
+    }
+  };
+
+  // Cadastra a biometria deste aparelho vinculada ao colaborador autenticado
+  const handleCadastrarBiometriaAtual = async (colab: Colaborador) => {
+    try {
+      const res = await cadastrarBiometriaAparelho(colab.id, colab.nome);
+      if (res.sucesso) {
+        setBiometriaTick((t) => t + 1);
+        showToast("sucesso", "Biometria / Face ID Ativado", res.mensagem);
+      } else {
+        showToast("aviso", "Cadastro Biométrico", res.mensagem);
+      }
+    } catch (e: any) {
+      showToast("erro", "Erro", "Não foi possível registrar a biometria neste aparelho.");
+    }
+  };
+
+  // Remove a biometria do colaborador deste aparelho
+  const handleRemoverBiometriaAtual = (colabId: string) => {
+    removerBiometriaAparelho(colabId);
+    setBiometriaTick((t) => t + 1);
+    showToast("aviso", "Biometria Removida", "Acesso biométrico deste aparelho desvinculado com sucesso.");
   };
 
   const handleSalvarNovaSenhaPessoal = () => {
@@ -2139,7 +2284,8 @@ export default function App() {
   // Envio de Nova Solicitação de Ajuste / Atestado Médico
   const handleCriarSolicitacaoAjuste = (e: React.FormEvent) => {
     e.preventDefault();
-    const colab = colaboradores.find((c) => c.id === (portalColaboradorId || colabTentandoLogarId)) || colaboradores[0];
+    const colabIdAlvo = portalColaboradorId || (userRole === "admin" ? colaboradorSelecionadoId : "");
+    const colab = colaboradores.find((c) => c.id === colabIdAlvo);
     if (!colab) {
       showToast("erro", "Erro", "Colaborador não identificado.");
       return;
@@ -2351,9 +2497,7 @@ export default function App() {
         const parsed = JSON.parse(localColabs);
         if (Array.isArray(parsed) && parsed.length > 0) {
           setColaboradores(parsed);
-          setPortalColaboradorId((prev) => prev || parsed[0].id);
           setColaboradorSelecionadoId((prev) => prev || parsed[0].id);
-          setFuncionarioLoginId((prev) => prev || parsed[0].id);
         }
       } catch (e) {
         // ignore
@@ -2377,9 +2521,7 @@ export default function App() {
             localStorage.setItem("ac_gestor_colaboradores", JSON.stringify(combinados));
             return combinados;
           });
-          setPortalColaboradorId((prev) => prev || normalizados[0].id);
           setColaboradorSelecionadoId((prev) => prev || normalizados[0].id);
-          setFuncionarioLoginId((prev) => prev || normalizados[0].id);
         }
       })
       .catch(() => {});
@@ -2983,7 +3125,11 @@ export default function App() {
                   ) : (
                     <select
                       value={funcionarioLoginId}
-                      onChange={(e) => setFuncionarioLoginId(e.target.value)}
+                      onChange={(e) => {
+                        setFuncionarioLoginId(e.target.value);
+                        setColabTentandoLogarId(e.target.value);
+                        setSenhaLoginFuncErro(null);
+                      }}
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-medium focus:outline-none focus:border-sky-500 transition-colors"
                     >
                       <option value="">-- Selecione seu nome --</option>
@@ -2998,81 +3144,81 @@ export default function App() {
               </div>
 
               {(() => {
-                const colabSelecionado = colaboradores.find((c) => c.id === (funcionarioLoginId || colaboradores[0]?.id)) || colaboradores[0];
+                const colabSelecionado = funcionarioLoginId ? colaboradores.find((c) => c.id === funcionarioLoginId) : null;
                 const jaTemSenhaPessoal = colabSelecionado && colabSelecionado.primeiroAcesso === false && (colabSelecionado.senha || "").toLowerCase() !== "aec2026@";
+                const temBiometriaNesteDevice = colabSelecionado ? temBiometriaCadastrada(colabSelecionado.id) : false;
 
                 return (
                   <div className="mt-6 flex flex-col gap-2.5">
-                    {/* Status da Senha do Colaborador */}
+                    {/* Status da Senha e Biometria do Colaborador */}
                     {colabSelecionado && (
-                      <div className="flex items-center justify-between text-xs px-1">
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs px-1">
                         <span className="text-slate-400">Credencial de Acesso:</span>
-                        {jaTemSenhaPessoal ? (
-                          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
-                            <CheckCircle2 className="w-3 h-3" /> Senha Pessoal Ativa
-                          </span>
-                        ) : (
-                          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center gap-1">
-                            <Key className="w-3 h-3" /> 1º Acesso Pendente
-                          </span>
-                        )}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {temBiometriaNesteDevice && (
+                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-sky-500/15 text-sky-300 border border-sky-500/30 flex items-center gap-1">
+                              <ScanFace className="w-3.5 h-3.5 text-sky-400" /> Biometria / Face ID Ativa
+                            </span>
+                          )}
+                          {jaTemSenhaPessoal ? (
+                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3" /> Senha Pessoal
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center gap-1">
+                              <Key className="w-3 h-3" /> 1º Acesso Pendente
+                            </span>
+                          )}
+                        </div>
                       </div>
+                    )}
+
+                    {/* Botão de Entrada Rápida por Biometria / Reconhecimento Facial do Aparelho */}
+                    {colabSelecionado && temBiometriaNesteDevice && (
+                      <button
+                        type="button"
+                        disabled={isLoggingIn}
+                        onClick={() => handleLoginComBiometria(colabSelecionado)}
+                        className="w-full py-3.5 bg-gradient-to-r from-sky-600 via-indigo-600 to-sky-600 hover:from-sky-500 hover:to-indigo-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-sky-600/30 flex items-center justify-center gap-2.5 transition-all cursor-pointer disabled:opacity-50"
+                      >
+                        <ScanFace className="w-5 h-5 text-sky-200" />
+                        <span>Entrar com Biometria / Face ID</span>
+                      </button>
                     )}
 
                     <button
                       id="btn-entrar-portal"
-                      disabled={isLoggingIn || colaboradores.length === 0}
+                      disabled={isLoggingIn || colaboradores.length === 0 || !funcionarioLoginId}
                       onClick={() => {
-                        const idAlvo = funcionarioLoginId || colaboradores[0]?.id;
-                        if (!idAlvo) {
+                        if (!funcionarioLoginId) {
                           showToast("aviso", "Selecione seu Nome", "Por favor, selecione seu nome na lista para acessar o portal.");
                           return;
                         }
                         setSenhaLoginFuncErro(null);
                         setLoginStatusMsg(null);
-                        setColabTentandoLogarId(idAlvo);
+                        setColabTentandoLogarId(funcionarioLoginId);
                         setSenhaLoginFuncInput("");
                         setModalLoginFuncionarioAberta(true);
                       }}
                       className={`w-full py-3.5 rounded-xl text-sm font-bold shadow-lg flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                        isLoggingIn || colaboradores.length === 0
+                        isLoggingIn || colaboradores.length === 0 || !funcionarioLoginId
                           ? "bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed"
+                          : colabSelecionado && temBiometriaNesteDevice
+                          ? "bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700"
                           : jaTemSenhaPessoal
                           ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30"
                           : "bg-sky-600 hover:bg-sky-500 text-white shadow-sky-600/30"
                       }`}
                     >
-                      {jaTemSenhaPessoal ? (
-                        <>
-                          Entrar com Senha Pessoal <Lock className="w-4 h-4" />
-                        </>
-                      ) : (
-                        <>
-                          Entrar no Portal (1º Acesso) <ArrowRight className="w-4 h-4" />
-                        </>
-                      )}
+                      <Lock className="w-4 h-4" />
+                      {!funcionarioLoginId
+                        ? "Selecione seu Nome para Entrar"
+                        : colabSelecionado && temBiometriaNesteDevice
+                        ? "Entrar com Senha (Alternativo)"
+                        : jaTemSenhaPessoal
+                        ? "Digitar Senha Pessoal"
+                        : "Acessar (Digitar Senha)"}
                     </button>
-
-                    {/* Atalho para primeiro acesso com senha padrão (bloqueado para quem já tem senha pessoal) */}
-                    {!jaTemSenhaPessoal ? (
-                      <button
-                        type="button"
-                        disabled={isLoggingIn || colaboradores.length === 0}
-                        onClick={() => {
-                          const idAlvo = funcionarioLoginId || colaboradores[0]?.id;
-                          if (!idAlvo) return;
-                          setColabTentandoLogarId(idAlvo);
-                          handleConfirmarLoginFuncionario("Aec2026@");
-                        }}
-                        className="w-full py-2.5 rounded-xl text-xs font-bold bg-sky-950/70 hover:bg-sky-900/90 text-sky-300 border border-sky-500/30 flex items-center justify-center gap-2 transition-all cursor-pointer"
-                      >
-                        ⚡ 1º Acesso com Senha Padrão (Aec2026@)
-                      </button>
-                    ) : (
-                      <p className="text-[11px] text-center text-slate-500 mt-0.5">
-                        A senha padrão (Aec2026@) foi bloqueada após o seu primeiro acesso.
-                      </p>
-                    )}
                   </div>
                 );
               })()}
@@ -3145,7 +3291,8 @@ export default function App() {
             <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
               <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl space-y-6">
                 {(() => {
-                  const colabModal = colaboradores.find((c) => c.id === colabTentandoLogarId) || colaboradores[0];
+                  const colabModal = colaboradores.find((c) => c.id === colabTentandoLogarId);
+                  if (!colabModal) return null;
                   const jaTemSenhaPessoal = colabModal && colabModal.primeiroAcesso === false && (colabModal.senha || "").toLowerCase() !== "aec2026@";
 
                   return (
@@ -3158,7 +3305,7 @@ export default function App() {
                           <div>
                             <h3 className="text-lg font-bold text-white">Acesso ao Portal de Ponto</h3>
                             <p className="text-xs text-slate-400">
-                              {colabModal?.nome || "Colaborador"} {jaTemSenhaPessoal ? "• Senha Pessoal" : "• 1º Acesso"}
+                              {colabModal.nome} {jaTemSenhaPessoal ? "• Senha Pessoal" : "• 1º Acesso"}
                             </p>
                           </div>
                         </div>
@@ -3199,23 +3346,54 @@ export default function App() {
                           </motion.div>
                         )}
 
+                        {/* Opção Biométrica Nativa do Aparelho (Face ID / Digital WebAuthn) */}
+                        {temBiometriaCadastrada(colabModal.id) ? (
+                          <div className="p-4 rounded-2xl bg-gradient-to-r from-sky-950/80 via-slate-900 to-indigo-950/80 border border-sky-500/30 space-y-3 shadow-inner">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-xl bg-sky-500/20 text-sky-400 flex items-center justify-center shrink-0">
+                                <ScanFace className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                                  <span>Biometria do Aparelho Ativa</span>
+                                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                                </div>
+                                <div className="text-[11px] text-slate-300">
+                                  {obterNomeDispositivo()}
+                                </div>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              disabled={isLoggingIn}
+                              onClick={() => handleLoginComBiometria(colabModal)}
+                              className="w-full py-2.5 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-sky-600/30 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                            >
+                              <Fingerprint className="w-4 h-4" />
+                              Entrar com Face ID / Biometria
+                            </button>
+                            <div className="relative flex items-center justify-center pt-1">
+                              <div className="border-t border-slate-800 w-full"></div>
+                              <span className="bg-slate-900 px-2 text-[10px] text-slate-500 uppercase tracking-wider font-bold shrink-0">
+                                ou use sua senha abaixo
+                              </span>
+                              <div className="border-t border-slate-800 w-full"></div>
+                            </div>
+                          </div>
+                        ) : biometriaSuportada ? (
+                          <div className="flex items-center gap-2.5 p-3 bg-slate-950/60 border border-slate-800/80 rounded-xl text-[11px] text-slate-400">
+                            <Smartphone className="w-4 h-4 text-sky-400 shrink-0" />
+                            <span>
+                              Após entrar com a senha, você pode ativar o login por <strong>Face ID / Biometria do seu aparelho</strong> no Terminal de Ponto.
+                            </span>
+                          </div>
+                        ) : null}
+
                         <div>
                           <div className="flex items-center justify-between mb-2">
                             <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider">
                               {jaTemSenhaPessoal ? "Sua Senha Pessoal de Acesso" : "Senha de Acesso (Inicial: Aec2026@)"}
                             </label>
-                            {!jaTemSenhaPessoal && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSenhaLoginFuncInput("Aec2026@");
-                                  setSenhaLoginFuncErro(null);
-                                }}
-                                className="text-[11px] text-sky-400 hover:text-sky-300 underline font-semibold flex items-center gap-1 cursor-pointer"
-                              >
-                                ⚡ Preencher Senha Padrão
-                              </button>
-                            )}
                           </div>
                           <div className="relative">
                             <input
@@ -3230,7 +3408,7 @@ export default function App() {
                                   handleConfirmarLoginFuncionario();
                                 }
                               }}
-                              placeholder={jaTemSenhaPessoal ? "Digite sua senha pessoal cadastrada" : "Digite a senha inicial (ex: Aec2026@)"}
+                              placeholder={jaTemSenhaPessoal ? "Digite sua senha pessoal cadastrada" : "Digite a senha inicial (Aec2026@)"}
                               autoFocus
                               disabled={isLoggingIn}
                               className="w-full bg-slate-950 border border-slate-800 focus:border-sky-500 rounded-xl px-4 py-3 pr-11 text-sm text-white font-medium focus:outline-none transition-colors font-mono disabled:opacity-50"
@@ -3244,34 +3422,11 @@ export default function App() {
                               {mostrarSenhaLoginFunc ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                             </button>
                           </div>
-                        </div>
-
-                        {/* Botão de Biometria / Reconhecimento Facial (WebAuthn / Biometric simulation) */}
-                        <div className="pt-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const colab = colaboradores.find((c) => c.id === colabTentandoLogarId) || colaboradores[0];
-                              if (!colab) return;
-                              setIsLoggingIn(true);
-                              setLoginStatusMsg("Autenticando via Biometria / FaceID do Aparelho...");
-                              setTimeout(() => {
-                                setIsLoggingIn(false);
-                                setLoginStatusMsg(null);
-                                setPortalColaboradorId(colab.id);
-                                setUserRole("funcionario");
-                                setAbaAtiva("baterPonto");
-                                setModalLoginFuncionarioAberta(false);
-                                showToast("sucesso", "Biometria Aprovada!", `Acesso liberado via biometria/passkey para ${colab.nome}.`);
-                              }, 900);
-                            }}
-                            disabled={isLoggingIn}
-                            className="w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center justify-center gap-2 text-xs font-bold transition-all cursor-pointer"
-                            title="Entrar usando a impressão digital, Face ID ou bloqueio de tela padrão do celular"
-                          >
-                            <span className="text-base">👤📱</span>
-                            <span>Usar Biometria / Face ID do Dispositivo</span>
-                          </button>
+                          {!jaTemSenhaPessoal && (
+                            <p className="text-[11px] text-amber-300/90 mt-2 bg-amber-500/10 border border-amber-500/20 p-2.5 rounded-xl">
+                              Como é seu 1º acesso, digite a senha inicial da empresa <strong>Aec2026@</strong>. Em seguida, o sistema solicitará a criação da sua senha pessoal definitiva.
+                            </p>
+                          )}
                         </div>
                       </div>
 
@@ -3542,7 +3697,7 @@ export default function App() {
               <Menu className="w-4 h-4" /> Módulos
             </button>
             <button
-              onClick={() => setUserRole("escolha")}
+              onClick={handleLogout}
               className="p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-rose-300"
               title="Sair"
             >
@@ -3757,7 +3912,7 @@ export default function App() {
 
               <div className="pt-4 border-t border-slate-800">
                 <button
-                  onClick={() => setUserRole("escolha")}
+                  onClick={handleLogout}
                   className="w-full py-2.5 px-4 rounded-xl bg-slate-800 text-slate-300 hover:text-rose-200 border border-slate-700 flex items-center justify-center gap-2 text-xs font-bold"
                 >
                   <LogOut className="w-4 h-4" /> Sair do Painel Admin
@@ -3927,7 +4082,7 @@ export default function App() {
 
           <div className="pt-4 border-t border-slate-800">
             <button
-              onClick={() => setUserRole("escolha")}
+              onClick={handleLogout}
               className="w-full py-2.5 px-3.5 rounded-xl bg-slate-800 hover:bg-rose-950/80 text-slate-300 hover:text-rose-200 border border-slate-700 hover:border-rose-500/40 transition-all flex items-center justify-center gap-2 text-xs font-bold shadow"
             >
               <LogOut className="w-4 h-4" /> Sair do Painel Admin
@@ -3974,7 +4129,7 @@ export default function App() {
               </button>
 
               <button
-                onClick={() => setUserRole("escolha")}
+                onClick={handleLogout}
                 title="Sair / Trocar de Perfil"
                 className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-rose-950/80 text-slate-300 hover:text-rose-200 border border-slate-700 hover:border-rose-500/40 transition-all flex items-center gap-1.5 text-xs font-bold whitespace-nowrap shadow"
               >
@@ -4693,12 +4848,13 @@ export default function App() {
         {abaAtiva === "painelVisual" && (
           <PainelFolhaVisual
             colaboradores={colaboradores}
-            colaboradorSelecionadoId={colaboradorSelecionadoId || portalColaboradorId || colaboradores[0]?.id}
+            colaboradorSelecionadoId={userRole === "funcionario" ? portalColaboradorId : (colaboradorSelecionadoId || portalColaboradorId || colaboradores[0]?.id)}
             criterios={criterios}
             comprovantes={comprovantes}
             solicitacoes={solicitacoes}
+            userRole={userRole}
             onShowToast={showToast}
-            onVoltar={() => setAbaAtiva("dashboard")}
+            onVoltar={() => setAbaAtiva(userRole === "funcionario" ? "baterPonto" : "dashboard")}
           />
         )}
 
@@ -4757,19 +4913,43 @@ export default function App() {
               <>
                 {/* Painel de Ações de Batida (MOVIDO PARA O TOPO) */}
                 {(() => {
-                  const colabAtual = colaboradores.find((c) => c.id === portalColaboradorId) || colaboradores[0];
-                  if (!colabAtual) return null;
+                  const colabAtual = userRole === "funcionario"
+                    ? colaboradores.find((c) => c.id === portalColaboradorId)
+                    : (colaboradores.find((c) => c.id === portalColaboradorId) || colaboradores[0]);
+                  if (!colabAtual) {
+                    return (
+                      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 text-center text-slate-400">
+                        Nenhum colaborador autenticado. Por favor, volte e faça login.
+                      </div>
+                    );
+                  }
+
+                  const infoEscala = resolverEscalaEHorarioColaborador(colabAtual, escalas);
+                  const biometriaCadastradaNesteDevice = temBiometriaCadastrada(colabAtual.id);
+                  const dadosBiometria = obterDadosBiometriaCadastrada(colabAtual.id);
+
                   return (
-                    <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
+                    <>
+                      <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
                       <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 border-b border-slate-800 pb-5">
                         <div>
                           <h3 className="text-lg font-bold text-white flex items-center gap-2">
                             <Users className="w-5 h-5 text-sky-400" />
                             Registrar Ponto para: <span className="text-sky-400">{colabAtual.nome}</span>
                           </h3>
-                          <p className="text-xs text-slate-400 mt-0.5">
-                            Cargo: {colabAtual.cargo} | Horário Padrão: {colabAtual.horarioTrabalho?.entrada || "08:00"} às {colabAtual.horarioTrabalho?.saida || "17:00"}
-                          </p>
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400 mt-1">
+                            <span>Cargo: <strong className="text-slate-300">{colabAtual.cargo}</strong></span>
+                            <span>•</span>
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-sky-500/10 text-sky-300 font-semibold border border-sky-500/20">
+                              <CalendarClock className="w-3.5 h-3.5 text-sky-400" />
+                              Escala: {infoEscala.nomeEscala} ({infoEscala.horario.entrada} às {infoEscala.horario.saida})
+                            </span>
+                            {biometriaCadastradaNesteDevice && (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-medium border border-emerald-500/20 text-[11px]">
+                                <ScanFace className="w-3.5 h-3.5 text-emerald-400" /> Biometria / Face ID Ativa
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <div className="flex items-center gap-3 w-full lg:w-auto justify-between lg:justify-end">
                           {/* Card de Saldo de Banco de Horas */}
@@ -4890,9 +5070,78 @@ export default function App() {
                           </span>
                         </button>
                       </div>
+
+                      {/* Gestão de Biometria / Reconhecimento Facial Deste Aparelho */}
+                      <div className="pt-4 border-t border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-950/40 p-4 rounded-2xl border border-slate-800/80">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${
+                              biometriaCadastradaNesteDevice
+                                ? "bg-emerald-500/15 border border-emerald-500/30 text-emerald-400"
+                                : "bg-sky-500/15 border border-sky-500/30 text-sky-400"
+                            }`}
+                          >
+                            {biometriaCadastradaNesteDevice ? (
+                              <ScanFace className="w-6 h-6" />
+                            ) : (
+                              <Fingerprint className="w-6 h-6" />
+                            )}
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold text-white flex flex-wrap items-center gap-2">
+                              <span>Biometria & Reconhecimento Facial</span>
+                              {biometriaCadastradaNesteDevice ? (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                                  <Check className="w-3 h-3" /> Vinculado a {dadosBiometria?.dispositivoNome || obterNomeDispositivo()}
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700">
+                                  Não Vinculado neste Aparelho
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-slate-400 mt-0.5 max-w-xl">
+                              {biometriaCadastradaNesteDevice
+                                ? "Seu Face ID / biometria digital está registrado com segurança para este usuário neste aparelho, permitindo entrada rápida e individual."
+                                : "Ative o leitor biométrico (Face ID, Touch ID ou digital Android) do seu aparelho para entrar no sistema com um toque seguro."}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
+                          {biometriaCadastradaNesteDevice ? (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoverBiometriaAtual(colabAtual.id)}
+                              className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-rose-950/60 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-500/40 text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5"
+                            >
+                              <X className="w-3.5 h-3.5" /> Desvincular Biometria
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleCadastrarBiometriaAtual(colabAtual)}
+                              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white text-xs font-bold shadow-md shadow-sky-600/30 transition-all cursor-pointer flex items-center gap-2"
+                            >
+                              <Fingerprint className="w-4 h-4" /> Ativar Face ID / Biometria
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  );
-                })()}
+
+                    {/* Painel de Lembretes & Notificações de Turno baseado na Escala Padrão */}
+                    <PainelNotificacoesTurno
+                      colaboradorId={colabAtual.id}
+                      colaboradorNome={colabAtual.nome}
+                      nomeEscala={infoEscala.nomeEscala}
+                      tipoEscala={infoEscala.tipoEscala}
+                      horarioTrabalho={infoEscala.horario}
+                      onNotificacaoEnviada={(titulo, msg) => showToast("aviso", `🔔 ${titulo}`, msg)}
+                    />
+                  </>
+                );
+              })()}
 
                 {/* Seleção de Mês e Dia (ocultar seleção de funcionário para funcionário) */}
                 {userRole === "admin" && (
