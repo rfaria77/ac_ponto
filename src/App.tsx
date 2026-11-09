@@ -570,6 +570,8 @@ export default function App() {
     }
     return SOLICITACOES_INICIAIS;
   });
+  const [filtroSolicitacaoStatus, setFiltroSolicitacaoStatus] = useState<string>("todos");
+  const [fotoPreviewModalUrl, setFotoPreviewModalUrl] = useState<string | null>(null);
   const [modalNovaSolicitacaoAberta, setModalNovaSolicitacaoAberta] = useState<boolean>(false);
   const [modalVerFotoAtestado, setModalVerFotoAtestado] = useState<string | null>(null);
   const [filtroStatusSolicitacao, setFiltroStatusSolicitacao] = useState<"todos" | "Pendente" | "Aprovado" | "Recusado">("todos");
@@ -5296,6 +5298,179 @@ export default function App() {
           </div>
         )}
 
+        {/* ================= ABA: SOLICITAÇÕES & ATESTADOS ================= */}
+        {abaAtiva === "solicitacoes" && (
+          <div className="space-y-6 max-w-6xl mx-auto">
+            <div className="bg-gradient-to-r from-indigo-950/40 via-slate-900 to-sky-950/30 border border-indigo-500/30 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
+                <div className="space-y-2">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-400 text-xs font-bold border border-indigo-500/20">
+                    <FileCheck2 className="w-3.5 h-3.5" /> Gestão de Ponto & DP
+                  </span>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">Solicitações de Ajuste & Atestados Médicos</h2>
+                  <p className="text-sm text-slate-300 max-w-xl leading-relaxed">
+                    Valide atestados médicos, esquecimentos de ponto e justificativas enviados pelos colaboradores. A aprovação integra automaticamente os dados na folha de ponto.
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 text-center min-w-[140px] shadow-inner">
+                    <div className="text-xs text-slate-400 uppercase font-bold tracking-wider">Pendentes</div>
+                    <div className="text-2xl font-extrabold text-amber-400 mt-1">
+                      {solicitacoes.filter((s) => s.status === "Pendente").length}
+                    </div>
+                  </div>
+                  <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 text-center min-w-[140px] shadow-inner">
+                    <div className="text-xs text-slate-400 uppercase font-bold tracking-wider">Total Geral</div>
+                    <div className="text-2xl font-extrabold text-sky-400 mt-1">
+                      {solicitacoes.length}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Filtros de Status */}
+            <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 p-2 rounded-2xl w-fit">
+              {["todos", "Pendente", "Aprovado", "Recusado"].map((st) => (
+                <button
+                  key={st}
+                  onClick={() => setFiltroSolicitacaoStatus(st)}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    filtroSolicitacaoStatus === st
+                      ? "bg-sky-600 text-white shadow-md shadow-sky-600/30"
+                      : "text-slate-400 hover:text-white hover:bg-slate-800"
+                  }`}
+                >
+                  {st === "todos" ? "Todas as Solicitações" : st}
+                </button>
+              ))}
+            </div>
+
+            {solicitacoes.filter((s) => filtroSolicitacaoStatus === "todos" || s.status === filtroSolicitacaoStatus).length === 0 ? (
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center space-y-4 max-w-xl mx-auto shadow-2xl">
+                <div className="w-16 h-16 rounded-2xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 mx-auto">
+                  <FileCheck2 className="w-8 h-8" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-white text-base">Nenhuma Solicitação Encontrada</h4>
+                  <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                    Não há solicitações ou atestados pendentes com o filtro selecionado. Os funcionários podem enviar solicitações diretamente do Portal de Ponto.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4">
+                {solicitacoes
+                  .filter((s) => filtroSolicitacaoStatus === "todos" || s.status === filtroSolicitacaoStatus)
+                  .map((solic) => (
+                    <div
+                      key={solic.id}
+                      className="bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-3xl p-6 shadow-xl space-y-4 transition-all"
+                    >
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold shrink-0 ${
+                              solic.tipo === "Atestado Médico"
+                                ? "bg-purple-500/15 border border-purple-500/30 text-purple-400"
+                                : "bg-sky-500/15 border border-sky-500/30 text-sky-400"
+                            }`}
+                          >
+                            {solic.tipo === "Atestado Médico" ? <Stethoscope className="w-6 h-6" /> : <Clock className="w-6 h-6" />}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h3 className="text-base font-bold text-white">{solic.colaboradorNome}</h3>
+                              <span className="text-xs text-slate-400">• {solic.colaboradorCargo}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
+                              <span>Enviado em: {solic.dataSolicitacao}</span>
+                              <span>•</span>
+                              <span className="font-mono text-sky-400">Ocorrência dia {solic.dataOcorrencia}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <span
+                            className={`px-3 py-1 rounded-full text-xs font-bold border ${
+                              solic.status === "Pendente"
+                                ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
+                                : solic.status === "Aprovado"
+                                ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                                : "bg-rose-500/15 text-rose-300 border-rose-500/30"
+                            }`}
+                          >
+                            {solic.status}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                        <div className="bg-slate-950/60 p-3.5 rounded-2xl border border-slate-800 space-y-1">
+                          <span className="text-slate-400 uppercase tracking-wider font-bold text-[10px]">Tipo de Solicitação</span>
+                          <div className="text-white font-bold text-sm">{solic.tipo}</div>
+                          {solic.diasAfastamento && (
+                            <div className="text-purple-300 font-medium">Afastamento de {solic.diasAfastamento} dia(s)</div>
+                          )}
+                          {solic.campoBatida && (
+                            <div className="text-sky-300 font-medium">Campo: {solic.campoBatida} ({solic.horarioSugerido})</div>
+                          )}
+                        </div>
+
+                        <div className="bg-slate-950/60 p-3.5 rounded-2xl border border-slate-800 space-y-1 md:col-span-2">
+                          <span className="text-slate-400 uppercase tracking-wider font-bold text-[10px]">Justificativa do Funcionário</span>
+                          <p className="text-slate-300 leading-relaxed">{solic.descricaoJustificativa}</p>
+                        </div>
+                      </div>
+
+                      {solic.comprovanteFotoBase64 && (
+                        <div className="flex items-center gap-3 pt-2">
+                          <button
+                            type="button"
+                            onClick={() => setFotoPreviewModalUrl(solic.comprovanteFotoBase64 || null)}
+                            className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-sky-300 text-xs font-bold border border-slate-700 flex items-center gap-2 transition-all cursor-pointer"
+                          >
+                            <FileCheck2 className="w-4 h-4 text-sky-400" /> Ver Atestado / Anexo Digital
+                          </button>
+                        </div>
+                      )}
+
+                      {solic.status === "Pendente" && (
+                        <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+                          <button
+                            type="button"
+                            onClick={() => handleRecusarSolicitacao(solic.id)}
+                            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-rose-950/60 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-500/40 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                          >
+                            <X className="w-4 h-4" /> Recusar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAprovarSolicitacao(solic)}
+                            className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-600/30 transition-all cursor-pointer flex items-center gap-2"
+                          >
+                            <CheckCircle2 className="w-4 h-4" /> Aprovar & Integrar na Folha
+                          </button>
+                        </div>
+                      )}
+
+                      {solic.status !== "Pendente" && (
+                        <div className="text-[11px] text-slate-400 pt-2 border-t border-slate-800 flex items-center justify-between">
+                          <span>Processado por {solic.aprovadoPor || "Gestor"} em {solic.dataAprovacao || "-"}</span>
+                          {solic.motivoRecusa && (
+                            <span className="text-rose-400 font-semibold">Motivo: {solic.motivoRecusa}</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ================= ABA 1: DIGITALIZAR FOLHA ================= */}
         {abaAtiva === "digitalizar" && (
           <div className="space-y-6">
@@ -8567,6 +8742,43 @@ export default function App() {
             </div>
           )}
         </AnimatePresence>
+
+        {/* MODAL: VISUALIZAR ATESTADO / FOTO ANEXADA */}
+        <AnimatePresence>
+          {fotoPreviewModalUrl && (
+            <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-2xl w-full shadow-2xl space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <FileCheck2 className="w-5 h-5 text-sky-400" /> Visualização do Atestado / Comprovante
+                  </h3>
+                  <button
+                    onClick={() => setFotoPreviewModalUrl(null)}
+                    className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <div className="bg-slate-950 rounded-2xl p-4 flex items-center justify-center overflow-hidden border border-slate-800">
+                  <img
+                    src={fotoPreviewModalUrl}
+                    alt="Atestado Médico"
+                    className="max-h-[60vh] max-w-full object-contain rounded-xl shadow-lg"
+                  />
+                </div>
+                <div className="flex items-center justify-end pt-2">
+                  <button
+                    onClick={() => setFotoPreviewModalUrl(null)}
+                    className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    Fechar
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </AnimatePresence>
+
         </ErrorBoundary>
       </main>
     </div>
