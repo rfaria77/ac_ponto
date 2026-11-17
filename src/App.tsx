@@ -2708,6 +2708,43 @@ export default function App() {
     }
   };
 
+  const handlePuxarDadosFolhaVisualParaFechamento = () => {
+    const colab = colaboradores.find((c) => c.id === colaboradorSelecionadoId) || colaboradores[0];
+    if (!colab) {
+      showToast("aviso", "Nenhum Colaborador", "Cadastre ou selecione um colaborador para puxar os dados da folha visual.");
+      return;
+    }
+
+    const agora = new Date();
+    const mes = agora.getMonth() + 1;
+    const ano = agora.getFullYear();
+    const mesAnoStr = `${String(mes).padStart(2, "0")}/${ano}`;
+
+    const base = gerarDiasMes(ano, mes, criterios.feriadosFixos, colab.horarioTrabalho);
+    const diasSincronizados = sincronizarBatidasComDias(
+      base,
+      comprovantes,
+      solicitacoes,
+      colab.id,
+      mes,
+      ano
+    );
+
+    const fechamentoGerado = calcularFechamentoMensal(diasSincronizados, criterios, {
+      colaboradorNome: colab.nome,
+      colaboradorCargo: colab.cargo,
+      colaboradorId: colab.id,
+      mesAno: mesAnoStr,
+      salarioBase: colab.salarioBase,
+      saldoAnteriorBancoMinutos: colab.saldoAnteriorBancoMinutos,
+      horarioNominal: colab.horarioTrabalho,
+    });
+
+    setFechamentoAtual(fechamentoGerado);
+    setAbaAtiva("fechamento");
+    showToast("sucesso", "Dados Puxados da Folha Visual!", `Espelho de ponto de ${colab.nome} (${mesAnoStr}) gerado e calculado com sucesso.`);
+  };
+
   const handleCarregarExemploPronto = () => {
     gerarFechamentoExemploInicial();
     setMesAnoInput("09/2026");
@@ -6215,6 +6252,13 @@ export default function App() {
               </p>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={handlePuxarDadosFolhaVisualParaFechamento}
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-emerald-600/30 flex items-center gap-2 transition-all cursor-pointer"
+              >
+                <RefreshCw className="w-4 h-4" /> Puxar Dados da Folha Visual & Calcular
+              </button>
               <button
                 type="button"
                 onClick={() => setAbaAtiva("digitalizar")}
