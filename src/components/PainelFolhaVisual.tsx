@@ -783,27 +783,31 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
             )}
           </div>
 
-          {/* Botão Lançar Atestado Médico */}
-          <button
-            type="button"
-            onClick={() => setModalAtestadoAberta(true)}
-            className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-600/30 transition-all flex items-center gap-1.5 cursor-pointer"
-            title="Lançar atestado médico para abonar dias deste colaborador sem descontar no banco de horas"
-          >
-            <HeartPulse className="w-3.5 h-3.5" />
-            <span>+ Lançar Atestado</span>
-          </button>
+          {userRole !== "funcionario" && (
+            <>
+              {/* Botão Lançar Atestado Médico */}
+              <button
+                type="button"
+                onClick={() => setModalAtestadoAberta(true)}
+                className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-600/30 transition-all flex items-center gap-1.5 cursor-pointer"
+                title="Lançar atestado médico para abonar dias deste colaborador sem descontar no banco de horas"
+              >
+                <HeartPulse className="w-3.5 h-3.5" />
+                <span>+ Lançar Atestado</span>
+              </button>
 
-          {/* Botão Zerar Folha */}
-          <button
-            type="button"
-            onClick={handleZerarBatidasMes}
-            className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-rose-950/40 text-slate-400 hover:text-rose-300 border border-slate-700 hover:border-rose-500/30 text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
-            title="Zerar e limpar todas as batidas deste mês"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            <span>Zerar Folha</span>
-          </button>
+              {/* Botão Zerar Folha */}
+              <button
+                type="button"
+                onClick={handleZerarBatidasMes}
+                className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-rose-950/40 text-slate-400 hover:text-rose-300 border border-slate-700 hover:border-rose-500/30 text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
+                title="Zerar e limpar todas as batidas deste mês"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Zerar Folha</span>
+              </button>
+            </>
+          )}
 
           {/* Botão Imprimir */}
           <button
@@ -978,13 +982,31 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
                     <tr
                       key={d.dia}
                       onClick={() => {
+                        if (userRole === "funcionario") {
+                          if (onShowToast) {
+                            onShowToast(
+                              "aviso",
+                              "Acesso Restrito",
+                              "Funcionários não podem editar batidas manualmente. Utilize a opção 'Esqueci Ponto / Justificar' no Portal de Ponto para enviar sua solicitação ao DP."
+                            );
+                          }
+                          return;
+                        }
                         setDiaEditando(d);
                         setModalEdicaoAberta(true);
                       }}
-                      className={`hover:bg-amber-50 cursor-pointer transition-colors group ${
+                      className={`transition-colors group ${
+                        userRole !== "funcionario" ? "hover:bg-amber-50 cursor-pointer" : ""
+                      } ${
                         ehAtestado ? "bg-emerald-50/60" : ehHoje ? "bg-emerald-50/70" : ""
                       }`}
-                      title={ehAtestado ? "Dia abonado por atestado médico (Clique para ver/editar)" : "Clique na linha para editar horários deste dia"}
+                      title={
+                        userRole === "funcionario"
+                          ? "Visualização de ponto (Edição manual restrita ao Administrador / DP)"
+                          : ehAtestado
+                          ? "Dia abonado por atestado médico (Clique para ver/editar)"
+                          : "Clique na linha para editar horários deste dia"
+                      }
                     >
                       {/* COLUNA DATA */}
                       <td className="border-r-2 border-black py-1 px-2 text-center font-bold text-gray-900 whitespace-nowrap bg-gray-50/80 group-hover:bg-amber-100/50">
