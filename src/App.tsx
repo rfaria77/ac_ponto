@@ -5140,22 +5140,56 @@ export default function App() {
 
         {/* ================= ABA: PORTAL DE PONTO (FUNCIONÁRIOS) ================= */}
         {abaAtiva === "baterPonto" && (
-          <div className="space-y-6 max-w-4xl mx-auto">
-            <div className="bg-gradient-to-r from-slate-900 via-sky-950/40 to-slate-900 border border-sky-500/20 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-64 h-64 bg-sky-500/10 rounded-full blur-3xl pointer-events-none"></div>
-              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
-                <div className="space-y-2">
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sky-500/10 text-sky-400 text-xs font-bold border border-sky-500/20">
-                    <Clock className="w-3.5 h-3.5" /> Terminal de Ponto Individual
-                  </span>
-                  <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">Registro Diário do Colaborador</h2>
-                  <p className="text-sm text-slate-400 max-w-xl">
-                    Cada funcionário pode registrar sua entrada, saída de almoço, retorno e saída do dia diretamente aqui ou registrar os horários em tempo real.
-                  </p>
+          <div className="space-y-4 max-w-3xl mx-auto">
+            {/* Barra Administrativa (Apenas para Admin: Seleção rápida no topo) */}
+            {userRole === "admin" && colaboradores.length > 0 && (
+              <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 font-bold text-slate-300">
+                  <Sliders className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Painel DP:</span>
                 </div>
-                <RelogioPortalAtual />
+                <div className="flex flex-wrap items-center gap-2.5 flex-1 justify-end">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-slate-400">Colaborador:</span>
+                    <select
+                      value={portalColaboradorId}
+                      onChange={(e) => setPortalColaboradorId(e.target.value)}
+                      className="bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1 text-xs text-white font-medium focus:outline-none focus:border-sky-500"
+                    >
+                      {colaboradores.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.nome} ({c.cargo})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-slate-400">Mês:</span>
+                    <input
+                      type="text"
+                      value={portalMesAno}
+                      onChange={(e) => setPortalMesAno(e.target.value)}
+                      placeholder="MM/AAAA"
+                      className="w-20 bg-slate-950 border border-slate-800 rounded-xl px-2 py-1 text-xs text-white font-medium focus:outline-none focus:border-sky-500 text-center font-mono"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-slate-400">Dia:</span>
+                    <select
+                      value={portalDiaSelecionado}
+                      onChange={(e) => setPortalDiaSelecionado(parseInt(e.target.value, 10))}
+                      className="bg-slate-950 border border-slate-800 rounded-xl px-2 py-1 text-xs text-white font-medium focus:outline-none focus:border-sky-500 text-center font-mono"
+                    >
+                      {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                        <option key={d} value={d}>
+                          Dia {d < 10 ? `0${d}` : d}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
 
             {colaboradores.length === 0 ? (
               <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center space-y-4 max-w-xl mx-auto shadow-2xl">
@@ -5183,7 +5217,6 @@ export default function App() {
               </div>
             ) : (
               <>
-                {/* Painel de Ações de Batida (MOVIDO PARA O TOPO) */}
                 {(() => {
                   const colabAtual = userRole === "funcionario"
                     ? colaboradores.find((c) => c.id === portalColaboradorId)
@@ -5200,252 +5233,183 @@ export default function App() {
                   const biometriaCadastradaNesteDevice = temBiometriaCadastrada(colabAtual.id);
                   const dadosBiometria = obterDadosBiometriaCadastrada(colabAtual.id);
 
+                  const hojePortal = new Date();
+                  const mesHojeNum = hojePortal.getMonth() + 1;
+                  const anoHojeNum = hojePortal.getFullYear();
+                  const diaHojeNum = hojePortal.getDate();
+                  const diaRef = userRole === "funcionario" ? diaHojeNum : (portalDiaSelecionado || diaHojeNum);
+                  const mesAnoRef =
+                    userRole === "funcionario"
+                      ? `${String(mesHojeNum).padStart(2, "0")}/${anoHojeNum}`
+                      : portalMesAno || `${String(mesHojeNum).padStart(2, "0")}/${anoHojeNum}`;
+                  const [mRefStr, aRefStr] = mesAnoRef.includes("/")
+                    ? mesAnoRef.split("/")
+                    : [String(mesHojeNum), String(anoHojeNum)];
+                  const mRefNum = parseInt(mRefStr, 10) || mesHojeNum;
+                  const aRefNum = parseInt(aRefStr, 10) || anoHojeNum;
+                  const dataRefFormatada = `${String(diaRef).padStart(2, "0")}/${String(mRefNum).padStart(2, "0")}/${aRefNum}`;
+
+                  const diasSincronizadosPortal = sincronizarBatidasComDias(
+                    gerarDiasMes(aRefNum, mRefNum, criterios.feriadosFixos),
+                    comprovantes,
+                    solicitacoes,
+                    colabAtual.id,
+                    mRefNum,
+                    aRefNum
+                  );
+                  const batidaDiaPortal = diasSincronizadosPortal.find((d) => d.dia === diaRef);
+                  const comprovantesDiaPortal = comprovantes.filter(
+                    (c) =>
+                      c.colaboradorId === colabAtual.id &&
+                      normalizarDataParaDDMMYYYY(c.data || "") === dataRefFormatada
+                  );
+
+                  const saldoMin = colabAtual.saldoAnteriorBancoMinutos || 0;
+                  const ehPositivo = saldoMin >= 0;
+
                   return (
-                    <>
-                      <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
-                      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 border-b border-slate-800 pb-5">
-                        <div>
-                          <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                            <Users className="w-5 h-5 text-sky-400" />
-                            Registrar Ponto para: <span className="text-sky-400">{colabAtual.nome}</span>
-                          </h3>
-                          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400 mt-1">
-                            <span>Cargo: <strong className="text-slate-300">{colabAtual.cargo}</strong></span>
-                            <span>•</span>
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-sky-500/10 text-sky-300 font-semibold border border-sky-500/20">
-                              <CalendarClock className="w-3.5 h-3.5 text-sky-400" />
-                              Escala: {infoEscala.nomeEscala} ({infoEscala.horario.entrada} às {infoEscala.horario.saida})
-                            </span>
-                            {biometriaCadastradaNesteDevice && (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-medium border border-emerald-500/20 text-[11px]">
-                                <ScanFace className="w-3.5 h-3.5 text-emerald-400" /> Biometria / Face ID Ativa
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto justify-start lg:justify-end">
-                          {/* Card de Saldo de Banco de Horas */}
-                          {(() => {
-                            const saldoMin = colabAtual.saldoAnteriorBancoMinutos || 0;
-                            const ehPositivo = saldoMin >= 0;
-                            return (
-                              <div className="bg-slate-950 border border-slate-800 rounded-2xl px-4 py-2.5 flex items-center gap-3 shadow-inner">
-                                <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold ${ehPositivo ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-rose-500/10 text-rose-400 border border-rose-500/20"}`}>
-                                  <Clock className="w-4 h-4" />
-                                </div>
-                                <div>
-                                  <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Banco de Horas</div>
-                                  <div className={`text-sm font-mono font-bold ${ehPositivo ? "text-emerald-400" : "text-rose-400"}`}>
-                                    {minutosParaTextoExtenso(saldoMin, true)}
-                                  </div>
-                                </div>
+                    <div className="space-y-4">
+                      {/* Terminal Principal de Registro */}
+                      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-7 shadow-xl space-y-6">
+                        {/* Cabeçalho do Colaborador & Ações Rápidas */}
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-5 border-b border-slate-800">
+                          <div className="flex items-center gap-3">
+                            <div className="w-11 h-11 rounded-2xl bg-sky-500/15 border border-sky-500/30 flex items-center justify-center text-sky-400 font-bold text-sm shrink-0">
+                              {colabAtual.nome.charAt(0)}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h3 className="text-base sm:text-lg font-bold text-white">{colabAtual.nome}</h3>
+                                {biometriaCadastradaNesteDevice && (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+                                    <ScanFace className="w-3 h-3" /> Face ID
+                                  </span>
+                                )}
                               </div>
-                            );
-                          })()}
+                              <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
+                                <span>{colabAtual.cargo}</span>
+                                <span>·</span>
+                                <span>Escala: {infoEscala.nomeEscala} ({infoEscala.horario.entrada}–{infoEscala.horario.saida})</span>
+                              </div>
+                            </div>
+                          </div>
 
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setColaboradorSelecionadoId(colabAtual.id);
-                              setAbaAtiva("painelVisual");
-                            }}
-                            className="bg-amber-500/10 hover:bg-amber-500 text-amber-300 hover:text-slate-950 border border-amber-500/30 rounded-2xl px-3.5 py-2.5 flex items-center gap-2 font-bold text-xs transition-all cursor-pointer shadow-sm shrink-0"
-                            title="Ver a folha de ponto visual idêntica à planilha oficial"
-                          >
-                            <FileSpreadsheet className="w-4 h-4" />
-                            <span>Ver Folha Visual</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setFormSolicTipo("Esquecimento de Ponto");
-                              setModalNovaSolicitacaoAberta(true);
-                            }}
-                            className="bg-sky-600 hover:bg-sky-500 text-white rounded-2xl px-3.5 py-2.5 flex items-center gap-2 font-bold text-xs transition-all cursor-pointer shadow-md shadow-sky-600/30 shrink-0"
-                            title="Esqueceu de bater o ponto? Solicite a inclusão do horário para aprovação do gestor"
-                          >
-                            <Plus className="w-4 h-4" />
-                            <span>Esqueci Ponto / Justificar</span>
-                          </button>
-
-                          {portalSucessoModal && (
-                            <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2">
-                              <CheckCircle2 className="w-4 h-4 shrink-0" />
-                              <span>
-                                {portalSucessoModal.tipo} registrada às{" "}
-                                <span className="font-mono tabular-nums">{portalSucessoModal.hora}</span>
-                                {portalSucessoModal.precisaoMetros !== undefined
-                                  ? ` · GPS ±${portalSucessoModal.precisaoMetros} m`
-                                  : portalSucessoModal.rotuloPrecisao
-                                  ? ` · ${portalSucessoModal.rotuloPrecisao}`
-                                  : ""}
+                          <div className="flex items-center gap-2 self-stretch sm:self-auto justify-end flex-wrap">
+                            {/* Saldo de Banco de Horas */}
+                            <div className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center gap-2 text-xs">
+                              <span className="text-slate-400">Banco:</span>
+                              <span className={`font-mono tabular-nums font-bold ${ehPositivo ? "text-emerald-400" : "text-rose-400"}`}>
+                                {minutosParaTextoExtenso(saldoMin, true)}
                               </span>
                             </div>
-                          )}
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setColaboradorSelecionadoId(colabAtual.id);
+                                setAbaAtiva("painelVisual");
+                              }}
+                              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                              title="Ver a folha de ponto visual idêntica à planilha oficial"
+                            >
+                              <FileSpreadsheet className="w-3.5 h-3.5 text-amber-400" />
+                              <span>Folha Visual</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFormSolicTipo("Esquecimento de Ponto");
+                                setModalNovaSolicitacaoAberta(true);
+                              }}
+                              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                              title="Esqueceu de bater o ponto? Solicite a inclusão do horário para aprovação do gestor"
+                            >
+                              <Plus className="w-3.5 h-3.5 text-sky-400" />
+                              <span>Justificar</span>
+                            </button>
+                          </div>
                         </div>
-                      </div>
 
-                      {(() => {
-                        const hojePortal = new Date();
-                        const mesHojeNum = hojePortal.getMonth() + 1;
-                        const anoHojeNum = hojePortal.getFullYear();
-                        const diaHojeNum = hojePortal.getDate();
-                        const diaRef = userRole === "funcionario" ? diaHojeNum : (portalDiaSelecionado || diaHojeNum);
-                        const mesAnoRef =
-                          userRole === "funcionario"
-                            ? `${String(mesHojeNum).padStart(2, "0")}/${anoHojeNum}`
-                            : portalMesAno || `${String(mesHojeNum).padStart(2, "0")}/${anoHojeNum}`;
-                        const [mRefStr, aRefStr] = mesAnoRef.includes("/")
-                          ? mesAnoRef.split("/")
-                          : [String(mesHojeNum), String(anoHojeNum)];
-                        const mRefNum = parseInt(mRefStr, 10) || mesHojeNum;
-                        const aRefNum = parseInt(aRefStr, 10) || anoHojeNum;
-                        const dataRefFormatada = `${String(diaRef).padStart(2, "0")}/${String(mRefNum).padStart(2, "0")}/${aRefNum}`;
+                        {/* Confirmação de Sucesso Rápida */}
+                        {portalSucessoModal && (
+                          <div className="bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 px-4 py-2.5 rounded-2xl text-xs font-semibold flex items-center justify-between gap-3 animate-in fade-in duration-200">
+                            <div className="flex items-center gap-2">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                              <span>
+                                {portalSucessoModal.tipo} registrada às <strong className="font-mono tabular-nums text-white">{portalSucessoModal.hora}</strong>
+                                {portalSucessoModal.precisaoMetros !== undefined ? ` · GPS ±${portalSucessoModal.precisaoMetros}m` : ""}
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => setPortalSucessoModal(null)}
+                              className="text-emerald-400 hover:text-emerald-200 text-xs font-bold"
+                            >
+                              OK
+                            </button>
+                          </div>
+                        )}
 
-                        const diasSincronizadosPortal = sincronizarBatidasComDias(
-                          gerarDiasMes(aRefNum, mRefNum, criterios.feriadosFixos),
-                          comprovantes,
-                          solicitacoes,
-                          colabAtual.id,
-                          mRefNum,
-                          aRefNum
-                        );
-                        const batidaDiaPortal = diasSincronizadosPortal.find((d) => d.dia === diaRef);
-                        const comprovantesDiaPortal = comprovantes.filter(
-                          (c) =>
-                            c.colaboradorId === colabAtual.id &&
-                            normalizarDataParaDDMMYYYY(c.data || "") === dataRefFormatada
-                        );
+                        {/* Terminal com Relógio + Ação Principal + GPS + 4 Etapas */}
+                        <PortalAtalhoRapidoGPS
+                          colaboradorId={colabAtual.id}
+                          colaboradorNome={colabAtual.nome}
+                          dataReferenciaStr={dataRefFormatada}
+                          batidaDoDia={batidaDiaPortal}
+                          comprovantesDoDia={comprovantesDiaPortal}
+                          onRegistrarBatidaComGps={handlePortalBaterPonto}
+                        />
 
-                        return (
-                          <PortalAtalhoRapidoGPS
-                            colaboradorId={colabAtual.id}
-                            colaboradorNome={colabAtual.nome}
-                            dataReferenciaStr={dataRefFormatada}
-                            batidaDoDia={batidaDiaPortal}
-                            comprovantesDoDia={comprovantesDiaPortal}
-                            onRegistrarBatidaComGps={handlePortalBaterPonto}
-                          />
-                        );
-                      })()}
-
-                      {/* Gestão de Biometria / Reconhecimento Facial Deste Aparelho */}
-                      <div className="pt-4 border-t border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-950/40 p-4 rounded-2xl border border-slate-800/80">
-                        <div className="flex items-center gap-3">
-                          <div
-                            className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${
-                              biometriaCadastradaNesteDevice
-                                ? "bg-emerald-500/15 border border-emerald-500/30 text-emerald-400"
-                                : "bg-sky-500/15 border border-sky-500/30 text-sky-400"
-                            }`}
-                          >
+                        {/* Rodapé: Biometria / Reconhecimento Facial (Discreto, 1 linha) */}
+                        <div className="pt-4 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+                          <div className="flex items-center gap-2">
                             {biometriaCadastradaNesteDevice ? (
-                              <ScanFace className="w-6 h-6" />
+                              <ScanFace className="w-4 h-4 text-emerald-400 shrink-0" />
                             ) : (
-                              <Fingerprint className="w-6 h-6" />
+                              <Fingerprint className="w-4 h-4 text-slate-500 shrink-0" />
+                            )}
+                            <span>
+                              {biometriaCadastradaNesteDevice
+                                ? `Biometria ativa neste aparelho (${dadosBiometria?.dispositivoNome || obterNomeDispositivo()})`
+                                : "Face ID / biometria digital não vinculada neste aparelho"}
+                            </span>
+                          </div>
+
+                          <div>
+                            {biometriaCadastradaNesteDevice ? (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoverBiometriaAtual(colabAtual.id)}
+                                className="text-[11px] text-slate-400 hover:text-rose-400 transition-colors cursor-pointer"
+                              >
+                                Desvincular
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleCadastrarBiometriaAtual(colabAtual)}
+                                className="text-[11px] text-sky-400 hover:text-sky-300 font-semibold transition-colors cursor-pointer"
+                              >
+                                Ativar Biometria
+                              </button>
                             )}
                           </div>
-                          <div>
-                            <div className="text-xs font-bold text-white flex flex-wrap items-center gap-2">
-                              <span>Biometria & Reconhecimento Facial</span>
-                              {biometriaCadastradaNesteDevice ? (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
-                                  <Check className="w-3 h-3" /> Vinculado a {dadosBiometria?.dispositivoNome || obterNomeDispositivo()}
-                                </span>
-                              ) : (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700">
-                                  Não Vinculado neste Aparelho
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-[11px] text-slate-400 mt-0.5 max-w-xl">
-                              {biometriaCadastradaNesteDevice
-                                ? "Seu Face ID / biometria digital está registrado com segurança para este usuário neste aparelho, permitindo entrada rápida e individual."
-                                : "Ative o leitor biométrico (Face ID, Touch ID ou digital Android) do seu aparelho para entrar no sistema com um toque seguro."}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
-                          {biometriaCadastradaNesteDevice ? (
-                            <button
-                              type="button"
-                              onClick={() => handleRemoverBiometriaAtual(colabAtual.id)}
-                              className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-rose-950/60 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-500/40 text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5"
-                            >
-                              <X className="w-3.5 h-3.5" /> Desvincular Biometria
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleCadastrarBiometriaAtual(colabAtual)}
-                              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-sky-600 to-sky-500 hover:from-sky-500 hover:to-sky-400 text-white text-xs font-bold shadow-md shadow-sky-600/30 transition-all cursor-pointer flex items-center gap-2"
-                            >
-                              <Fingerprint className="w-4 h-4" /> Ativar Face ID / Biometria
-                            </button>
-                          )}
                         </div>
                       </div>
-                    </div>
 
-                    {/* Painel de Lembretes & Notificações de Turno baseado na Escala Padrão */}
-                    <PainelNotificacoesTurno
-                      colaboradorId={colabAtual.id}
-                      colaboradorNome={colabAtual.nome}
-                      nomeEscala={infoEscala.nomeEscala}
-                      tipoEscala={infoEscala.tipoEscala}
-                      horarioTrabalho={infoEscala.horario}
-                      contextoBatidasHoje={obterContextoBatidasHoje(colabAtual.id)}
-                      onNotificacaoEnviada={(titulo, msg) => showToast("aviso", `🔔 ${titulo}`, msg)}
-                    />
-                  </>
-                );
-              })()}
-
-                {/* Seleção de Mês e Dia (ocultar seleção de funcionário para funcionário) */}
-                {userRole === "admin" && (
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">1. Selecionar Funcionário</label>
-                      <select
-                        value={portalColaboradorId}
-                        onChange={(e) => setPortalColaboradorId(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-medium focus:outline-none focus:border-sky-500 transition-colors"
-                      >
-                        {colaboradores.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.nome} — {c.cargo}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">2. Mês de Referência</label>
-                      <input
-                        type="text"
-                        value={portalMesAno}
-                        onChange={(e) => setPortalMesAno(e.target.value)}
-                        placeholder="MM/AAAA"
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-medium focus:outline-none focus:border-sky-500 transition-colors text-center font-mono"
+                      {/* Notificações & Lembretes de Turno (Gaveta colapsada por padrão) */}
+                      <PainelNotificacoesTurno
+                        colaboradorId={colabAtual.id}
+                        colaboradorNome={colabAtual.nome}
+                        nomeEscala={infoEscala.nomeEscala}
+                        tipoEscala={infoEscala.tipoEscala}
+                        horarioTrabalho={infoEscala.horario}
+                        contextoBatidasHoje={obterContextoBatidasHoje(colabAtual.id)}
+                        onNotificacaoEnviada={(titulo, msg) => showToast("aviso", `🔔 ${titulo}`, msg)}
                       />
                     </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">3. Dia do Mês (1 - 31)</label>
-                      <select
-                        value={portalDiaSelecionado}
-                        onChange={(e) => setPortalDiaSelecionado(parseInt(e.target.value, 10))}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-medium focus:outline-none focus:border-sky-500 transition-colors text-center font-mono"
-                      >
-                        {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
-                          <option key={d} value={d}>
-                            Dia {d < 10 ? `0${d}` : d}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                )}
+                  );
+                })()}
                 
                 {/* Ocultar seleção de funcionário para funcionário */}
                 {userRole === "funcionario" && (
