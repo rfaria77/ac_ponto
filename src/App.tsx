@@ -3216,8 +3216,8 @@ export default function App() {
 
         <div className="max-w-4xl w-full mx-auto space-y-8 relative z-10">
           <div className="text-center space-y-3">
-            <div className="inline-flex items-center justify-center p-3 rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl mb-2">
-              <Logo />
+            <div className="inline-flex items-center justify-center mb-2">
+              <Logo size="lg" />
             </div>
             <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">A&C Gestão de Ponto & Banco de Horas</h1>
             <p className="text-sm text-slate-400 max-w-lg mx-auto">
@@ -3830,9 +3830,9 @@ export default function App() {
       {/* ADMIN: Topbar Mobile (< md) */}
       {userRole === "admin" && (
         <div className="md:hidden flex items-center justify-between p-3.5 bg-slate-900 border-b border-slate-800 sticky top-0 z-30">
-          <div className="flex items-center gap-2.5">
-            <Logo />
-            <div>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Logo size="sm" />
+            <div className="hidden sm:block truncate">
               <div className="text-xs font-bold text-white uppercase tracking-wider">Painel Admin</div>
               <span className="text-[10px] text-sky-400 font-semibold block">
                 {abaAtiva === "dashboard" && "Dashboard Geral"}
@@ -3881,9 +3881,9 @@ export default function App() {
             >
               <div className="space-y-5">
                 <div className="flex items-center justify-between pb-4 border-b border-slate-800">
-                  <div className="flex items-center gap-2">
-                    <Logo />
-                    <span className="text-xs font-bold text-white uppercase">Painel DP</span>
+                  <div className="flex flex-col gap-1.5">
+                    <Logo size="sm" />
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Painel DP</span>
                   </div>
                   <button
                     onClick={() => setSidebarAbertaMobile(false)}
@@ -4085,10 +4085,10 @@ export default function App() {
       {userRole === "admin" && (
         <aside className="hidden md:flex md:w-64 lg:w-72 bg-slate-900 border-r border-slate-800 p-5 flex-col justify-between shrink-0 sticky top-0 h-screen overflow-y-auto z-20">
           <div className="space-y-6">
-            <div className="flex items-center gap-3 pb-5 border-b border-slate-800">
-              <Logo />
-              <div>
-                <div className="text-xs font-bold text-white uppercase tracking-wider">Painel Administrativo</div>
+            <div className="space-y-3 pb-5 border-b border-slate-800">
+              <Logo size="md" className="w-full" />
+              <div className="flex items-center justify-between gap-2 px-0.5">
+                <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">Painel Admin</span>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                   Acesso Restrito DP
                 </span>
@@ -4254,7 +4254,7 @@ export default function App() {
         <header className="border-b border-slate-800/80 bg-slate-900/80 backdrop-blur-md sticky top-0 z-40 px-4 lg:px-8 py-3.5">
           <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <Logo />
+              <Logo size="sm" />
               <div className="h-6 w-px bg-slate-800 hidden sm:block" />
               <div>
                 <div className="flex items-center gap-2">
