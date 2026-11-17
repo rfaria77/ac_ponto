@@ -227,7 +227,13 @@ export function calcularFechamentoMensal(
   let diasTrabalhados = 0;
   let diasFalta = 0;
   let diasAtestado = 0;
-  const mesNumero = parseInt(dadosGerais.mesAno.split("/")[0], 10);
+  const [mesStrParse, anoStrParse] = (dadosGerais.mesAno || "").split("/");
+  const mesNumero = parseInt(mesStrParse, 10) || (new Date().getMonth() + 1);
+  const anoNumero = parseInt(anoStrParse, 10) || new Date().getFullYear();
+  const hojeData = new Date();
+  const hojeAno = hojeData.getFullYear();
+  const hojeMes = hojeData.getMonth() + 1;
+  const hojeDia = hojeData.getDate();
 
   const diasApurados: BatidaDia[] = dias.map((diaItem) => {
     const d = { ...diaItem };
@@ -260,23 +266,40 @@ export function calcularFechamentoMensal(
     d.minutosNoturnos = totalNoturnoDia;
     totalNoturno += totalNoturnoDia;
 
-    // 4. Verificação de status do dia
+    // 4. Verificação de status do dia e se é dia futuro / em aberto
+    const ehDiaFuturoOuHoje =
+      anoNumero > hojeAno ||
+      (anoNumero === hojeAno && mesNumero > hojeMes) ||
+      (anoNumero === hojeAno && mesNumero === hojeMes && d.dia >= hojeDia);
+    const temAlgumaBatidaNoDia = Boolean(
+      d.entrada1 || d.saida1 || d.entrada2 || d.saida2 || d.entrada3 || d.saida3
+    );
+
     const obsLower = (d.observacao || "").toLowerCase();
     const ehAtestado = obsLower.includes("atestado") || obsLower.includes("médico");
     const ehFolgaOuDSR = obsLower.includes("folga") || obsLower.includes("dsr") || d.diaSemana === "Dom";
-    const ehFalta = obsLower.includes("falta") || (tempoTrabalhado === 0 && d.diaSemana !== "Sáb" && d.diaSemana !== "Dom" && !d.ehFeriado && !ehFolgaOuDSR && !ehAtestado);
+    const ehFalta =
+      obsLower.includes("falta") ||
+      (!ehDiaFuturoOuHoje &&
+        !temAlgumaBatidaNoDia &&
+        tempoTrabalhado === 0 &&
+        d.diaSemana !== "Sáb" &&
+        d.diaSemana !== "Dom" &&
+        !d.ehFeriado &&
+        !ehFolgaOuDSR &&
+        !ehAtestado);
 
     if (ehAtestado) diasAtestado++;
     if (ehFalta) diasFalta++;
     if (tempoTrabalhado > 0) diasTrabalhados++;
 
-    // 5. Determinar jornada nominal do dia (Feriados têm jornada nominal = 0)
+    // 5. Determinar jornada nominal do dia (Feriados e dias futuros sem batidas completas têm jornada nominal = 0)
     let jornadaNominal = 0;
     const cfgDia = dadosGerais.horarioNominal?.diferenciarPorDia
       ? dadosGerais.horarioNominal.diasSemanaConfig?.[d.diaSemana]
       : null;
 
-    if (!d.ehFeriado && !ehAtestado) {
+    if (!d.ehFeriado && !ehAtestado && !(ehDiaFuturoOuHoje && tempoTrabalhado === 0 && !obsLower.includes("falta"))) {
       if (cfgDia) {
         if (cfgDia.ativo) {
           const manha = calcularDuracaoMinutos(cfgDia.entrada, cfgDia.almocoSaida || cfgDia.saida);
@@ -568,44 +591,52 @@ export function sincronizarBatidasComDias(
     }
   });
 
-  // 2. Mapeia Solicitações (Atestados)
+  // 2. Mapeia Solicitações (Atestados e Esquecimentos de Ponto aprovados)
   solicitacoes.forEach((atest) => {
-    if (
-      atest.colaboradorId === colaboradorId &&
-      (atest.status === "Aprovado" || atest.status === "Abonado") &&
-      atest.tipo?.includes("Atestado")
-    ) {
-      if (!atest.dataOcorrencia) return;
-      let diaIni = 1;
-      let mesAtest = mes;
-      let anoAtest = ano;
+    if (atest.colaboradorId !== colaboradorId) return;
+    if (atest.status !== "Aprovado" && atest.status !== "Abonado") return;
+    if (!atest.dataOcorrencia) return;
 
-      if (atest.dataOcorrencia.includes("/")) {
-        const p = atest.dataOcorrencia.split("/");
-        diaIni = parseInt(p[0], 10);
-        mesAtest = parseInt(p[1], 10);
-        anoAtest = parseInt(p[2], 10);
-      } else if (atest.dataOcorrencia.includes("-")) {
-        const p = atest.dataOcorrencia.split("-");
-        anoAtest = parseInt(p[0], 10);
-        mesAtest = parseInt(p[1], 10);
-        diaIni = parseInt(p[2], 10);
+    let diaIni = 1;
+    let mesAtest = mes;
+    let anoAtest = ano;
+
+    if (atest.dataOcorrencia.includes("/")) {
+      const p = atest.dataOcorrencia.split("/");
+      diaIni = parseInt(p[0], 10);
+      mesAtest = parseInt(p[1], 10);
+      anoAtest = parseInt(p[2], 10);
+    } else if (atest.dataOcorrencia.includes("-")) {
+      const p = atest.dataOcorrencia.split("-");
+      anoAtest = parseInt(p[0], 10);
+      mesAtest = parseInt(p[1], 10);
+      diaIni = parseInt(p[2], 10);
+    }
+
+    if (mesAtest !== mes || anoAtest !== ano) return;
+
+    if (atest.tipo?.includes("Atestado")) {
+      const qtdDias = Number(atest.diasAfastamento) || 1;
+      for (let i = 0; i < qtdDias; i++) {
+        const diaAlvo = diaIni + i;
+        const idx = novosDias.findIndex((d) => d.dia === diaAlvo);
+        if (idx !== -1) {
+          novosDias[idx].observacao = "Atestado Médico (Abonado)";
+          novosDias[idx].entrada1 = "";
+          novosDias[idx].saida1 = "";
+          novosDias[idx].entrada2 = "";
+          novosDias[idx].saida2 = "";
+          novosDias[idx].entrada3 = "";
+          novosDias[idx].saida3 = "";
+        }
       }
-
-      if (mesAtest === mes && anoAtest === ano) {
-        const qtdDias = Number(atest.diasAfastamento) || 1;
-        for (let i = 0; i < qtdDias; i++) {
-          const diaAlvo = diaIni + i;
-          const idx = novosDias.findIndex((d) => d.dia === diaAlvo);
-          if (idx !== -1) {
-            novosDias[idx].observacao = "Atestado Médico (Abonado)";
-            novosDias[idx].entrada1 = "";
-            novosDias[idx].saida1 = "";
-            novosDias[idx].entrada2 = "";
-            novosDias[idx].saida2 = "";
-            novosDias[idx].entrada3 = "";
-            novosDias[idx].saida3 = "";
-          }
+    } else if (atest.tipo === "Esquecimento de Ponto" && atest.campoBatida && atest.horarioSugerido) {
+      const idx = novosDias.findIndex((d) => d.dia === diaIni);
+      if (idx !== -1) {
+        const campo = atest.campoBatida as "entrada1" | "saida1" | "entrada2" | "saida2";
+        novosDias[idx][campo] = String(atest.horarioSugerido).slice(0, 5);
+        if (!novosDias[idx].observacao || novosDias[idx].observacao === "Normal" || novosDias[idx].observacao === "Folga" || novosDias[idx].observacao === "DSR") {
+          novosDias[idx].observacao = "Ajuste Aprovado";
         }
       }
     }

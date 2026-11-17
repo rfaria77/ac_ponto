@@ -919,10 +919,10 @@ export default function App() {
     
     if (!colab) return;
 
-    // 1. Gera a grade base para o mês/ano
-    const base = gerarDiasMes(ano, mes, criterios.feriadosFixos, colab.horarioTrabalho);
+    // 1. Gera a grade base em branco para o mês/ano (sem preencher batidas padrões)
+    const base = gerarDiasMes(ano, mes, criterios.feriadosFixos);
     
-    // 2. Sincroniza com batidas e atestados do estado global
+    // 2. Sincroniza com batidas e solicitações aprovadas do estado global
     const diasSincronizados = sincronizarBatidasComDias(
       base,
       comprovantes,
@@ -932,6 +932,8 @@ export default function App() {
       ano
     );
 
+    const { horario: horarioResolvido } = resolverEscalaEHorarioColaborador(colab, escalas);
+
     // 3. Recalcula o fechamento completo
     const novoFechamento = calcularFechamentoMensal(diasSincronizados, criterios, {
       colaboradorNome: colab.nome,
@@ -940,14 +942,18 @@ export default function App() {
       mesAno: fechamentoAtual.mesAno,
       salarioBase: colab.salarioBase,
       saldoAnteriorBancoMinutos: colab.saldoAnteriorBancoMinutos,
-      horarioNominal: colab.horarioTrabalho,
+      horarioNominal: horarioResolvido,
     });
 
     // Só atualiza se houver mudança real (evita loop infinito se a referência mudar mas os dados não)
-    if (JSON.stringify(novoFechamento.dias) !== JSON.stringify(fechamentoAtual.dias)) {
+    if (
+      JSON.stringify(novoFechamento.dias) !== JSON.stringify(fechamentoAtual.dias) ||
+      novoFechamento.saldoAcumuladoFinalMinutos !== fechamentoAtual.saldoAcumuladoFinalMinutos ||
+      novoFechamento.totalHorasTrabalhadasMinutos !== fechamentoAtual.totalHorasTrabalhadasMinutos
+    ) {
       setFechamentoAtual(novoFechamento);
     }
-  }, [comprovantes, solicitacoes, colaboradores, criterios, fechamentoAtual?.colaboradorId, fechamentoAtual?.mesAno]);
+  }, [comprovantes, solicitacoes, colaboradores, escalas, criterios, fechamentoAtual?.colaboradorId, fechamentoAtual?.mesAno]);
 
   // Monitor em segundo plano para disparar alertas de entrada e saída conforme escala padrão
   useEffect(() => {
@@ -2124,11 +2130,28 @@ export default function App() {
         const diaAtual = agora.getDate();
         const mesStr = String(mesAtual).padStart(2, "0");
         const feriados = Array.isArray(criterios?.feriadosFixos) ? criterios.feriadosFixos : FERIADOS_FIXOS_PADRAO;
-        const diasMes = gerarDiasMes(anoAtual, mesAtual, feriados, colab.horarioTrabalho);
+        const baseMes = gerarDiasMes(anoAtual, mesAtual, feriados);
+        const diasMes = sincronizarBatidasComDias(
+          baseMes,
+          comprovantes,
+          solicitacoes,
+          colab.id,
+          mesAtual,
+          anoAtual
+        );
         if (!Array.isArray(diasMes)) return;
 
         diasMes.forEach((d) => {
-          const eDiaUtil = d.diaSemana !== "Sáb" && d.diaSemana !== "Dom" && d.observacao !== "Feriado" && d.observacao !== "Férias";
+          const obsLower = (d.observacao || "").toLowerCase();
+          const eDiaUtil =
+            d.diaSemana !== "Sáb" &&
+            d.diaSemana !== "Dom" &&
+            !d.ehFeriado &&
+            !obsLower.includes("feriado") &&
+            !obsLower.includes("férias") &&
+            !obsLower.includes("atestado") &&
+            !obsLower.includes("folga") &&
+            !obsLower.includes("dsr");
           const temEntrada1 = Boolean(d.entrada1);
           const temSaida1 = Boolean(d.saida1);
           const temEntrada2 = Boolean(d.entrada2);
@@ -2198,7 +2221,8 @@ export default function App() {
       salario = fechamentoAtual.salarioBase;
       saldoAnt = fechamentoAtual.saldoAnteriorBancoMinutos;
     } else {
-      dias = gerarDiasMes(anoNum, mesNum, criterios.feriadosFixos, colab.horarioTrabalho);
+      const base = gerarDiasMes(anoNum, mesNum, criterios.feriadosFixos);
+      dias = sincronizarBatidasComDias(base, comprovantes, solicitacoes, colab.id, mesNum, anoNum);
     }
 
     let diaIndex = dias.findIndex((d) => d.dia === diaAlvo);
@@ -2215,6 +2239,8 @@ export default function App() {
       observacao: dias[diaIndex].observacao === "Folga" || dias[diaIndex].observacao === "DSR" ? "Normal" : (dias[diaIndex].observacao || "Normal"),
     };
 
+    const { horario: horarioResolvidoPortal } = resolverEscalaEHorarioColaborador(colab, escalas);
+
     const recalculado = calcularFechamentoMensal(dias, criterios, {
       colaboradorNome: colab.nome,
       colaboradorCargo: colab.cargo,
@@ -2222,7 +2248,7 @@ export default function App() {
       mesAno,
       salarioBase: salario,
       saldoAnteriorBancoMinutos: saldoAnt,
-      horarioNominal: colab.horarioTrabalho,
+      horarioNominal: horarioResolvidoPortal,
     });
 
     setFechamentoAtual(recalculado);
@@ -2687,7 +2713,11 @@ export default function App() {
       console.warn("Fallback para processamento local:", err);
       // Fallback robusto local caso a API não esteja acessível
       const [mesStr, anoStr] = mesAnoInput.includes("/") ? mesAnoInput.split("/") : ["10", "2026"];
-      const diasMes = gerarDiasMes(parseInt(anoStr, 10) || 2026, parseInt(mesStr, 10) || 10, criterios.feriadosFixos, colab.horarioTrabalho);
+      const mesNumFb = parseInt(mesStr, 10) || 10;
+      const anoNumFb = parseInt(anoStr, 10) || 2026;
+      const baseFb = gerarDiasMes(anoNumFb, mesNumFb, criterios.feriadosFixos);
+      const diasMes = sincronizarBatidasComDias(baseFb, comprovantes, solicitacoes, colab.id, mesNumFb, anoNumFb);
+      const { horario: horarioFb } = resolverEscalaEHorarioColaborador(colab, escalas);
       
       const fech = calcularFechamentoMensal(diasMes, criterios, {
         colaboradorNome: colab.nome,
@@ -2696,7 +2726,7 @@ export default function App() {
         mesAno: mesAnoInput,
         salarioBase: colab.salarioBase,
         saldoAnteriorBancoMinutos: colab.saldoAnteriorBancoMinutos,
-        horarioNominal: colab.horarioTrabalho,
+        horarioNominal: horarioFb,
       });
 
       setFechamentoAtual(fech);
@@ -2708,19 +2738,31 @@ export default function App() {
     }
   };
 
-  const handlePuxarDadosFolhaVisualParaFechamento = () => {
-    const colab = colaboradores.find((c) => c.id === colaboradorSelecionadoId) || colaboradores[0];
+  const handlePuxarDadosFolhaVisualParaFechamento = (colabIdOverride?: string, mesAnoOverride?: string) => {
+    const idAlvo = typeof colabIdOverride === "string" && colabIdOverride ? colabIdOverride : colaboradorSelecionadoId;
+    const colab = colaboradores.find((c) => c.id === idAlvo) || colaboradores[0];
     if (!colab) {
       showToast("aviso", "Nenhum Colaborador", "Cadastre ou selecione um colaborador para puxar os dados da folha visual.");
       return;
     }
 
+    if (colaboradorSelecionadoId !== colab.id) {
+      setColaboradorSelecionadoId(colab.id);
+    }
+
     const agora = new Date();
-    const mes = agora.getMonth() + 1;
-    const ano = agora.getFullYear();
+    let mes = agora.getMonth() + 1;
+    let ano = agora.getFullYear();
+
+    if (typeof mesAnoOverride === "string" && mesAnoOverride.includes("/")) {
+      const [mStr, aStr] = mesAnoOverride.split("/");
+      mes = parseInt(mStr, 10) || mes;
+      ano = parseInt(aStr, 10) || ano;
+    }
+
     const mesAnoStr = `${String(mes).padStart(2, "0")}/${ano}`;
 
-    const base = gerarDiasMes(ano, mes, criterios.feriadosFixos, colab.horarioTrabalho);
+    const base = gerarDiasMes(ano, mes, criterios.feriadosFixos);
     const diasSincronizados = sincronizarBatidasComDias(
       base,
       comprovantes,
@@ -2730,6 +2772,8 @@ export default function App() {
       ano
     );
 
+    const { horario: horarioResolvido } = resolverEscalaEHorarioColaborador(colab, escalas);
+
     const fechamentoGerado = calcularFechamentoMensal(diasSincronizados, criterios, {
       colaboradorNome: colab.nome,
       colaboradorCargo: colab.cargo,
@@ -2737,12 +2781,20 @@ export default function App() {
       mesAno: mesAnoStr,
       salarioBase: colab.salarioBase,
       saldoAnteriorBancoMinutos: colab.saldoAnteriorBancoMinutos,
-      horarioNominal: colab.horarioTrabalho,
+      horarioNominal: horarioResolvido,
     });
 
     setFechamentoAtual(fechamentoGerado);
+    setMesAnoInput(mesAnoStr);
     setAbaAtiva("fechamento");
-    showToast("sucesso", "Dados Puxados da Folha Visual!", `Espelho de ponto de ${colab.nome} (${mesAnoStr}) gerado e calculado com sucesso.`);
+    showToast("sucesso", "Dados Puxados da Folha Visual!", `Espelho de ponto de ${colab.nome} (${mesAnoStr}) atualizado com sucesso.`);
+  };
+
+  const handleMudarColaboradorFechamento = (novoColabId: string) => {
+    if (!novoColabId) return;
+    setColaboradorSelecionadoId(novoColabId);
+    const mesAlvo = fechamentoAtual?.mesAno;
+    handlePuxarDadosFolhaVisualParaFechamento(novoColabId, mesAlvo);
   };
 
   const handleCarregarExemploPronto = () => {
@@ -2867,13 +2919,17 @@ export default function App() {
       return;
     }
 
-    // 2. Caso contrário, gera os dias do novo mês mantendo a grade e horários nominais
+    // 2. Caso contrário, gera os dias em branco do novo mês e sincroniza com a Folha Visual
     const partes = novoMesAno.split("/");
     const mesNum = parseInt(partes[0], 10) || 9;
     const anoNum = parseInt(partes[1], 10) || 2026;
 
     const colab = colaboradores.find((c) => c.id === fechamentoAtual.colaboradorId) || colaboradores[0];
-    const novosDias = gerarDiasMes(anoNum, mesNum, criterios.feriadosFixos, colab?.horarioTrabalho);
+    const baseDias = gerarDiasMes(anoNum, mesNum, criterios.feriadosFixos);
+    const novosDias = colab
+      ? sincronizarBatidasComDias(baseDias, comprovantes, solicitacoes, colab.id, mesNum, anoNum)
+      : baseDias;
+    const horarioResolvido = colab ? resolverEscalaEHorarioColaborador(colab, escalas).horario : undefined;
 
     const recalculado = calcularFechamentoMensal(novosDias, criterios, {
       colaboradorNome: fechamentoAtual.colaboradorNome,
@@ -2882,7 +2938,7 @@ export default function App() {
       mesAno: novoMesAno,
       salarioBase: fechamentoAtual.salarioBase,
       saldoAnteriorBancoMinutos: fechamentoAtual.saldoAnteriorBancoMinutos,
-      horarioNominal: colab?.horarioTrabalho,
+      horarioNominal: horarioResolvido,
     });
 
     setFechamentoAtual(recalculado);
@@ -5823,21 +5879,43 @@ export default function App() {
         {/* ================= ABA 2: ESPELHO & FECHAMENTO DO MÊS ================= */}
         {abaAtiva === "fechamento" && fechamentoAtual && (
           <div className="space-y-6">
-            {/* Cabeçalho da Folha Atual com Ações de Exportação */}
-            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-lg font-bold text-white">{fechamentoAtual.colaboradorNome}</h2>
-                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-sky-500/10 text-sky-400 border border-sky-500/20 font-mono">
+            {/* Cabeçalho da Folha Atual com Seletor de Colaborador e Ações de Exportação */}
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+              <div className="space-y-2 w-full lg:w-auto">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <div className="flex items-center gap-2">
+                    <Users className="w-4 h-4 text-sky-400 shrink-0" />
+                    <select
+                      aria-label="Selecionar colaborador do espelho"
+                      value={fechamentoAtual.colaboradorId || colaboradorSelecionadoId || ""}
+                      onChange={(e) => handleMudarColaboradorFechamento(e.target.value)}
+                      className="bg-slate-950 border border-slate-700 hover:border-sky-500 text-white font-bold px-3.5 py-2 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-sky-500 cursor-pointer shadow-inner min-w-[240px]"
+                    >
+                      {colaboradores.map((c) => (
+                        <option key={c.id} value={c.id} className="bg-slate-900 text-white">
+                          {c.nome} — {c.cargo}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-sky-500/10 text-sky-400 border border-sky-500/20 font-mono">
                     {fechamentoAtual.mesAno}
                   </span>
                 </div>
-                <p className="text-xs text-slate-400 mt-1">
+                <p className="text-xs text-slate-400">
                   Cargo: {fechamentoAtual.colaboradorCargo} • Salário Base: R$ {(Number(fechamentoAtual.salarioBase) || 2450).toFixed(2)} (Valor Hora: R$ {(Number(fechamentoAtual.valorHora) || 11.14).toFixed(2)})
                 </p>
               </div>
 
               <div className="flex flex-wrap items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => handlePuxarDadosFolhaVisualParaFechamento(fechamentoAtual.colaboradorId, fechamentoAtual.mesAno)}
+                  className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-emerald-300 text-xs font-bold rounded-xl border border-emerald-500/30 flex items-center gap-1.5 transition-all cursor-pointer"
+                  title="Sincronizar novamente com os pontos registrados na Folha Visual"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" /> Puxar da Folha Visual
+                </button>
                 <button
                   onClick={handleSalvarFechamento}
                   className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-md shadow-emerald-600/20 flex items-center gap-1.5 transition-all"
@@ -6241,20 +6319,40 @@ export default function App() {
         )}
 
         {abaAtiva === "fechamento" && !fechamentoAtual && (
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center space-y-4 max-w-xl mx-auto my-8 shadow-2xl">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-10 text-center space-y-5 max-w-xl mx-auto my-8 shadow-2xl">
             <div className="w-16 h-16 rounded-2xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 mx-auto">
               <FileText className="w-8 h-8" />
             </div>
             <div>
               <h4 className="font-bold text-white text-base">Nenhum Espelho de Ponto em Apuração</h4>
               <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                Você ainda não gerou ou digitalizou um espelho de ponto. Digitalize a folha de ponto ou registre batidas diárias para visualizar a apuração mensal com banco de horas e horas extras.
+                Selecione o colaborador abaixo para puxar os registros reais da Folha Visual e calcular banco de horas e horas extras, ou digitalize uma folha impressa.
               </p>
             </div>
-            <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+
+            {colaboradores.length > 0 && (
+              <div className="max-w-sm mx-auto text-left space-y-1.5">
+                <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider">
+                  Colaborador para Apuração
+                </label>
+                <select
+                  value={colaboradorSelecionadoId || colaboradores[0]?.id || ""}
+                  onChange={(e) => setColaboradorSelecionadoId(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 hover:border-sky-500 rounded-xl px-3.5 py-2.5 text-xs text-white font-semibold focus:outline-none focus:ring-1 focus:ring-sky-500 cursor-pointer"
+                >
+                  {colaboradores.map((c) => (
+                    <option key={c.id} value={c.id} className="bg-slate-900 text-white">
+                      {c.nome} — {c.cargo}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
               <button
                 type="button"
-                onClick={handlePuxarDadosFolhaVisualParaFechamento}
+                onClick={() => handlePuxarDadosFolhaVisualParaFechamento(colaboradorSelecionadoId || colaboradores[0]?.id)}
                 className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-emerald-600/30 flex items-center gap-2 transition-all cursor-pointer"
               >
                 <RefreshCw className="w-4 h-4" /> Puxar Dados da Folha Visual & Calcular
