@@ -24,6 +24,9 @@ export interface ComprovantePonto {
     lat?: number;
     lon?: number;
     distanciaMetros?: number;
+    precisaoMetros?: number;
+    nivelPrecisao?: "alta" | "media" | "baixa" | "indisponivel";
+    capturadaEmTempoReal?: boolean;
   };
 }
 
@@ -126,7 +129,11 @@ export function gerarComprovantePDF(comprovante: ComprovantePonto) {
   if (comprovante.geolocalizacao?.endereco) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(6);
-    doc.text(`GPS: ${comprovante.geolocalizacao.endereco.slice(0, 48)}`, 6, 96);
+    const precisaoTxt =
+      comprovante.geolocalizacao.precisaoMetros !== undefined
+        ? ` (±${comprovante.geolocalizacao.precisaoMetros} m)`
+        : "";
+    doc.text(`GPS${precisaoTxt}: ${comprovante.geolocalizacao.endereco.slice(0, 44)}`, 6, 96);
   }
 
   doc.line(5, 100, 75, 100);
@@ -166,7 +173,11 @@ CNPJ: ${comprovante.empresa.cnpj}
 ⏰ *Horário Oficial:* ${comprovante.hora}
 🔢 *NSR:* ${String(comprovante.nsr).padStart(9, "0")}
 
-📍 *Localização GPS:* ${comprovante.geolocalizacao?.endereco || "Base Homologada (Tupaciguara - MG)"}
+📍 *Localização GPS:* ${comprovante.geolocalizacao?.endereco || "Base Homologada (Tupaciguara - MG)"}${
+    comprovante.geolocalizacao?.precisaoMetros !== undefined
+      ? ` (Precisão: ±${comprovante.geolocalizacao.precisaoMetros} m)`
+      : ""
+  }
 🔐 *Hash SHA-256:* ${comprovante.hashSha256.slice(0, 24)}...
 
 _Comprovante digital emitido pelo Ponto A&C com certificação biométrica e geolocalização._`;

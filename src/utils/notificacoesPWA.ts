@@ -25,6 +25,14 @@ export const CONFIG_NOTIFICACOES_PADRAO: ConfiguracaoNotificacoes = {
   vibrar: true,
 };
 
+export interface ContextoBatidasIntervaloHoje {
+  entradaHora?: string;
+  saidaAlmocoHora?: string; // Ex: "12:14" ou "12:14:25"
+  saidaAlmocoTimestampIso?: string;
+  retornoAlmocoHora?: string;
+  saidaExpedienteHora?: string;
+}
+
 export interface LembreteTurnoItem {
   id: "entrada" | "almocoSaida" | "almocoRetorno" | "saida";
   titulo: string;
@@ -33,7 +41,13 @@ export interface LembreteTurnoItem {
   horaAlerta: string;
   minutosNominal: number;
   minutosAlerta: number;
-  status: "passou" | "proximo" | "futuro" | "desativado";
+  alvoTimestampMs?: number;
+  duracaoIntervaloMinutos?: number;
+  calculadoPelaSaidaReal?: boolean;
+  horaSaidaRealRef?: string;
+  jaRegistradoHoje?: boolean;
+  horaRegistradaHoje?: string;
+  status: "passou" | "proximo" | "futuro" | "desativado" | "concluido";
   mensagem: string;
 }
 
@@ -248,11 +262,28 @@ export async function dispararNotificacaoPWA(options: {
   }
 }
 
-// Converte string "HH:MM" em minutos do dia
+// Converte string "HH:MM" ou "HH:MM:SS" em minutos do dia
 function horaParaMinutos(horaStr: string): number {
   if (!horaStr || !horaStr.includes(":")) return 0;
-  const [h, m] = horaStr.split(":").map((v) => parseInt(v, 10) || 0);
-  return h * 60 + m;
+  const partes = horaStr.split(":").map((v) => parseInt(v, 10) || 0);
+  return (partes[0] || 0) * 60 + (partes[1] || 0);
+}
+
+// Converte string "HH:MM" ou "HH:MM:SS" para timestamp local na data de referência
+function horaParaTimestampLocal(horaStr: string, refData: Date): number | null {
+  if (!horaStr || !horaStr.includes(":")) return null;
+  const partes = horaStr.split(":").map((v) => parseInt(v, 10));
+  if (Number.isNaN(partes[0]) || Number.isNaN(partes[1])) return null;
+  const dt = new Date(
+    refData.getFullYear(),
+    refData.getMonth(),
+    refData.getDate(),
+    partes[0],
+    partes[1],
+    partes[2] && !Number.isNaN(partes[2]) ? partes[2] : 0,
+    0
+  );
+  return dt.getTime();
 }
 
 // Converte minutos do dia em "HH:MM"
@@ -261,6 +292,27 @@ function minutosParaHoraStr(minutos: number): string {
   const h = Math.floor(norm / 60);
   const m = norm % 60;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+export function formatarDuracaoIntervalo(minutos: number): string {
+  if (!minutos || minutos <= 0) return "Sem intervalo";
+  const h = Math.floor(minutos / 60);
+  const m = minutos % 60;
+  if (h > 0 && m > 0) return `${h}h${String(m).padStart(2, "0")}`;
+  if (h > 0) return `${h}h00`;
+  return `${m} min`;
+}
+
+export function calcularDuracaoIntervaloEscala(horarioHoje: {
+  almocoSaida: string;
+  almocoRetorno: string;
+}): number {
+  if (!horarioHoje.almocoSaida || !horarioHoje.almocoRetorno) return 0;
+  if (horarioHoje.almocoSaida === horarioHoje.almocoRetorno) return 0;
+  const minSaida = horaParaMinutos(horarioHoje.almocoSaida);
+  const minRetorno = horaParaMinutos(horarioHoje.almocoRetorno);
+  const diff = ((minRetorno - minSaida) + 1440) % 1440;
+  return diff > 0 && diff <= 360 ? diff : 0;
 }
 
 // Obtém a sigla do dia da semana atual (Seg, Ter, Qua, Qui, Sex, Sáb, Dom)
@@ -345,7 +397,8 @@ export function obterHorarioTrabalhoHoje(
 export function calcularLembretesTurnoHoje(
   horario?: HorarioTrabalhoColab,
   config?: ConfiguracaoNotificacoes,
-  agora = new Date()
+  agora = new Date(),
+  contextoBatidas?: ContextoBatidasIntervaloHoje
 ): LembreteTurnoItem[] {
   const cfg = config || CONFIG_NOTIFICACOES_PADRAO;
   const horarioHoje = obterHorarioTrabalhoHoje(horario);
@@ -356,12 +409,70 @@ export function calcularLembretesTurnoHoje(
 
   const minutosAgora = agora.getHours() * 60 + agora.getMinutes();
   const antecedencia = cfg.antecedenciaMinutos || 0;
+  const duracaoIntervaloMinutos = calcularDuracaoIntervaloEscala(horarioHoje);
+
+  // Cálculo dinâmico do retorno do almoço baseado na última saída para almoço + intervalo da escala
+  let retornoCalculadoPelaSaida = false;
+  let horaRetornoNominal = horarioHoje.almocoRetorno;
+  let horaRetornoAlerta = minutosParaHoraStr(horaParaMinutos(horarioHoje.almocoRetorno) - antecedencia);
+  let minRetornoNominal = horaParaMinutos(horarioHoje.almocoRetorno);
+  let minRetornoAlerta = minRetornoNominal - antecedencia;
+  let alvoRetornoTimestampMs: number | undefined;
+  let horaSaidaRealRef: string | undefined;
+
+  if (contextoBatidas?.saidaAlmocoHora && duracaoIntervaloMinutos > 0) {
+    let saidaBaseMs: number | null = null;
+    horaSaidaRealRef = contextoBatidas.saidaAlmocoHora;
+
+    if (contextoBatidas.saidaAlmocoTimestampIso) {
+      const dtIso = new Date(contextoBatidas.saidaAlmocoTimestampIso);
+      if (
+        !Number.isNaN(dtIso.getTime()) &&
+        dtIso.getFullYear() === agora.getFullYear() &&
+        dtIso.getMonth() === agora.getMonth() &&
+        dtIso.getDate() === agora.getDate()
+      ) {
+        const hhmmIso = `${String(dtIso.getHours()).padStart(2, "0")}:${String(dtIso.getMinutes()).padStart(2, "0")}`;
+        if (hhmmIso === contextoBatidas.saidaAlmocoHora.slice(0, 5)) {
+          saidaBaseMs = dtIso.getTime();
+        }
+      }
+    }
+
+    if (saidaBaseMs === null) {
+      saidaBaseMs = horaParaTimestampLocal(contextoBatidas.saidaAlmocoHora, agora);
+    }
+
+    if (saidaBaseMs !== null) {
+      retornoCalculadoPelaSaida = true;
+      alvoRetornoTimestampMs = saidaBaseMs + duracaoIntervaloMinutos * 60 * 1000;
+      const dtAlvo = new Date(alvoRetornoTimestampMs);
+      const hhmmAlvo = `${String(dtAlvo.getHours()).padStart(2, "0")}:${String(dtAlvo.getMinutes()).padStart(2, "0")}`;
+      const ssAlvo = String(dtAlvo.getSeconds()).padStart(2, "0");
+
+      horaRetornoNominal = hhmmAlvo;
+      // Notifica no momento exato após o tempo da última saída para almoço
+      horaRetornoAlerta = ssAlvo !== "00" ? `${hhmmAlvo}:${ssAlvo}` : hhmmAlvo;
+      minRetornoNominal = dtAlvo.getHours() * 60 + dtAlvo.getMinutes();
+      minRetornoAlerta = minRetornoNominal;
+    }
+  }
+
+  const duracaoLabel = formatarDuracaoIntervalo(duracaoIntervaloMinutos);
 
   const listaBruta: {
     id: "entrada" | "almocoSaida" | "almocoRetorno" | "saida";
     titulo: string;
     subtitulo: string;
     horaNominal: string;
+    horaAlertaOverride?: string;
+    minNominalOverride?: number;
+    minAlertaOverride?: number;
+    alvoTimestampMs?: number;
+    duracaoIntervaloMinutos?: number;
+    calculadoPelaSaidaReal?: boolean;
+    horaSaidaRealRef?: string;
+    horaRegistradaHoje?: string;
     ativoNoConfig: boolean;
     mensagemTurno: string;
   }[] = [
@@ -370,6 +481,7 @@ export function calcularLembretesTurnoHoje(
       titulo: "Início do Expediente (Entrada)",
       subtitulo: "1ª Marcação do dia",
       horaNominal: horarioHoje.entrada,
+      horaRegistradaHoje: contextoBatidas?.entradaHora,
       ativoNoConfig: cfg.lembreteEntrada,
       mensagemTurno:
         antecedencia > 0
@@ -379,8 +491,13 @@ export function calcularLembretesTurnoHoje(
     {
       id: "almocoSaida",
       titulo: "Saída para Almoço / Intervalo",
-      subtitulo: "2ª Marcação do dia",
+      subtitulo:
+        duracaoIntervaloMinutos > 0
+          ? `2ª Marcação · Intervalo da escala: ${duracaoLabel}`
+          : "2ª Marcação do dia",
       horaNominal: horarioHoje.almocoSaida,
+      duracaoIntervaloMinutos,
+      horaRegistradaHoje: contextoBatidas?.saidaAlmocoHora,
       ativoNoConfig: cfg.lembreteAlmocoSaida,
       mensagemTurno:
         antecedencia > 0
@@ -390,19 +507,33 @@ export function calcularLembretesTurnoHoje(
     {
       id: "almocoRetorno",
       titulo: "Retorno do Almoço",
-      subtitulo: "3ª Marcação do dia",
-      horaNominal: horarioHoje.almocoRetorno,
+      subtitulo: retornoCalculadoPelaSaida
+        ? `Saída ${horaSaidaRealRef?.slice(0, 5)} + ${duracaoLabel} da escala`
+        : duracaoIntervaloMinutos > 0
+        ? `Previsão da escala (${duracaoLabel} de intervalo)`
+        : "3ª Marcação do dia",
+      horaNominal: horaRetornoNominal,
+      horaAlertaOverride: horaRetornoAlerta,
+      minNominalOverride: minRetornoNominal,
+      minAlertaOverride: minRetornoAlerta,
+      alvoTimestampMs: alvoRetornoTimestampMs,
+      duracaoIntervaloMinutos,
+      calculadoPelaSaidaReal: retornoCalculadoPelaSaida,
+      horaSaidaRealRef,
+      horaRegistradaHoje: contextoBatidas?.retornoAlmocoHora,
       ativoNoConfig: cfg.lembreteAlmocoRetorno,
-      mensagemTurno:
-        antecedencia > 0
-          ? `Seu intervalo termina em ${antecedencia} minutos (às ${horarioHoje.almocoRetorno}). Prepare-se para voltar!`
-          : `Fim do intervalo de almoço (${horarioHoje.almocoRetorno}). Registre o retorno às atividades!`,
+      mensagemTurno: retornoCalculadoPelaSaida
+        ? `Seu intervalo de ${duracaoLabel} (iniciado às ${horaSaidaRealRef}) acabou de concluir às ${horaRetornoAlerta}. Hora exata de registrar o retorno do almoço!`
+        : antecedencia > 0
+        ? `Seu intervalo termina em ${antecedencia} minutos (às ${horarioHoje.almocoRetorno}). Prepare-se para voltar!`
+        : `Fim do intervalo de almoço (${horarioHoje.almocoRetorno}). Registre o retorno às atividades!`,
     },
     {
       id: "saida",
       titulo: "Fim do Expediente (Saída)",
       subtitulo: "4ª Marcação do dia",
       horaNominal: horarioHoje.saida,
+      horaRegistradaHoje: contextoBatidas?.saidaExpedienteHora,
       ativoNoConfig: cfg.lembreteSaida,
       mensagemTurno:
         antecedencia > 0
@@ -414,14 +545,30 @@ export function calcularLembretesTurnoHoje(
   let proximoMarcado = false;
 
   return listaBruta.map((item) => {
-    const minNominal = horaParaMinutos(item.horaNominal);
-    const minAlerta = minNominal - antecedencia;
-    const horaAlertaStr = minutosParaHoraStr(minAlerta);
+    const minNominal =
+      item.minNominalOverride !== undefined
+        ? item.minNominalOverride
+        : horaParaMinutos(item.horaNominal);
+    const minAlerta =
+      item.minAlertaOverride !== undefined
+        ? item.minAlertaOverride
+        : minNominal - antecedencia;
+    const horaAlertaStr = item.horaAlertaOverride || minutosParaHoraStr(minAlerta);
+    const jaRegistradoHoje = Boolean(item.horaRegistradaHoje);
 
-    let status: "passou" | "proximo" | "futuro" | "desativado" = "futuro";
+    let status: "passou" | "proximo" | "futuro" | "desativado" | "concluido" = "futuro";
 
     if (!cfg.ativo || !item.ativoNoConfig) {
       status = "desativado";
+    } else if (jaRegistradoHoje) {
+      status = "concluido";
+    } else if (item.alvoTimestampMs !== undefined) {
+      if (agora.getTime() > item.alvoTimestampMs + 5 * 60 * 1000) {
+        status = "passou";
+      } else if (!proximoMarcado) {
+        status = "proximo";
+        proximoMarcado = true;
+      }
     } else if (minutosAgora > minAlerta + 5) {
       status = "passou";
     } else if (!proximoMarcado && minutosAgora <= minAlerta + 5) {
@@ -437,19 +584,26 @@ export function calcularLembretesTurnoHoje(
       horaAlerta: horaAlertaStr,
       minutosNominal: minNominal,
       minutosAlerta: minAlerta,
+      alvoTimestampMs: item.alvoTimestampMs,
+      duracaoIntervaloMinutos: item.duracaoIntervaloMinutos,
+      calculadoPelaSaidaReal: item.calculadoPelaSaidaReal,
+      horaSaidaRealRef: item.horaSaidaRealRef,
+      jaRegistradoHoje,
+      horaRegistradaHoje: item.horaRegistradaHoje,
       status,
       mensagem: item.mensagemTurno,
     };
   });
 }
 
-// Verifica se há algum alerta devido no minuto atual e dispara caso ainda não tenha sido emitido hoje
+// Verifica se há algum alerta devido no momento atual e dispara caso ainda não tenha sido emitido hoje
 export async function verificarEAlertarTurno(
   colaboradorId: string,
   colaboradorNome: string,
   horario?: HorarioTrabalhoColab,
   configOuNomeEscala?: ConfiguracaoNotificacoes | string,
-  nomeEscalaParam?: string
+  nomeEscalaParam?: string,
+  contextoBatidas?: ContextoBatidasIntervaloHoje
 ): Promise<LembreteTurnoItem | null> {
   const cfg =
     typeof configOuNomeEscala === "object" && configOuNomeEscala !== null
@@ -465,17 +619,28 @@ export async function verificarEAlertarTurno(
 
   const agora = new Date();
   const minutosAgora = agora.getHours() * 60 + agora.getMinutes();
-  const dataHojeStr = agora.toISOString().split("T")[0]; // YYYY-MM-DD
+  const dataHojeStr = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}-${String(agora.getDate()).padStart(2, "0")}`;
 
-  const lembretes = calcularLembretesTurnoHoje(horario, cfg, agora);
+  const lembretes = calcularLembretesTurnoHoje(horario, cfg, agora, contextoBatidas);
 
   for (const item of lembretes) {
-    if (item.status === "desativado") continue;
+    if (item.status === "desativado" || item.status === "concluido") continue;
 
-    // Dispara se estamos no minuto exato do alerta ou até 2 minutos depois (margem para timers em background)
-    const diff = minutosAgora - item.minutosAlerta;
-    if (diff >= 0 && diff <= 2) {
-      const storageKey = `ponto_aec_disparado_${colaboradorId}_${dataHojeStr}_${item.id}`;
+    let deveDisparar = false;
+    let storageKey = `ponto_aec_disparado_${colaboradorId}_${dataHojeStr}_${item.id}`;
+
+    if (item.alvoTimestampMs !== undefined) {
+      // Disparo exato após o tempo de intervalo da última saída de almoço (nunca antes)
+      const diffMs = agora.getTime() - item.alvoTimestampMs;
+      deveDisparar = diffMs >= 0 && diffMs <= 120 * 1000;
+      storageKey = `ponto_aec_disparado_${colaboradorId}_${dataHojeStr}_${item.id}_${item.horaSaidaRealRef || "escala"}`;
+    } else {
+      // Dispara se estamos no minuto exato do alerta ou até 2 minutos depois
+      const diff = minutosAgora - item.minutosAlerta;
+      deveDisparar = diff >= 0 && diff <= 2;
+    }
+
+    if (deveDisparar) {
       const jaDisparou = localStorage.getItem(storageKey);
 
       if (!jaDisparou) {

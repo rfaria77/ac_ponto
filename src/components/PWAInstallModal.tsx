@@ -40,7 +40,7 @@ export const PWAInstallModal: React.FC<PWAInstallModalProps> = ({
         {/* Header */}
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-sky-500/25 shrink-0">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-sky-400 to-sky-600 flex items-center justify-center text-white shadow-lg shadow-sky-500/25 shrink-0">
               <Smartphone className="w-6 h-6" />
             </div>
             <div>
@@ -98,7 +98,7 @@ export const PWAInstallModal: React.FC<PWAInstallModalProps> = ({
                 <button
                   type="button"
                   onClick={handleInstallClick}
-                  className="w-full py-3 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-sky-600/30 flex items-center justify-center gap-2 transition-all"
+                  className="w-full py-3 bg-gradient-to-r from-sky-600 to-sky-500 hover:from-sky-500 hover:to-sky-400 text-white font-bold text-xs rounded-xl shadow-lg shadow-sky-600/30 flex items-center justify-center gap-2 transition-all"
                 >
                   {instaladoSucesso ? (
                     <>
@@ -149,7 +149,7 @@ export const PWAInstallModal: React.FC<PWAInstallModalProps> = ({
             </p>
             <div className="space-y-2 text-xs">
               <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-950 border border-slate-800">
-                <span className="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-xs shrink-0">1</span>
+                <span className="w-6 h-6 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center font-bold text-xs shrink-0">1</span>
                 <div>
                   <p className="text-slate-300 font-medium flex items-center gap-1.5">
                     Toque no botão <strong className="text-white">Compartilhar</strong>
@@ -160,7 +160,7 @@ export const PWAInstallModal: React.FC<PWAInstallModalProps> = ({
               </div>
 
               <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-950 border border-slate-800">
-                <span className="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-xs shrink-0">2</span>
+                <span className="w-6 h-6 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center font-bold text-xs shrink-0">2</span>
                 <div>
                   <p className="text-slate-300 font-medium flex items-center gap-1.5">
                     Selecione <strong className="text-white">"Adicionar à Tela de Início"</strong>
@@ -171,7 +171,7 @@ export const PWAInstallModal: React.FC<PWAInstallModalProps> = ({
               </div>
 
               <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-950 border border-slate-800">
-                <span className="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-xs shrink-0">3</span>
+                <span className="w-6 h-6 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center font-bold text-xs shrink-0">3</span>
                 <div>
                   <p className="text-slate-300 font-medium">
                     Toque em <strong className="text-emerald-400">"Adicionar"</strong> no canto superior direito

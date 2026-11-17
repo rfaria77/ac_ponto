@@ -21,11 +21,13 @@ import { HorarioTrabalhoColab } from "../lib/calculosPonto";
 import {
   ConfiguracaoNotificacoes,
   CONFIG_NOTIFICACOES_PADRAO,
+  ContextoBatidasIntervaloHoje,
   obterConfiguracaoNotificacoes,
   salvarConfiguracaoNotificacoes,
   obterPermissaoNotificacao,
   solicitarPermissaoNotificacao,
   calcularLembretesTurnoHoje,
+  formatarDuracaoIntervalo,
   enviarNotificacaoTeste,
   tocarSomNotificacao,
   isNotificationSupported,
@@ -37,6 +39,7 @@ interface PainelNotificacoesTurnoProps {
   nomeEscala?: string;
   tipoEscala?: string;
   horarioTrabalho?: HorarioTrabalhoColab;
+  contextoBatidasHoje?: ContextoBatidasIntervaloHoje;
   onNotificacaoEnviada?: (titulo: string, msg: string) => void;
 }
 
@@ -46,6 +49,7 @@ export const PainelNotificacoesTurno: React.FC<PainelNotificacoesTurnoProps> = (
   nomeEscala,
   tipoEscala,
   horarioTrabalho,
+  contextoBatidasHoje,
   onNotificacaoEnviada,
 }) => {
   const [config, setConfig] = useState<ConfiguracaoNotificacoes>(() =>
@@ -59,14 +63,19 @@ export const PainelNotificacoesTurno: React.FC<PainelNotificacoesTurnoProps> = (
   const [painelExpandido, setPainelExpandido] = useState(true);
   const [horaAtual, setHoraAtual] = useState(new Date());
 
-  // Atualiza hora atual a cada 10 segundos para atualizar status dos lembretes
+  const emIntervaloAlmoco = Boolean(
+    contextoBatidasHoje?.saidaAlmocoHora && !contextoBatidasHoje?.retornoAlmocoHora
+  );
+
+  // Atualiza a cada 1s durante o intervalo de almoço para contagem regressiva exata, ou a cada 10s nos demais momentos
   useEffect(() => {
+    const intervaloMs = emIntervaloAlmoco ? 1000 : 10000;
     const timer = setInterval(() => {
       setHoraAtual(new Date());
       setPermissao(obterPermissaoNotificacao());
-    }, 10000);
+    }, intervaloMs);
     return () => clearInterval(timer);
-  }, []);
+  }, [emIntervaloAlmoco]);
 
   // Recarrega configuração quando muda o colaborador
   useEffect(() => {
@@ -119,7 +128,12 @@ export const PainelNotificacoesTurno: React.FC<PainelNotificacoesTurnoProps> = (
     }
   };
 
-  const lembretes = calcularLembretesTurnoHoje(horarioTrabalho, config, horaAtual);
+  const lembretes = calcularLembretesTurnoHoje(
+    horarioTrabalho,
+    config,
+    horaAtual,
+    contextoBatidasHoje
+  );
 
   const suportado = isNotificationSupported();
 
@@ -133,7 +147,7 @@ export const PainelNotificacoesTurno: React.FC<PainelNotificacoesTurnoProps> = (
         <div className="flex items-start sm:items-center gap-3.5">
           <div className="w-12 h-12 rounded-2xl bg-sky-500/15 border border-sky-500/30 flex items-center justify-center text-sky-400 shrink-0 shadow-inner">
             {config.ativo && permissao === "granted" ? (
-              <BellRing className="w-6 h-6 animate-pulse" />
+              <BellRing className="w-6 h-6" />
             ) : (
               <Bell className="w-6 h-6" />
             )}
@@ -374,7 +388,7 @@ export const PainelNotificacoesTurno: React.FC<PainelNotificacoesTurnoProps> = (
                     key: "lembreteSaida" as const,
                     label: "Fim do Expediente",
                     desc: "Saída 2",
-                    cor: "purple",
+                    cor: "sky",
                   },
                 ].map((item) => {
                   const ativo = Boolean(config[item.key]);
@@ -405,15 +419,19 @@ export const PainelNotificacoesTurno: React.FC<PainelNotificacoesTurnoProps> = (
 
             {/* Cronograma de Hoje do Colaborador */}
             <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <Clock className="w-4 h-4 text-sky-400" />
                   <span className="text-xs font-bold text-white uppercase tracking-wider">
                     Cronograma de Notificações para Hoje
                   </span>
                 </div>
-                <span className="text-[11px] text-slate-400 font-mono">
-                  {horaAtual.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                <span className="text-[11px] text-slate-400 font-mono tabular-nums">
+                  {horaAtual.toLocaleTimeString("pt-BR", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: emIntervaloAlmoco ? "2-digit" : undefined,
+                  })}
                 </span>
               </div>
 
@@ -423,46 +441,106 @@ export const PainelNotificacoesTurno: React.FC<PainelNotificacoesTurnoProps> = (
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-                  {lembretes.map((l) => (
-                    <div
-                      key={l.id}
-                      className={`p-3 rounded-xl border text-xs transition-all ${
-                        l.status === "proximo"
-                          ? "bg-sky-950/50 border-sky-500/50 shadow-md shadow-sky-950/40"
-                          : l.status === "passou"
-                          ? "bg-slate-900/50 border-slate-800/80 opacity-60"
-                          : l.status === "desativado"
-                          ? "bg-slate-900/30 border-slate-900 opacity-40"
-                          : "bg-slate-900 border-slate-800"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-1 mb-1">
-                        <span className="font-bold text-slate-200 truncate">{l.titulo}</span>
-                        {l.status === "proximo" ? (
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-sky-500 text-slate-950 animate-pulse font-mono shrink-0">
-                            Próximo
-                          </span>
-                        ) : l.status === "passou" ? (
-                          <span className="text-[10px] text-slate-500 font-mono shrink-0">Passou</span>
-                        ) : l.status === "desativado" ? (
-                          <span className="text-[10px] text-slate-600 font-mono shrink-0">Inativo</span>
-                        ) : (
-                          <span className="text-[10px] text-emerald-400 font-mono shrink-0">Agendado</span>
-                        )}
-                      </div>
+                  {lembretes.map((l) => {
+                    const restanteSeg =
+                      l.alvoTimestampMs !== undefined
+                        ? Math.max(0, Math.ceil((l.alvoTimestampMs - horaAtual.getTime()) / 1000))
+                        : null;
+                    const restanteMin = restanteSeg !== null ? Math.floor(restanteSeg / 60) : 0;
+                    const restanteSecMod = restanteSeg !== null ? restanteSeg % 60 : 0;
 
-                      <div className="flex items-baseline justify-between mt-2 pt-2 border-t border-slate-800/60">
+                    return (
+                      <div
+                        key={l.id}
+                        className={`p-3 rounded-xl border text-xs transition-all flex flex-col justify-between ${
+                          l.status === "concluido"
+                            ? "bg-emerald-950/30 border-emerald-500/35"
+                            : l.status === "proximo"
+                            ? "bg-sky-950/50 border-sky-500/50 shadow-md shadow-sky-950/40"
+                            : l.status === "passou"
+                            ? "bg-slate-900/50 border-slate-800/80 opacity-65"
+                            : l.status === "desativado"
+                            ? "bg-slate-900/30 border-slate-900 opacity-40"
+                            : "bg-slate-900 border-slate-800"
+                        }`}
+                      >
                         <div>
-                          <span className="text-[10px] text-slate-500 block">Horário Ponto</span>
-                          <span className="font-mono font-bold text-white text-sm">{l.horaNominal}</span>
+                          <div className="flex items-center justify-between gap-1 mb-1">
+                            <span className="font-bold text-slate-200 truncate">{l.titulo}</span>
+                            {l.status === "concluido" ? (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono shrink-0">
+                                Registrado
+                              </span>
+                            ) : l.status === "proximo" ? (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-sky-500 text-slate-950 font-mono shrink-0">
+                                Próximo
+                              </span>
+                            ) : l.status === "passou" ? (
+                              <span className="text-[10px] text-slate-500 font-mono shrink-0">Passou</span>
+                            ) : l.status === "desativado" ? (
+                              <span className="text-[10px] text-slate-600 font-mono shrink-0">Inativo</span>
+                            ) : (
+                              <span className="text-[10px] text-emerald-400 font-mono shrink-0">Agendado</span>
+                            )}
+                          </div>
+
+                          <p className="text-[11px] text-slate-400 leading-snug">
+                            {l.subtitulo}
+                          </p>
                         </div>
-                        <div className="text-right">
-                          <span className="text-[10px] text-sky-400/80 block">Disparo Alerta</span>
-                          <span className="font-mono font-bold text-sky-300 text-sm">{l.horaAlerta}</span>
+
+                        <div className="mt-2.5 pt-2 border-t border-slate-800/60 space-y-1.5">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <div>
+                              <span className="text-[10px] text-slate-500 block">
+                                {l.jaRegistradoHoje
+                                  ? "Batida Real"
+                                  : l.calculadoPelaSaidaReal
+                                  ? "Retorno Calculado"
+                                  : "Horário Ponto"}
+                              </span>
+                              <span className="font-mono tabular-nums font-bold text-white text-sm">
+                                {l.jaRegistradoHoje && l.horaRegistradaHoje
+                                  ? l.horaRegistradaHoje.slice(0, 5)
+                                  : l.horaNominal}
+                              </span>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-[10px] text-sky-400/80 block">
+                                {l.calculadoPelaSaidaReal ? "Disparo Exato" : "Disparo Alerta"}
+                              </span>
+                              <span className="font-mono tabular-nums font-bold text-sky-300 text-sm">
+                                {l.horaAlerta}
+                              </span>
+                            </div>
+                          </div>
+
+                          {l.id === "almocoRetorno" && l.duracaoIntervaloMinutos ? (
+                            <div className="text-[10px] pt-1 border-t border-slate-800/40 flex items-center justify-between gap-1.5">
+                              {l.calculadoPelaSaidaReal && !l.jaRegistradoHoje ? (
+                                <>
+                                  <span className="text-sky-300 font-medium">
+                                    Baseado na última saída
+                                  </span>
+                                  {restanteSeg !== null && (
+                                    <span className="font-mono tabular-nums font-bold text-amber-300">
+                                      {restanteSeg > 0
+                                        ? `Faltam ${restanteMin}m ${String(restanteSecMod).padStart(2, "0")}s`
+                                        : "Hora do retorno"}
+                                    </span>
+                                  )}
+                                </>
+                              ) : !l.calculadoPelaSaidaReal && !l.jaRegistradoHoje ? (
+                                <span className="text-slate-400">
+                                  Intervalo escala: {formatarDuracaoIntervalo(l.duracaoIntervaloMinutos)} · Ajusta ao bater saída
+                                </span>
+                              ) : null}
+                            </div>
+                          ) : null}
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

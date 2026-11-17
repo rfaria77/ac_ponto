@@ -89,10 +89,22 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { PWAInstallModal } from "./components/PWAInstallModal";
 import { PainelNotificacoesTurno } from "./components/PainelNotificacoesTurno";
 import { PainelFolhaVisual } from "./components/PainelFolhaVisual";
+import {
+  PortalAtalhoRapidoGPS,
+  RelogioPortalAtual,
+  CampoPortalBatida,
+} from "./components/PortalAtalhoRapidoGPS";
+import {
+  capturarGeolocalizacaoTempoReal,
+  LeituraGeolocalizacao,
+} from "./utils/geolocalizacao";
 import { usePWAInstall } from "./hooks/usePWAInstall";
 import { db, cleanForFirestore } from "./lib/firebaseClient";
 import { collection, doc, setDoc, deleteDoc, onSnapshot } from "firebase/firestore";
 import {
+  ContextoBatidasIntervaloHoje,
+  calcularLembretesTurnoHoje,
+  obterConfiguracaoNotificacoes,
   verificarEAlertarTurno,
   obterPermissaoNotificacao,
   solicitarPermissaoNotificacao,
@@ -748,7 +760,12 @@ export default function App() {
   const [portalColaboradorId, setPortalColaboradorId] = useState<string>("");
   const [portalDiaSelecionado, setPortalDiaSelecionado] = useState<number>(() => new Date().getDate());
   const [portalMesAno, setPortalMesAno] = useState<string>(() => obterMesAnoAtual());
-  const [portalSucessoModal, setPortalSucessoModal] = useState<{ tipo: string; hora: string } | null>(null);
+  const [portalSucessoModal, setPortalSucessoModal] = useState<{
+    tipo: string;
+    hora: string;
+    rotuloPrecisao?: string;
+    precisaoMetros?: number;
+  } | null>(null);
   
   // Seleção e parâmetros de upload
   const [colaboradorSelecionadoId, setColaboradorSelecionadoId] = useState<string>("");
@@ -958,8 +975,57 @@ export default function App() {
     }
   }, [comprovantes, solicitacoes, colaboradores, escalas, criterios, fechamentoAtual?.colaboradorId, fechamentoAtual?.mesAno]);
 
-  // Monitor em segundo plano para disparar alertas de entrada e saída conforme escala padrão
+  const obterContextoBatidasHoje = (colaboradorId: string): ContextoBatidasIntervaloHoje => {
+    const hoje = new Date();
+    const diaHoje = hoje.getDate();
+    const mesHoje = hoje.getMonth() + 1;
+    const anoHoje = hoje.getFullYear();
+    const dataHojeStr = `${String(diaHoje).padStart(2, "0")}/${String(mesHoje).padStart(2, "0")}/${anoHoje}`;
+
+    const diasHoje = sincronizarBatidasComDias(
+      gerarDiasMes(anoHoje, mesHoje, criterios.feriadosFixos),
+      comprovantes,
+      solicitacoes,
+      colaboradorId,
+      mesHoje,
+      anoHoje
+    );
+    const batidaHoje = diasHoje.find((d) => d.dia === diaHoje);
+
+    const compsSaidaAlmocoHoje = comprovantes
+      .filter(
+        (c) =>
+          c.colaboradorId === colaboradorId &&
+          normalizarDataParaDDMMYYYY(c.data || "") === dataHojeStr &&
+          c.tipoBatida === "Saída Almoço"
+      )
+      .sort((a, b) => String(b.timestampIso || "").localeCompare(String(a.timestampIso || "")));
+
+    const ultimoCompSaidaAlmoco = compsSaidaAlmocoHoje[0];
+    let saidaAlmocoHora = batidaHoje?.saida1 || undefined;
+    let saidaAlmocoTimestampIso: string | undefined;
+
+    if (
+      ultimoCompSaidaAlmoco &&
+      (!saidaAlmocoHora || ultimoCompSaidaAlmoco.hora.slice(0, 5) === saidaAlmocoHora.slice(0, 5))
+    ) {
+      saidaAlmocoHora = ultimoCompSaidaAlmoco.hora || saidaAlmocoHora;
+      saidaAlmocoTimestampIso = ultimoCompSaidaAlmoco.timestampIso;
+    }
+
+    return {
+      entradaHora: batidaHoje?.entrada1 || undefined,
+      saidaAlmocoHora,
+      saidaAlmocoTimestampIso,
+      retornoAlmocoHora: batidaHoje?.entrada2 || undefined,
+      saidaExpedienteHora: batidaHoje?.saida2 || undefined,
+    };
+  };
+
+  // Monitor em segundo plano para disparar alertas de entrada, retorno exato do almoço e saída
   useEffect(() => {
+    let exactTimeout: ReturnType<typeof setTimeout> | null = null;
+
     const monitorarTurno = async () => {
       const colabAlvoId =
         userRole === "funcionario"
@@ -972,9 +1038,39 @@ export default function App() {
 
       try {
         const { nomeEscala, horario } = resolverEscalaEHorarioColaborador(colab, escalas);
-        const alerta = await verificarEAlertarTurno(colab.id, colab.nome, horario, nomeEscala);
+        const ctxBatidas = obterContextoBatidasHoje(colab.id);
+
+        const alerta = await verificarEAlertarTurno(
+          colab.id,
+          colab.nome,
+          horario,
+          nomeEscala,
+          undefined,
+          ctxBatidas
+        );
         if (alerta) {
           showToast("aviso", `⏰ ${alerta.titulo}`, `${colab.nome}: ${alerta.mensagem}`);
+        }
+
+        // Agendar disparo exato no segundo em que termina o intervalo após a última saída para almoço
+        const cfgColab = obterConfiguracaoNotificacoes(colab.id);
+        const lembretes = calcularLembretesTurnoHoje(horario, cfgColab, new Date(), ctxBatidas);
+        const retornoAlmoco = lembretes.find(
+          (l) =>
+            l.id === "almocoRetorno" &&
+            l.status !== "desativado" &&
+            l.status !== "concluido" &&
+            l.alvoTimestampMs !== undefined
+        );
+
+        if (retornoAlmoco?.alvoTimestampMs !== undefined) {
+          const faltaMs = retornoAlmoco.alvoTimestampMs - Date.now();
+          if (faltaMs > 0 && faltaMs <= 6 * 60 * 60 * 1000) {
+            if (exactTimeout) clearTimeout(exactTimeout);
+            exactTimeout = setTimeout(() => {
+              monitorarTurno();
+            }, faltaMs + 150);
+          }
         }
       } catch (e) {
         console.warn("Erro ao monitorar alertas de turno:", e);
@@ -982,9 +1078,12 @@ export default function App() {
     };
 
     monitorarTurno();
-    const interval = setInterval(monitorarTurno, 30000); // Executa a cada 30 segundos
-    return () => clearInterval(interval);
-  }, [userRole, portalColaboradorId, colaboradores, escalas]);
+    const interval = setInterval(monitorarTurno, 10000); // Verifica a cada 10 segundos + timeout exato do almoço
+    return () => {
+      clearInterval(interval);
+      if (exactTimeout) clearTimeout(exactTimeout);
+    };
+  }, [userRole, portalColaboradorId, colaboradores, escalas, comprovantes, solicitacoes, criterios.feriadosFixos]);
 
 
   // Selecionar escala no formulário do colaborador e preencher horários automaticamente
@@ -2193,12 +2292,17 @@ export default function App() {
     }
   };
 
-  const handlePortalBaterPonto = (campo: "entrada1" | "saida1" | "entrada2" | "saida2") => {
+  const handlePortalBaterPonto = async (
+    campo: CampoPortalBatida,
+    geoPreCapturada?: LeituraGeolocalizacao
+  ) => {
     const colab = colaboradores.find((c) => c.id === portalColaboradorId);
     if (!colab) {
       showToast("aviso", "Selecione o Funcionário", "Selecione seu nome na lista para registrar o ponto.");
       return;
     }
+
+    const leituraGps = geoPreCapturada || (await capturarGeolocalizacaoTempoReal(10000));
 
     const agora = new Date();
     const horaStr = `${String(agora.getHours()).padStart(2, "0")}:${String(agora.getMinutes()).padStart(2, "0")}`;
@@ -2255,7 +2359,6 @@ export default function App() {
     });
 
     setFechamentoAtual(recalculado);
-    setPortalSucessoModal({ tipo: campo, hora: horaStr });
 
     // Emissão do Comprovante Digital de Ponto (Portaria 671 MTE / CLT)
     const mapaNomesBatida: Record<string, "Entrada 1" | "Saída Almoço" | "Retorno Almoço" | "Saída Expediente"> = {
@@ -2265,51 +2368,70 @@ export default function App() {
       saida2: "Saída Expediente",
     };
     const tipoLegivel = mapaNomesBatida[campo] || "Entrada 1";
+
+    setPortalSucessoModal({
+      tipo: tipoLegivel,
+      hora: horaStr,
+      rotuloPrecisao: leituraGps.rotuloPrecisao,
+      precisaoMetros: leituraGps.precisaoMetros,
+    });
+
     const dataFormatada = `${String(dias[diaIndex].dia).padStart(2, "0")}/${mesAno}`;
     const horaComSegundos = `${horaStr}:${String(agora.getSeconds()).padStart(2, "0")}`;
     const nsrNovo = comprovantes.length + 1;
     const hashBase = `${colab.id}-${colab.nome}-${dataFormatada}-${horaComSegundos}-${nsrNovo}-${DADOS_EMPRESA_PADRAO.cnpj}`;
 
-    gerarHashAutenticidade(hashBase).then((hashGerado) => {
-      const novoComprovante: ComprovantePonto = {
-        id: `COMP_${Date.now()}`,
-        nsr: nsrNovo,
-        colaboradorId: colab.id,
-        colaboradorNome: colab.nome,
-        colaboradorCargo: colab.cargo,
-        tipoBatida: tipoLegivel,
-        data: dataFormatada,
-        hora: horaComSegundos,
-        timestampIso: agora.toISOString(),
-        hashSha256: hashGerado,
-        empresa: {
-          razaoSocial: DADOS_EMPRESA_PADRAO.razaoSocial,
-          cnpj: DADOS_EMPRESA_PADRAO.cnpj,
-          local: DADOS_EMPRESA_PADRAO.localidade,
-        },
-        geolocalizacao: {
-          endereco: "Base Tupaciguara MG — Rua Modesto Alves Prudente, 266",
-          lat: -18.59969,
-          lon: -48.016335,
-          distanciaMetros: 15,
-        },
-      };
+    const hashGerado = await gerarHashAutenticidade(hashBase);
+    const novoComprovante: ComprovantePonto = {
+      id: `COMP_${Date.now()}`,
+      nsr: nsrNovo,
+      colaboradorId: colab.id,
+      colaboradorNome: colab.nome,
+      colaboradorCargo: colab.cargo,
+      tipoBatida: tipoLegivel,
+      data: dataFormatada,
+      hora: horaComSegundos,
+      timestampIso: agora.toISOString(),
+      hashSha256: hashGerado,
+      empresa: {
+        razaoSocial: DADOS_EMPRESA_PADRAO.razaoSocial,
+        cnpj: DADOS_EMPRESA_PADRAO.cnpj,
+        local: DADOS_EMPRESA_PADRAO.localidade,
+      },
+      geolocalizacao: {
+        endereco: leituraGps.endereco,
+        lat: leituraGps.lat,
+        lon: leituraGps.lon,
+        distanciaMetros: leituraGps.distanciaMetros,
+        precisaoMetros: leituraGps.precisaoMetros,
+        nivelPrecisao: leituraGps.nivelPrecisao,
+        capturadaEmTempoReal: leituraGps.fonte === "gps_tempo_real",
+      },
+    };
 
-      const atualizados = [novoComprovante, ...comprovantes];
-      setComprovantes(atualizados);
+    setComprovantes((prev) => {
+      const atualizados = [novoComprovante, ...prev];
       localStorage.setItem("ac_gestor_comprovantes", JSON.stringify(atualizados));
-      setModalComprovanteRecente(novoComprovante);
-
-      // Persistência em nuvem
-      setDoc(doc(db, "comprovantes_ponto", novoComprovante.id), cleanForFirestore(novoComprovante)).catch(() => {});
-      fetch("/api/comprovantes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(novoComprovante),
-      }).catch(() => {});
+      return atualizados;
     });
+    setModalComprovanteRecente(novoComprovante);
 
-    showToast("sucesso", "Ponto Registrado!", `Comprovante digital emitido conforme Portaria 671 MTE.`);
+    // Persistência em nuvem
+    setDoc(doc(db, "comprovantes_ponto", novoComprovante.id), cleanForFirestore(novoComprovante)).catch(() => {});
+    fetch("/api/comprovantes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(novoComprovante),
+    }).catch(() => {});
+
+    const detalheGps =
+      leituraGps.fonte === "gps_tempo_real"
+        ? `GPS: ${leituraGps.rotuloPrecisao}${
+            leituraGps.precisaoMetros !== undefined ? ` (±${leituraGps.precisaoMetros} m)` : ""
+          }.`
+        : `${leituraGps.erroMensagem || "Sem sinal GPS no dispositivo."}`;
+
+    showToast("sucesso", "Ponto Registrado!", `${tipoLegivel} às ${horaStr}. ${detalheGps}`);
   };
 
   // Envio de Nova Solicitação de Ajuste / Atestado Médico
@@ -3048,7 +3170,7 @@ export default function App() {
     const pageWidth = doc.internal.pageSize.getWidth();
 
     // Cabeçalho da Empresa
-    doc.setFillColor(15, 23, 42); // slate-900
+    doc.setFillColor(10, 28, 46); // A&C deep navy (#0A1C2E)
     doc.rect(0, 0, pageWidth, 26, "F");
 
     doc.setTextColor(255, 255, 255);
@@ -3226,10 +3348,10 @@ export default function App() {
           </div>
 
           {/* Banner de Instalação no Celular (Android & iOS) */}
-          <div className="bg-gradient-to-r from-sky-950/70 via-slate-900/90 to-emerald-950/70 border border-sky-500/30 rounded-3xl p-5 sm:p-6 shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-5 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-sky-500/5 rounded-full blur-3xl pointer-events-none"></div>
+          <div className="bg-gradient-to-r from-sky-950/90 via-slate-900 to-sky-900/60 border border-sky-500/30 rounded-3xl p-5 sm:p-6 shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-5 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-sky-400/10 rounded-full blur-3xl pointer-events-none"></div>
             <div className="flex items-center gap-4 text-center sm:text-left">
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-sky-500/20 to-emerald-500/20 border border-sky-500/30 flex items-center justify-center text-sky-400 shrink-0 shadow-inner">
+              <div className="w-14 h-14 rounded-2xl bg-sky-500/15 border border-sky-400/30 flex items-center justify-center text-sky-400 shrink-0 shadow-inner">
                 <Smartphone className="w-7 h-7" />
               </div>
               <div>
@@ -3237,7 +3359,7 @@ export default function App() {
                   <h3 className="text-base sm:text-lg font-bold text-white tracking-tight">
                     Instalar App no Celular
                   </h3>
-                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-400/30">
                     Android & iPhone (iOS)
                   </span>
                 </div>
@@ -3250,7 +3372,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => setModalPWAInstalacaoAberta(true)}
-              className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-gradient-to-r from-sky-600 to-emerald-600 hover:from-sky-500 hover:to-emerald-500 text-white font-bold text-xs sm:text-sm shadow-xl shadow-sky-600/30 flex items-center justify-center gap-2.5 shrink-0 transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+              className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-gradient-to-r from-sky-600 to-sky-500 hover:from-sky-500 hover:to-sky-400 text-white font-bold text-xs sm:text-sm shadow-xl shadow-sky-600/30 flex items-center justify-center gap-2.5 shrink-0 transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
             >
               <Smartphone className="w-4 h-4" />
               {isInstalled ? "App Instalado • Instruções" : "Instalar no meu Celular"}
@@ -3337,7 +3459,7 @@ export default function App() {
                         type="button"
                         disabled={isLoggingIn}
                         onClick={() => handleLoginComBiometria(colabSelecionado)}
-                        className="w-full py-3.5 bg-gradient-to-r from-sky-600 via-indigo-600 to-sky-600 hover:from-sky-500 hover:to-indigo-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-sky-600/30 flex items-center justify-center gap-2.5 transition-all cursor-pointer disabled:opacity-50"
+                        className="w-full py-3.5 bg-gradient-to-r from-sky-600 via-sky-500 to-sky-600 hover:from-sky-500 hover:to-sky-400 text-white rounded-xl text-sm font-bold shadow-lg shadow-sky-600/30 flex items-center justify-center gap-2.5 transition-all cursor-pointer disabled:opacity-50"
                       >
                         <ScanFace className="w-5 h-5 text-sky-200" />
                         <span>Entrar com Biometria / Face ID</span>
@@ -3506,7 +3628,7 @@ export default function App() {
 
                         {/* Opção Biométrica Nativa do Aparelho (Face ID / Digital WebAuthn) */}
                         {temBiometriaCadastrada(colabModal.id) ? (
-                          <div className="p-4 rounded-2xl bg-gradient-to-r from-sky-950/80 via-slate-900 to-indigo-950/80 border border-sky-500/30 space-y-3 shadow-inner">
+                          <div className="p-4 rounded-2xl bg-gradient-to-r from-sky-950/80 via-slate-900 to-sky-900/60 border border-sky-500/30 space-y-3 shadow-inner">
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 rounded-xl bg-sky-500/20 text-sky-400 flex items-center justify-center shrink-0">
                                 <ScanFace className="w-5 h-5" />
@@ -3525,7 +3647,7 @@ export default function App() {
                               type="button"
                               disabled={isLoggingIn}
                               onClick={() => handleLoginComBiometria(colabModal)}
-                              className="w-full py-2.5 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-sky-600/30 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                              className="w-full py-2.5 bg-gradient-to-r from-sky-600 to-sky-500 hover:from-sky-500 hover:to-sky-400 text-white rounded-xl text-xs font-bold shadow-lg shadow-sky-600/30 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
                             >
                               <Fingerprint className="w-4 h-4" />
                               Entrar com Face ID / Biometria
@@ -3914,11 +4036,11 @@ export default function App() {
                     }}
                     className={`w-full px-3.5 py-3 rounded-xl transition-all flex items-center gap-3 text-left ${
                       abaAtiva === "painelVisual"
-                        ? "bg-amber-500 text-slate-950 font-black shadow-md shadow-amber-500/30"
+                        ? "bg-sky-600 text-white font-bold shadow-md shadow-sky-600/30"
                         : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
                     }`}
                   >
-                    <FileSpreadsheet className="w-4 h-4 text-amber-400" /> Folha Visual (Tempo Real)
+                    <FileSpreadsheet className={`w-4 h-4 ${abaAtiva === "painelVisual" ? "text-white" : "text-sky-400"}`} /> Folha Visual (Tempo Real)
                   </button>
                   <button
                     onClick={() => {
@@ -3944,7 +4066,7 @@ export default function App() {
                         : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
                     }`}
                   >
-                    <FileText className="w-4 h-4 text-indigo-400" /> Espelho & Fechamento
+                    <FileText className={`w-4 h-4 ${abaAtiva === "fechamento" ? "text-white" : "text-sky-400"}`} /> Espelho & Fechamento
                   </button>
                   <button
                     onClick={() => {
@@ -3997,7 +4119,7 @@ export default function App() {
                         : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
                     }`}
                   >
-                    <Users className="w-4 h-4 text-purple-400" /> Colaboradores & Senhas ({colaboradores.length})
+                    <Users className={`w-4 h-4 ${abaAtiva === "colaboradores" ? "text-white" : "text-sky-400"}`} /> Colaboradores & Senhas ({colaboradores.length})
                   </button>
                   <button
                     onClick={() => {
@@ -4110,11 +4232,11 @@ export default function App() {
                 onClick={() => setAbaAtiva("painelVisual")}
                 className={`w-full px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-2.5 text-left ${
                   abaAtiva === "painelVisual"
-                    ? "bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/30 font-black"
+                    ? "bg-sky-600 text-white shadow-lg shadow-sky-600/30 font-bold"
                     : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
                 }`}
               >
-                <FileSpreadsheet className="w-4 h-4 text-amber-400" /> Folha Visual (Tempo Real)
+                <FileSpreadsheet className={`w-4 h-4 ${abaAtiva === "painelVisual" ? "text-white" : "text-sky-400"}`} /> Folha Visual (Tempo Real)
               </button>
               <button
                 onClick={() => setAbaAtiva("digitalizar")}
@@ -4134,7 +4256,7 @@ export default function App() {
                     : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
                 }`}
               >
-                <FileText className="w-4 h-4 text-indigo-400" /> Espelho & Fechamento
+                <FileText className={`w-4 h-4 ${abaAtiva === "fechamento" ? "text-white" : "text-sky-400"}`} /> Espelho & Fechamento
               </button>
               <button
                 onClick={() => setAbaAtiva("historico")}
@@ -4177,7 +4299,7 @@ export default function App() {
                     : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
                 }`}
               >
-                <Users className="w-4 h-4 text-purple-400" /> Colaboradores & Senhas ({colaboradores.length})
+                <Users className={`w-4 h-4 ${abaAtiva === "colaboradores" ? "text-white" : "text-sky-400"}`} /> Colaboradores & Senhas ({colaboradores.length})
               </button>
               <button
                 onClick={() => setAbaAtiva("baterPonto")}
@@ -4570,15 +4692,15 @@ export default function App() {
                 </div>
 
                 {/* Taxa de Presença / Atividade */}
-                <div className="bg-slate-900 border border-purple-500/30 rounded-2xl p-4 shadow-xl space-y-2 col-span-2 lg:col-span-1 hover:border-purple-500/50 transition-all">
+                <div className="bg-slate-900 border border-sky-400/30 rounded-2xl p-4 shadow-xl space-y-2 col-span-2 lg:col-span-1 hover:border-sky-400/50 transition-all">
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-purple-400 uppercase tracking-wider">Aderência Hoje</span>
-                    <div className="w-8 h-8 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400">
+                    <span className="text-[11px] font-bold text-sky-400 uppercase tracking-wider">Aderência Hoje</span>
+                    <div className="w-8 h-8 rounded-xl bg-sky-400/10 border border-sky-400/30 flex items-center justify-center text-sky-400">
                       <BarChart3 className="w-4 h-4" />
                     </div>
                   </div>
-                  <div className="text-2xl font-black text-purple-300">{taxaPresenca}%</div>
-                  <div className="text-[11px] text-purple-400/80 font-medium">
+                  <div className="text-2xl font-black text-sky-300">{taxaPresenca}%</div>
+                  <div className="text-[11px] text-sky-400/80 font-medium">
                     {aguardandoColabs.length > 0 ? `${aguardandoColabs.length} aguardando início` : "Equipe 100% iniciada"}
                   </div>
                 </div>
@@ -5031,15 +5153,7 @@ export default function App() {
                     Cada funcionário pode registrar sua entrada, saída de almoço, retorno e saída do dia diretamente aqui ou registrar os horários em tempo real.
                   </p>
                 </div>
-                <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 text-center min-w-[200px] shadow-inner">
-                  <div className="text-xs text-slate-400 uppercase font-bold tracking-wider">Horário Atual</div>
-                  <div className="text-2xl font-mono font-bold text-sky-400 mt-1">
-                    {new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-                  </div>
-                  <div className="text-[11px] text-slate-500 mt-1">
-                    {new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}
-                  </div>
-                </div>
+                <RelogioPortalAtual />
               </div>
             </div>
 
@@ -5109,7 +5223,7 @@ export default function App() {
                             )}
                           </div>
                         </div>
-                        <div className="flex items-center gap-3 w-full lg:w-auto justify-between lg:justify-end">
+                        <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto justify-start lg:justify-end">
                           {/* Card de Saldo de Banco de Horas */}
                           {(() => {
                             const saldoMin = colabAtual.saldoAnteriorBancoMinutos || 0;
@@ -5156,78 +5270,65 @@ export default function App() {
                           </button>
 
                           {portalSucessoModal && (
-                            <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 animate-pulse">
-                              <CheckCircle2 className="w-4 h-4" /> {portalSucessoModal.tipo.toUpperCase()} registrada às {portalSucessoModal.hora}!
+                            <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2">
+                              <CheckCircle2 className="w-4 h-4 shrink-0" />
+                              <span>
+                                {portalSucessoModal.tipo} registrada às{" "}
+                                <span className="font-mono tabular-nums">{portalSucessoModal.hora}</span>
+                                {portalSucessoModal.precisaoMetros !== undefined
+                                  ? ` · GPS ±${portalSucessoModal.precisaoMetros} m`
+                                  : portalSucessoModal.rotuloPrecisao
+                                  ? ` · ${portalSucessoModal.rotuloPrecisao}`
+                                  : ""}
+                              </span>
                             </div>
                           )}
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handlePortalBaterPonto("entrada1"); }}
-                          className="group bg-gradient-to-b from-slate-950 to-slate-900 hover:from-sky-950/40 hover:to-slate-900 border border-slate-800 hover:border-sky-500/50 rounded-2xl p-6 text-center transition-all duration-300 shadow-lg hover:shadow-sky-500/10 flex flex-col items-center justify-center gap-3"
-                        >
-                          <div className="w-14 h-14 rounded-2xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 group-hover:scale-110 transition-transform shadow-inner">
-                            <Clock className="w-7 h-7" />
-                          </div>
-                          <div>
-                            <div className="text-xs text-slate-400 uppercase font-bold tracking-wider">1º Horário</div>
-                            <div className="text-xl font-extrabold text-white mt-0.5">Entrada 1</div>
-                          </div>
-                          <span className="px-3 py-1.5 rounded-xl bg-sky-600/20 text-sky-300 text-xs font-bold group-hover:bg-sky-600 group-hover:text-white transition-colors w-full">
-                            Bater Entrada Agora
-                          </span>
-                        </button>
+                      {(() => {
+                        const hojePortal = new Date();
+                        const mesHojeNum = hojePortal.getMonth() + 1;
+                        const anoHojeNum = hojePortal.getFullYear();
+                        const diaHojeNum = hojePortal.getDate();
+                        const diaRef = userRole === "funcionario" ? diaHojeNum : (portalDiaSelecionado || diaHojeNum);
+                        const mesAnoRef =
+                          userRole === "funcionario"
+                            ? `${String(mesHojeNum).padStart(2, "0")}/${anoHojeNum}`
+                            : portalMesAno || `${String(mesHojeNum).padStart(2, "0")}/${anoHojeNum}`;
+                        const [mRefStr, aRefStr] = mesAnoRef.includes("/")
+                          ? mesAnoRef.split("/")
+                          : [String(mesHojeNum), String(anoHojeNum)];
+                        const mRefNum = parseInt(mRefStr, 10) || mesHojeNum;
+                        const aRefNum = parseInt(aRefStr, 10) || anoHojeNum;
+                        const dataRefFormatada = `${String(diaRef).padStart(2, "0")}/${String(mRefNum).padStart(2, "0")}/${aRefNum}`;
 
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handlePortalBaterPonto("saida1"); }}
-                          className="group bg-gradient-to-b from-slate-950 to-slate-900 hover:from-amber-950/40 hover:to-slate-900 border border-slate-800 hover:border-amber-500/50 rounded-2xl p-6 text-center transition-all duration-300 shadow-lg hover:shadow-amber-500/10 flex flex-col items-center justify-center gap-3"
-                        >
-                          <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 group-hover:scale-110 transition-transform shadow-inner">
-                            <Clock className="w-7 h-7" />
-                          </div>
-                          <div>
-                            <div className="text-xs text-slate-400 uppercase font-bold tracking-wider">Almoço</div>
-                            <div className="text-xl font-extrabold text-white mt-0.5">Saída Almoço</div>
-                          </div>
-                          <span className="px-3 py-1.5 rounded-xl bg-amber-600/20 text-amber-300 text-xs font-bold group-hover:bg-amber-600 group-hover:text-white transition-colors w-full">
-                            Bater Saída Almoço
-                          </span>
-                        </button>
+                        const diasSincronizadosPortal = sincronizarBatidasComDias(
+                          gerarDiasMes(aRefNum, mRefNum, criterios.feriadosFixos),
+                          comprovantes,
+                          solicitacoes,
+                          colabAtual.id,
+                          mRefNum,
+                          aRefNum
+                        );
+                        const batidaDiaPortal = diasSincronizadosPortal.find((d) => d.dia === diaRef);
+                        const comprovantesDiaPortal = comprovantes.filter(
+                          (c) =>
+                            c.colaboradorId === colabAtual.id &&
+                            normalizarDataParaDDMMYYYY(c.data || "") === dataRefFormatada
+                        );
 
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handlePortalBaterPonto("entrada2"); }}
-                          className="group bg-gradient-to-b from-slate-950 to-slate-900 hover:from-emerald-950/40 hover:to-slate-900 border border-slate-800 hover:border-emerald-500/50 rounded-2xl p-6 text-center transition-all duration-300 shadow-lg hover:shadow-emerald-500/10 flex flex-col items-center justify-center gap-3"
-                        >
-                          <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform shadow-inner">
-                            <Clock className="w-7 h-7" />
-                          </div>
-                          <div>
-                            <div className="text-xs text-slate-400 uppercase font-bold tracking-wider">Retorno</div>
-                            <div className="text-xl font-extrabold text-white mt-0.5">Retorno Almoço</div>
-                          </div>
-                          <span className="px-3 py-1.5 rounded-xl bg-emerald-600/20 text-emerald-300 text-xs font-bold group-hover:bg-emerald-600 group-hover:text-white transition-colors w-full">
-                            Bater Retorno
-                          </span>
-                        </button>
-
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handlePortalBaterPonto("saida2"); }}
-                          className="group bg-gradient-to-b from-slate-950 to-slate-900 hover:from-purple-950/40 hover:to-slate-900 border border-slate-800 hover:border-purple-500/50 rounded-2xl p-6 text-center transition-all duration-300 shadow-lg hover:shadow-purple-500/10 flex flex-col items-center justify-center gap-3"
-                        >
-                          <div className="w-14 h-14 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 group-hover:scale-110 transition-transform shadow-inner">
-                            <Clock className="w-7 h-7" />
-                          </div>
-                          <div>
-                            <div className="text-xs text-slate-400 uppercase font-bold tracking-wider">Fim do Dia</div>
-                            <div className="text-xl font-extrabold text-white mt-0.5">Saída Expediente</div>
-                          </div>
-                          <span className="px-3 py-1.5 rounded-xl bg-purple-600/20 text-purple-300 text-xs font-bold group-hover:bg-purple-600 group-hover:text-white transition-colors w-full">
-                            Bater Saída
-                          </span>
-                        </button>
-                      </div>
+                        return (
+                          <PortalAtalhoRapidoGPS
+                            colaboradorId={colabAtual.id}
+                            colaboradorNome={colabAtual.nome}
+                            dataReferenciaStr={dataRefFormatada}
+                            batidaDoDia={batidaDiaPortal}
+                            comprovantesDoDia={comprovantesDiaPortal}
+                            onRegistrarBatidaComGps={handlePortalBaterPonto}
+                          />
+                        );
+                      })()}
 
                       {/* Gestão de Biometria / Reconhecimento Facial Deste Aparelho */}
                       <div className="pt-4 border-t border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-950/40 p-4 rounded-2xl border border-slate-800/80">
@@ -5279,7 +5380,7 @@ export default function App() {
                             <button
                               type="button"
                               onClick={() => handleCadastrarBiometriaAtual(colabAtual)}
-                              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white text-xs font-bold shadow-md shadow-sky-600/30 transition-all cursor-pointer flex items-center gap-2"
+                              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-sky-600 to-sky-500 hover:from-sky-500 hover:to-sky-400 text-white text-xs font-bold shadow-md shadow-sky-600/30 transition-all cursor-pointer flex items-center gap-2"
                             >
                               <Fingerprint className="w-4 h-4" /> Ativar Face ID / Biometria
                             </button>
@@ -5295,6 +5396,7 @@ export default function App() {
                       nomeEscala={infoEscala.nomeEscala}
                       tipoEscala={infoEscala.tipoEscala}
                       horarioTrabalho={infoEscala.horario}
+                      contextoBatidasHoje={obterContextoBatidasHoje(colabAtual.id)}
                       onNotificacaoEnviada={(titulo, msg) => showToast("aviso", `🔔 ${titulo}`, msg)}
                     />
                   </>
@@ -5457,11 +5559,11 @@ export default function App() {
         {/* ================= ABA: SOLICITAÇÕES & ATESTADOS ================= */}
         {abaAtiva === "solicitacoes" && (
           <div className="space-y-6 max-w-6xl mx-auto">
-            <div className="bg-gradient-to-r from-indigo-950/40 via-slate-900 to-sky-950/30 border border-indigo-500/30 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+            <div className="bg-gradient-to-r from-sky-950/70 via-slate-900 to-sky-900/40 border border-sky-500/30 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-sky-400/10 rounded-full blur-3xl pointer-events-none"></div>
               <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
                 <div className="space-y-2">
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-400 text-xs font-bold border border-indigo-500/20">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sky-500/15 text-sky-400 text-xs font-bold border border-sky-400/25">
                     <FileCheck2 className="w-3.5 h-3.5" /> Gestão de Ponto & DP
                   </span>
                   <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">Solicitações de Ajuste & Atestados Médicos</h2>
@@ -7830,7 +7932,7 @@ export default function App() {
                           {/* Cabeçalho do Card */}
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex items-center gap-3">
-                              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-sky-600/20 to-indigo-600/20 border border-sky-500/30 flex items-center justify-center text-sky-300 font-bold text-base shrink-0 shadow-inner">
+                              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-sky-500/25 to-sky-700/20 border border-sky-500/30 flex items-center justify-center text-sky-300 font-bold text-base shrink-0 shadow-inner">
                                 {c.nome.charAt(0)}
                               </div>
                               <div>

@@ -1,1 +1,47 @@
 @import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* Paleta Oficial A&C Saúde e Segurança do Trabalho (extraída da logo) */
+  --color-sky-50: #eff9fe;
+  --color-sky-100: #dff3fd;
+  --color-sky-200: #b8e6fa;
+  --color-sky-300: #7fd4f7;
+  --color-sky-400: #4bbdf0;
+  --color-sky-500: #1e81c0;
+  --color-sky-600: #1978b4;
+  --color-sky-700: #126196;
+  --color-sky-800: #154d75;
+  --color-sky-900: #133c55;
+  --color-sky-950: #0a2234;
+
+  /* Superfícies Neutras Oceânicas (harmonizadas ao azul marinho institucional #133C55) */
+  --color-slate-50: #f7fafd;
+  --color-slate-100: #eff5fa;
+  --color-slate-200: #dce6f0;
+  --color-slate-300: #bed0e2;
+  --color-slate-400: #8da9c4;
+  --color-slate-500: #60809e;
+  --color-slate-600: #3a5c7d;
+  --color-slate-700: #1f4161;
+  --color-slate-800: #142d45;
+  --color-slate-900: #0a1c2e;
+  --color-slate-950: #06121e;
+}
+
+@layer base {
+  html,
+  body {
+    background-color: #06121e;
+    color: #eff5fa;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  .font-mono {
+    font-variant-numeric: tabular-nums;
+  }
+}
