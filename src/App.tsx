@@ -118,6 +118,9 @@ import {
   calcularFechamentoMensal,
   gerarDiasMes,
   sincronizarBatidasComDias,
+  mapearCampoParaTipoBatida,
+  normalizarHoraEntrada,
+  normalizarDataParaDDMMYYYY,
   minutosParaTextoExtenso,
   minutosParaHora,
   minutosParaDecimal,
@@ -460,7 +463,7 @@ export interface SolicitacaoAjuste {
   descricaoJustificativa: string;
   comprovanteFotoBase64?: string;
   diasAfastamento?: number;
-  status: "Pendente" | "Aprovado" | "Recusado";
+  status: "Pendente" | "Aprovado" | "Recusado" | "Substituído";
   motivoRecusa?: string;
   dataSolicitacao: string;
   dataAprovacao?: string;
@@ -2385,6 +2388,39 @@ export default function App() {
       body: JSON.stringify({ status: "Aprovado", dataAprovacao: new Date().toLocaleString("pt-BR"), aprovadoPor: "Administrador DP" }),
     }).catch(() => {});
 
+    // Integração automática: ao aprovar Esquecimento de Ponto, grava também como comprovante oficial do dia
+    if (solic.tipo === "Esquecimento de Ponto" && solic.campoBatida && solic.horarioSugerido) {
+      const dataNorm = normalizarDataParaDDMMYYYY(solic.dataOcorrencia || "");
+      const horaNorm = normalizarHoraEntrada(solic.horarioSugerido) || solic.horarioSugerido.slice(0, 5);
+      const colabSolic = colaboradores.find((c) => c.id === solic.colaboradorId);
+      if (dataNorm && horaNorm) {
+        const punchId = `COMP_MANUAL_${solic.colaboradorId}_${dataNorm.replace(/\//g, "")}_${solic.campoBatida}`;
+        const mapaNomes: Record<string, string> = {
+          entrada1: "Entrada 1",
+          saida1: "Saída Almoço",
+          entrada2: "Retorno Almoço",
+          saida2: "Saída Expediente",
+        };
+        const compAprovado = {
+          id: punchId,
+          colaboradorId: solic.colaboradorId,
+          colaboradorNome: solic.colaboradorNome || colabSolic?.nome || "",
+          colaboradorCargo: solic.colaboradorCargo || colabSolic?.cargo || "",
+          tipoBatida: mapaNomes[solic.campoBatida] || "Entrada 1",
+          data: dataNorm,
+          hora: horaNorm,
+          timestampIso: new Date().toISOString(),
+          origem: "Ajuste Manual (Solicitação Aprovada)",
+          empresa: {
+            razaoSocial: DADOS_EMPRESA_PADRAO.razaoSocial,
+            cnpj: DADOS_EMPRESA_PADRAO.cnpj,
+            local: DADOS_EMPRESA_PADRAO.localidade,
+          },
+        };
+        setDoc(doc(db, "comprovantes_ponto", punchId), cleanForFirestore(compAprovado)).catch(() => {});
+      }
+    }
+
     // Integração automática com o espelho de ponto atual
     if (fechamentoAtual && fechamentoAtual.colaboradorId === solic.colaboradorId) {
       const [diaStr] = solic.dataOcorrencia.split("/");
@@ -2812,6 +2848,7 @@ export default function App() {
     novosDias[index] = { ...novosDias[index], [campo]: valor };
 
     const colab = colaboradores.find((c) => c.id === fechamentoAtual.colaboradorId) || colaboradores[0];
+    const horarioResolvidoEdit = colab ? resolverEscalaEHorarioColaborador(colab, escalas).horario : undefined;
     const recalculado = calcularFechamentoMensal(novosDias, criterios, {
       colaboradorNome: fechamentoAtual.colaboradorNome,
       colaboradorCargo: fechamentoAtual.colaboradorCargo,
@@ -2819,18 +2856,32 @@ export default function App() {
       mesAno: fechamentoAtual.mesAno,
       salarioBase: fechamentoAtual.salarioBase,
       saldoAnteriorBancoMinutos: fechamentoAtual.saldoAnteriorBancoMinutos,
-      horarioNominal: colab?.horarioTrabalho,
+      horarioNominal: horarioResolvidoEdit,
     });
 
     setFechamentoAtual(recalculado);
 
     // INTEGRAÇÃO: Se for um campo de batida, salva ou deleta no Firestore para sincronizar com a Folha Visual
     const camposPermitidos = ["entrada1", "saida1", "entrada2", "saida2", "entrada3", "saida3"] as const;
-    if (camposPermitidos.includes(campo as any)) {
+    if (camposPermitidos.includes(campo as any) && colab) {
       const dataStr = novosDias[index].dataStr; // Ex: "01/10/2026"
       const punchId = `COMP_MANUAL_${colab.id}_${dataStr.replace(/\//g, "")}_${campo}`;
+      const valorStr = typeof valor === "string" ? valor : "";
+      const horaNorm = normalizarHoraEntrada(valorStr);
 
-      if (typeof valor === "string" && valor.length === 5) {
+      const comprovantesMesmoSlot = comprovantes.filter((c) => {
+        if (c.colaboradorId !== colab.id) return false;
+        const dataNorm = normalizarDataParaDDMMYYYY(c.data || "");
+        return dataNorm === dataStr && mapearCampoParaTipoBatida(c.tipoBatida || "") === campo;
+      });
+
+      if (horaNorm) {
+        for (const dup of comprovantesMesmoSlot) {
+          if (dup.id !== punchId) {
+            deleteDoc(doc(db, "comprovantes_ponto", dup.id)).catch(() => {});
+          }
+        }
+
         const mapaNomes: Record<string, string> = {
           entrada1: "Entrada 1",
           saida1: "Saída Almoço",
@@ -2847,7 +2898,7 @@ export default function App() {
           colaboradorCargo: colab.cargo,
           tipoBatida: mapaNomes[campo],
           data: dataStr,
-          hora: valor,
+          hora: horaNorm,
           timestampIso: new Date().toISOString(),
           origem: "Ajuste Manual Espelho",
           empresa: {
@@ -2858,9 +2909,21 @@ export default function App() {
         };
 
         setDoc(doc(db, "comprovantes_ponto", punchId), cleanForFirestore(novoComprovante)).catch(console.warn);
-      } else if (!valor || valor.trim() === "" || valor === "--:--") {
-        // Se o valor for removido, deleta do Firestore
+      } else if (!valorStr || valorStr.trim() === "" || valorStr.trim() === "--:--") {
+        // Se o valor for removido, deleta do Firestore (todos os registros desse dia/slot) e marca solicitações antigas como substituídas
         deleteDoc(doc(db, "comprovantes_ponto", punchId)).catch(() => {});
+        for (const dup of comprovantesMesmoSlot) {
+          deleteDoc(doc(db, "comprovantes_ponto", dup.id)).catch(() => {});
+        }
+        const solicsMesmoSlot = solicitacoes.filter((s) => {
+          if (s.colaboradorId !== colab.id) return false;
+          if (s.tipo !== "Esquecimento de Ponto" || s.campoBatida !== campo) return false;
+          if (s.status !== "Aprovado") return false;
+          return normalizarDataParaDDMMYYYY(s.dataOcorrencia || "") === dataStr;
+        });
+        for (const sol of solicsMesmoSlot) {
+          setDoc(doc(db, "solicitacoes_ajustes", sol.id), { status: "Substituído" }, { merge: true }).catch(() => {});
+        }
       }
     }
   };

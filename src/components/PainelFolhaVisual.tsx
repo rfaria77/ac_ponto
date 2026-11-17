@@ -33,6 +33,9 @@ import {
   horaParaMinutos,
   calcularDuracaoMinutos,
   sincronizarBatidasComDias,
+  mapearCampoParaTipoBatida,
+  normalizarHoraEntrada,
+  normalizarDataParaDDMMYYYY,
 } from "../lib/calculosPonto";
 import { db, cleanForFirestore } from "../lib/firebaseClient";
 import { collection, doc, setDoc, deleteDoc, onSnapshot } from "firebase/firestore";
@@ -301,11 +304,25 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
     const dataStr = `${String(diaEditando.dia).padStart(2, "0")}/${String(mes).padStart(2, "0")}/${ano}`;
 
     for (const campo of camposBatida) {
-      const valor = diaEditando[campo];
+      const valorBruto = diaEditando[campo] || "";
+      const horaNorm = normalizarHoraEntrada(valorBruto);
       // ID determinístico para evitar duplicatas ao editar o mesmo dia/campo
       const punchId = `COMP_MANUAL_${colaboradorAtual.id}_${dataStr.replace(/\//g, "")}_${campo}`;
 
-      if (valor && valor.length === 5) { // "HH:MM"
+      const comprovantesMesmoSlot = comprovantes.filter((c) => {
+        if (c.colaboradorId !== colaboradorAtual.id) return false;
+        const dataNorm = normalizarDataParaDDMMYYYY(c.data || "");
+        return dataNorm === dataStr && mapearCampoParaTipoBatida(c.tipoBatida || "") === campo;
+      });
+
+      if (horaNorm) {
+        // Remove batidas duplicadas/antigas de outros IDs no mesmo slot para evitar conflito
+        for (const dup of comprovantesMesmoSlot) {
+          if (dup.id !== punchId) {
+            await deleteDoc(doc(db, "comprovantes_ponto", dup.id)).catch(() => {});
+          }
+        }
+
         const mapaNomes: Record<string, string> = {
           entrada1: "Entrada 1",
           saida1: "Saída Almoço",
@@ -322,7 +339,7 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
           colaboradorCargo: colaboradorAtual.cargo,
           tipoBatida: mapaNomes[campo],
           data: dataStr,
-          hora: valor,
+          hora: horaNorm,
           timestampIso: new Date().toISOString(),
           origem: "Ajuste Manual Visual",
           empresa: {
@@ -332,9 +349,21 @@ export const PainelFolhaVisual: React.FC<PainelFolhaVisualProps> = ({
         };
 
         await setDoc(doc(db, "comprovantes_ponto", punchId), cleanForFirestore(novoComprovante)).catch(console.warn);
-      } else if (!valor || valor.trim() === "") {
-        // Se o valor for removido manualmente, deleta o registro correspondente no Firestore
+      } else if (!valorBruto || valorBruto.trim() === "" || valorBruto.trim() === "--:--") {
+        // Se o valor for removido manualmente, deleta TODOS os comprovantes do mesmo slot e marca solicitações antigas como substituídas
         await deleteDoc(doc(db, "comprovantes_ponto", punchId)).catch(() => {});
+        for (const dup of comprovantesMesmoSlot) {
+          await deleteDoc(doc(db, "comprovantes_ponto", dup.id)).catch(() => {});
+        }
+        const solicsMesmoSlot = solicitacoes.filter((s) => {
+          if (s.colaboradorId !== colaboradorAtual.id) return false;
+          if (s.tipo !== "Esquecimento de Ponto" || s.campoBatida !== campo) return false;
+          if (s.status !== "Aprovado" && s.status !== "Abonado") return false;
+          return normalizarDataParaDDMMYYYY(s.dataOcorrencia || "") === dataStr;
+        });
+        for (const sol of solicsMesmoSlot) {
+          await setDoc(doc(db, "solicitacoes_ajustes", sol.id), { status: "Substituído" }, { merge: true }).catch(() => {});
+        }
       }
     }
 
